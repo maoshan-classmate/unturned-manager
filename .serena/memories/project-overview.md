@@ -26,10 +26,14 @@ Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前
   - ✅ 🎨 Console — 完成
   - ✅ 🎨 Mods — 完成（文字颜色修复 2026-08-05）
   - ✅ 🎨 Players — 框架存在
+- ✅ 🎨 Files — GSM3 风格改造完成 (右键菜单+权限弹窗+FileCard组件)
+- 🟡 🎨 System Settings — 新建完成 (5 Cards, 复用Input/Select/Switch)
   - ✅ 🎨 Config — 完成
   - 🟡 🎨 Server Setup — 基本完成（2026-08-05 改造）
   - 🟡 🎨 Files — 框架已建，黑色文字待修复
-- 维护页: 🧩 Components (24 个组件), 🧩 Icon Refs (309 个图标)
+- 维护页: 🧩 Components (25 个组件，新增 FileCard), 🧩 Icon Refs (309 个图标)
+- 页面总计: 8 页 (Dashboard/Console/Players/Config/Mods/Files/Server Setup/System Settings)
+- 交互弹窗: Files右键菜单, PermissionsDialog
 - 来源库: shadcn-ui-×5, Material Dashboard ×4
 
 ## 设计规范（2026-08-04 确立）
