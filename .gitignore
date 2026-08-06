@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Build
+dist/
+.vite/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Research (read-only third-party)
+.research/
+
+# Serena (tool config, not project code)
+.serena/

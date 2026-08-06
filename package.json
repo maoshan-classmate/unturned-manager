@@ -1,0 +1,16 @@
+{
+  "name": "unturned-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unturned 3.x Linux 专用服务器 Web 管理面板",
+  "workspaces": [
+    "shared",
+    "manager-server",
+    "manager-web"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w manager-server && npm run typecheck -w manager-web",
+    "lint": "echo 'lint not configured yet'",
+    "format": "echo 'format not configured yet'"
+  }
+}
