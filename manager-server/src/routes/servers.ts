@@ -19,8 +19,9 @@ export function createServersRouter(serverManager: IServerManager): Router {
     try {
       await serverManager.createServer(req.body);
       res.status(201).json({ data: { message: '服务端创建成功' } });
-    } catch {
-      res.status(500).json({ error: { code: 'server_error', message: '创建服务端失败' } });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '创建服务端失败';
+      res.status(500).json({ error: { code: 'server_error', message: msg } });
     }
   });
 

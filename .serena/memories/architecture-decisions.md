@@ -25,6 +25,21 @@
 15. **shadcn v4**：基于 @base-ui/react 原语（非 @radix-ui）。组件复制到 src/components/ui/，可按需修改源码（如 forwardRef）。
 16. **表单方案**：react-hook-form + zod + shadcn Input/Button。已修改 shadcn Input 添加 forwardRef 以支持 register()。
 
+17. **RCON 双协议凭证分离**：OpenMod 使用 `openModCredential`（格式 `SteamID:密码`），RocketMod 使用 `rocketModPassword`（裸密码）。共享 `rconPassword` 字段会导致跨协议凭证冲突——`ServerConfig.rconPassword` 在 v1 默认映射为 RocketMod 密码。
+18. **RCON 安全门控**（`routes/rcon.ts`）：危险指令（shutdown/ban/slay/resetconfig/unadmin/unban/cheats）需前端 `{confirmed: true}` 才执行，后端返回 428 Precondition Required；Owner 专属指令（owner/cheats/shutdown）校验 JWT role=admin。
+19. **ServerManager 竞态防护**：`restart()` 全过程由一个 `activeOperation` 覆盖，内部调用 `stopInternal/startInternal` 不被 stop/start 的 409 门控阻拦。
+20. **进程生命周期**：`ProcessSupervisor.spawn` 必须传 `cwd`（U3DS 安装目录），启动命令使用绝对路径 `<installDir>/ServerHelper.sh`；`ServerManager.loadServersFromDb` 从 `servers.install_dir` 列读取。
+21. **A2S 就绪检测**：CLAUDE.md §4.6 规定 30s 超时报错（非 60s 仅 warn）；`pollA2S` 超时 throw Error → `ServerManager.start` catch 回滚状态为 STOPPED。
+22. **DEGRADED 接线**：`ServerManager` constructor 订阅 `rconManager.onStateChange`，连续 3 次 ping 失败 → `transition(DEGRADED)`，恢复 → `transition(RUNNING)`。
+23. **崩溃恢复**：`ServerManager` constructor 订阅 `processSupervisor.onCrash`，进程异常退出 → `transition(STOPPED)` + audit_log 记录 `server.crash`。
+
+## Sprint 2 模块实现进度 (2026-08-07)
+- ✅ 基础设施层: ProcessSupervisor, RconManager, A2SClient, FileLockProvider（全部真实实现）
+- ✅ 核心域层: ServerManager（五状态机 + 审计日志），AuthService（Sprint 1）
+- ⏳ 核心域层待实现: ConfigService, FilesService, SteamCmdManager, WorkshopMetadataService, LogStreamer
+- ✅ API 层: WsBroadcaster（Sprint 1 已真实实现）
+- ✅ 前端: DashboardPage（StatCard×4 + QuickActions），ConsolePage（Toolbar + Output + Input + 危险确认）
+
 ## 配置文件优先级
 Commands.dat (启动参数/模式) → Config.txt (游戏玩法/浏览器) → WorkshopDownloadConfig.json (Mod) → Rocket/OpenMod 插件配置
 

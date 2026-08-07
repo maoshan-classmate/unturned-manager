@@ -85,11 +85,13 @@ export function Sidebar() {
       {/* ── Navigation (Figma: 9 items, y=80→420, 40px rhythm, 14px Regular) ── */}
       <nav className="mt-2">
         {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-          const fullTo = to === '/' ? prefix : `${prefix}${to}`;
+          // Dashboard always links to root "/"; other routes use serverId prefix
+          const fullTo = to === '/' ? '/' : `${prefix}${to}`;
           return (
             <NavLink
               key={to}
               to={fullTo}
+              end={to === '/'}
               className={({ isActive }) =>
                 `relative flex items-center h-[40px] px-6 text-sm font-normal transition-colors ${
                   isActive

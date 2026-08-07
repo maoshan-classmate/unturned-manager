@@ -17,48 +17,13 @@ import {
 } from '@unturned-manager/shared';
 
 import { AuthService } from './modules/auth/AuthService.js';
+import { FileLockProvider } from './modules/filelock/FileLockProvider.js';
+import { ProcessSupervisor } from './modules/process/ProcessSupervisor.js';
+import { A2SClient } from './modules/a2s/A2SClient.js';
+import { RconManager } from './modules/rcon/RconManager.js';
+import { ServerManager } from './modules/server/ServerManager.js';
 
-// ─── Stub factories ───────────────────────────────────
-
-function createFileLockProviderStub(): IFileLockProvider {
-  return {
-    acquire: async () => {},
-    release: () => {},
-    isLocked: () => false,
-  };
-}
-
-function createA2SClientStub(): IA2SClient {
-  return {
-    query: async () => ({ players: 0, maxPlayers: 0, map: '', version: '', latency: 0 }),
-    destroy: async () => {},
-  };
-}
-
-function createRconManagerStub(): IRconManager {
-  return {
-    connect: async () => {},
-    disconnect: () => {},
-    execute: async () => { throw new Error('Not implemented: RconManager.execute'); },
-    getProtocol: () => RconProtocol.UNREACHABLE,
-    isReachable: () => false,
-    destroy: async () => {},
-    onStateChange: () => {},
-  };
-}
-
-function createProcessSupervisorStub(): IProcessSupervisor {
-  return {
-    spawn: async () => { throw new Error('Not implemented: ProcessSupervisor.spawn'); },
-    gracefulShutdown: async () => {},
-    waitForExit: async () => {},
-    forceKill: () => {},
-    isRunning: () => false,
-    destroy: async () => {},
-    onStdout: () => {},
-    onCrash: () => {},
-  };
-}
+// ─── Stub factories (Wave 2+ 逐步替换为真实实现) ────────
 
 function createBroadcasterStub(): IBroadcaster {
   return {
@@ -121,28 +86,6 @@ function createLogStreamerStub(): ILogStreamer {
   };
 }
 
-function createServerManagerStub(
-  processSupervisor: IProcessSupervisor,
-  rconManager: IRconManager,
-  a2sClient: IA2SClient,
-  configService: IConfigService,
-  broadcaster: IBroadcaster,
-): IServerManager {
-  return {
-    getState: () => ServerState.STOPPED,
-    getActiveOperation: () => ({ type: 'none' }),
-    listServers: async () => [],
-    createServer: async () => { throw new Error('Not implemented'); },
-    configureServer: async () => { throw new Error('Not implemented'); },
-    start: async () => { throw new Error('Not implemented'); },
-    stop: async () => { throw new Error('Not implemented'); },
-    restart: async () => { throw new Error('Not implemented'); },
-    forceStop: async () => { throw new Error('Not implemented'); },
-    applyModChanges: async () => { throw new Error('Not implemented'); },
-    updateServerBinaries: async () => { throw new Error('Not implemented'); },
-  };
-}
-
 // ─── Container ────────────────────────────────────────
 
 export interface AppContainer {
@@ -160,21 +103,27 @@ export interface AppContainer {
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
-  const fileLock = createFileLockProviderStub();
-  const a2sClient = createA2SClientStub();
-  const rconManager = createRconManagerStub();
-  const processSupervisor = createProcessSupervisorStub();
+  // ── Wave 1: 基础设施层（真实实现）────────────────────
+  const fileLock = new FileLockProvider();
+  const a2sClient = new A2SClient();
+  const rconManager = new RconManager();
+  const processSupervisor = new ProcessSupervisor();
+
+  // ── Wave 1: API 层 ───────────────────────────────────
   const broadcaster = createBroadcasterStub();
+  // ── Wave 2: 核心域层（逐步替换 stub）──────────────
   const configService = createConfigServiceStub();
   const filesService = createFilesServiceStub();
   const steamCmdManager = createSteamCmdManagerStub();
   const workshopMeta = createWorkshopMetadataServiceStub();
   const logStreamer = createLogStreamerStub();
-  const serverManager = createServerManagerStub(
-    processSupervisor, rconManager, a2sClient, configService, broadcaster
+
+  // ServerManager (Wave 2: 真实实现)
+  const serverManager = new ServerManager(
+    db, processSupervisor, rconManager, a2sClient, configService, broadcaster,
   );
 
-  // AuthService 是 Sprint 1 唯一真实实现
+  // AuthService (Sprint 1: 真实实现)
   const authService = new AuthService(db);
 
   return {

@@ -3,8 +3,10 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.js';
 import { Sidebar } from './components/layout/Sidebar.js';
 import { LoginPage } from './pages/LoginPage.js';
+import { DashboardPage } from './pages/DashboardPage.js';
+import { ConsolePage } from './pages/ConsolePage.js';
 
-// 占位页面
+// 占位页面（Sprint 3+ 逐个替换）
 function Placeholder({ title }: { title: string }) {
   return (
     <div className="flex items-center justify-center h-full">
@@ -29,10 +31,10 @@ function AppLayout() {
         <Sidebar />
         <main className="flex-1 overflow-auto p-6">
           <Routes>
-            <Route path="/" element={<Placeholder title="Dashboard" />} />
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/_default" element={<Navigate to="/" replace />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
-            <Route path="/:serverId/console" element={<Placeholder title="Console" />} />
+            <Route path="/:serverId/console" element={<ConsolePage />} />
             <Route path="/:serverId/mods" element={<Placeholder title="Mods" />} />
             <Route path="/:serverId/players" element={<Placeholder title="Players" />} />
             <Route path="/:serverId/config/commands" element={<Placeholder title="Config" />} />

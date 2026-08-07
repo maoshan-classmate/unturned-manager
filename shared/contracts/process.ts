@@ -1,7 +1,7 @@
 import type { ServerId } from '../types/branded.js';
 
 export interface IProcessSupervisor {
-  spawn(serverId: ServerId, command: string, args: string[]): Promise<number>;
+  spawn(serverId: ServerId, command: string, args: string[], cwd?: string): Promise<number>;
   gracefulShutdown(serverId: ServerId, timeoutMs?: number): Promise<void>;
   waitForExit(serverId: ServerId, timeoutMs: number): Promise<void>;
   forceKill(serverId: ServerId): void;

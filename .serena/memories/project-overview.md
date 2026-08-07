@@ -1,6 +1,23 @@
 ## 项目概述
 Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前端 React + shadcn/ui + Tailwind，后端 Node.js + Express + TypeScript，Docker Compose 部署。
 
+## Sprint 2 实现进度 (2026-08-07)
+
+### 后端模块 (6/12 real)
+- ✅ AuthService — JWT + Argon2id + token rotation
+- ✅ ServerManager — 五状态机 + activeOperation 竞态防护 + audit_log
+- ✅ ProcessSupervisor — child_process.spawn + 优雅关停 + cwd
+- ✅ RconManager — OpenMod→RocketMod 自动探测 + 凭证分离 + 心跳
+- ✅ A2SClient — UDP A2S_INFO 查询 (30s 超时)
+- ✅ FileLockProvider — 进程内文件互斥锁
+- ⏳ ConfigService / FilesService / SteamCmdManager / WorkshopMetadataService / LogStreamer / WsBroadcaster（stub/部分实现）
+
+### 前端页面 (3/10 real)
+- ✅ LoginPage — shadcn/ui + Motion + RHF + Zod + 401 自动刷新
+- ✅ DashboardPage — StatCard×4 + QuickActions (启动/停止/重启) + loading/error/empty 三态
+- ✅ ConsolePage — ServerTabBar + 8 预设命令 + Output (WS+REST) + Input (↑↓历史+危险确认)
+- ⏳ Mods / Players / Config / Files / Permissions / Server Setup / Settings（Placeholder）
+
 ## 技术选型（已确认）
 - 前端：React 18 + TypeScript + Vite + Tailwind CSS 3 + shadcn/ui
 - 图表：recharts
