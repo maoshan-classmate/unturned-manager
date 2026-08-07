@@ -82,6 +82,9 @@ Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前
 - Input (260×36), Select (260×36), Switch/ON+OFF, Checkbox, ConfigDialog (480×340)
 - Server Setup 交互弹窗: 编辑计划任务 (450×340), 编辑启动命令 (500×280), SteamCMD 路径 (450×200)
 
+## 共享组件清单（2026-08-07 最新：10 个）
+PageState / ConfirmDialog / Dialog / SearchInput / TabBar / Card / PasswordInput / DataTable / ConfigSection / ConfigToggle / ConfigField
+
 ## 关键教训
 - Lucide 图标通过 stroke 渲染，需用 `set_strokes`，`set_fills` 无效
 - 6 页面 Sidebar 必须用组件实例，不能 detach
