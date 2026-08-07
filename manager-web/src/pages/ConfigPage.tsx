@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Save, AlertCircle, Loader2, Check, FileText, Package, Wrench, Cpu, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Save, AlertCircle, Loader2, Check, FileText, Package, Wrench, Cpu } from 'lucide-react';
 import { TabBar } from '../components/shared/TabBar.js';
 import { ConfigSection } from '../components/shared/ConfigSection.js';
 import { ConfigField } from '../components/shared/ConfigField.js';
 import { ConfigToggle } from '../components/shared/ConfigToggle.js';
 import { SearchInput } from '../components/shared/SearchInput.js';
-import { Card } from '../components/shared/Card.js';
+import { DataTable, type DataTableColumn } from '../components/shared/DataTable.js';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
@@ -173,11 +173,6 @@ export function ConfigPage() {
   const wsTotalPages = Math.max(1, Math.ceil(filteredWorkshop.length / PAGE_SIZE));
   const wsPaged = filteredWorkshop.slice(workshopPage * PAGE_SIZE, (workshopPage + 1) * PAGE_SIZE);
 
-  const StatusBadge = ({ status }: { status: WorkshopRow['status'] }) => {
-    const map: Record<WorkshopRow['status'], { c: string; t: string }> = { enabled: { c: 'bg-emerald-500', t: '已启用' }, disabled: { c: 'bg-slate-500', t: '未启用' }, downloading: { c: 'bg-amber-500', t: '下载中' }, error: { c: 'bg-slate-500', t: '未启用' } };
-    return <span className={`inline-flex px-2.5 py-0.5 rounded text-[10px] font-medium text-white ${map[status].c}`}>{map[status].t}</span>;
-  };
-
   // ── Loading / Error / Empty ──
   if (serverLoading || configLoading) return <Centered><Loader2 className="h-8 w-8 animate-spin text-emerald-500" /><span className="text-sm text-slate-400">加载中...</span></Centered>;
   if (serverError || configError) return <Centered><AlertCircle size={32} className="text-red-500" /><span className="text-sm text-slate-100">无法加载配置</span><span className="text-xs text-slate-500">{serverError || configError}</span><Button onClick={fetchConfig} variant="ghost" size="sm" className="text-slate-400">重试</Button></Centered>;
@@ -308,55 +303,53 @@ function TxtSection({ title, fields: fieldDefs, txtFields, onChange }: {
 }
 
 // ── Workshop tab ──
+
+const WS_COLUMNS: DataTableColumn[] = [
+  { key: 'name', label: 'Mod名称' },
+  { key: 'fileId', label: 'Workshop ID' },
+  { key: 'status', label: '状态' },
+  { key: 'actions', label: '操作' },
+];
+
 function WorkshopTab({ rows, paged, search, onSearch, statusFilter, page, totalPages, onPage, onToggleSelect, onToggleStatus, onRemove }: {
   rows: WorkshopRow[]; paged: WorkshopRow[]; search: string; onSearch: (v: string) => void;
   statusFilter: string; page: number; totalPages: number; onPage: (p: number) => void;
   onToggleSelect: (id: string) => void; onToggleStatus: (id: string) => void; onRemove: (id: string) => void;
 }) {
+  const rowData = paged.map((r) => ({
+    _key: r.fileId,
+    name: (
+      <div className="flex items-center gap-2">
+        <input type="checkbox" checked={r.selected} onChange={() => onToggleSelect(r.fileId)} className="w-4 h-4 rounded accent-emerald-500" />
+        <span className="text-slate-200 truncate">{r.name}</span>
+      </div>
+    ),
+    fileId: <span className="font-mono text-xs text-slate-400">{r.fileId}</span>,
+    status: <StatusBadge status={r.status} />,
+    actions: (
+      <div className="flex items-center gap-2">
+        <button onClick={() => onToggleStatus(r.fileId)} className={`px-2.5 py-0.5 rounded text-[11px] text-white ${r.status === 'enabled' ? 'bg-red-500' : 'bg-emerald-500'}`}>
+          {r.status === 'enabled' ? '禁用' : '启用'}
+        </button>
+        <button onClick={() => onRemove(r.fileId)} className="px-2.5 py-0.5 rounded text-[11px] bg-red-500 text-black">移除</button>
+      </div>
+    ),
+  }));
+
   return (
     <div className="flex flex-col h-full">
       {/* Filter bar */}
       <div className="shrink-0 p-4 pb-2 flex flex-wrap items-center gap-3">
         <SearchInput value={search} onChange={onSearch} placeholder="筛选Mod..." width={200} />
-        <div className="flex items-center rounded-md px-3 h-9 text-sm text-slate-400 border border-slate-600 bg-slate-950" style={{ width: 120 }}>{statusFilter}</div>
+        <div className="flex items-center rounded-md px-3 h-9 text-sm text-slate-400 border border-slate-700 bg-slate-950" style={{ width: 120 }}>{statusFilter}</div>
         <div className="flex-1" />
         <Button size="sm" className="h-9 text-xs gap-1 bg-emerald-500 text-white">一键更新</Button>
         <Button size="sm" variant="outline" className="h-9 text-xs gap-1">批量更新</Button>
       </div>
       <div className="shrink-0 mx-4 border-t border-slate-800" />
-      {/* Header */}
-      <div className="shrink-0 flex items-center px-4 py-2 text-xs text-slate-500">
-        <span className="w-6" />
-        <span className="w-36 xl:w-48">Mod名称</span>
-        <span className="w-36 xl:w-44">Workshop ID</span>
-        <span className="w-16">状态</span>
-        <span>操作</span>
-      </div>
-      {/* Rows */}
-      <div className="flex-1 overflow-auto px-4">
-        {paged.length === 0 ? (
-          <div className="text-center py-8 text-xs text-slate-500">暂无 Workshop Mod</div>
-        ) : paged.map((r) => (
-          <div key={r.fileId} className="flex items-center py-2.5 text-sm border-t border-slate-800">
-            <input type="checkbox" checked={r.selected} onChange={() => onToggleSelect(r.fileId)} className="w-4 h-4 rounded accent-emerald-500 mr-2" />
-            <span className="w-36 xl:w-48 text-slate-200 truncate">{r.name}</span>
-            <span className="w-36 xl:w-44 text-slate-400 text-xs font-mono truncate">{r.fileId}</span>
-            <span className="w-16"><StatusBadge status={r.status} /></span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => onToggleStatus(r.fileId)} className={`px-2.5 py-0.5 rounded text-[11px] text-white ${r.status === 'enabled' ? 'bg-red-500' : 'bg-emerald-500'}`}>{r.status === 'enabled' ? '禁用' : '启用'}</button>
-              <button onClick={() => onRemove(r.fileId)} className="px-2.5 py-0.5 rounded text-[11px] bg-red-500 text-black">移除</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {/* Pagination */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-3 text-xs text-slate-500">
-        <span>共 {rows.length} 条</span>
-        <div className="flex items-center gap-4 text-slate-400">
-          <button onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0} className="disabled:opacity-30">← 上一页</button>
-          <span>第 {page + 1}/{totalPages} 页</span>
-          <button onClick={() => onPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1} className="disabled:opacity-30">下一页 →</button>
-        </div>
+      <div className="flex flex-col flex-1 px-4">
+        <DataTable columns={WS_COLUMNS} data={rowData} keyField="_key" emptyText="暂无 Workshop Mod"
+          pagination={{ page, totalPages, total: rows.length, label: '条', onPageChange: onPage }} />
       </div>
     </div>
   );
