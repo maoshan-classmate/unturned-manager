@@ -33,6 +33,15 @@ interface CommandsFields {
   Sync: boolean;
 }
 
+const FIELD_LABELS: Record<keyof CommandsFields, string> = {
+  Name: '服务器名称', Port: '端口', MaxPlayers: '最大玩家数', Map: '地图',
+  Mode: '难度', Owner: '服主 SteamID64', Perspective: '视角限制',
+  Chatrate: '聊天冷却(秒)', Cycle: '昼夜循环(秒)', Timeout: 'Ping 超时(ms)',
+  Queue_Size: '排队上限', GSLT: 'Game Server Login Token', Password: '服务器密码',
+  Cheats: '启用作弊', Filter: '名称过滤', Whitelisted: '白名单模式',
+  Gold: '仅 Gold 会员', Hide_Admins: '隐藏管理员', Sync: '跨服同步',
+};
+
 const DEFAULT_FIELDS: CommandsFields = {
   Name: '', Port: '27015', MaxPlayers: '16', Map: 'PEI', Mode: 'Normal',
   Owner: '', Perspective: 'Both', Chatrate: '0.25', Cycle: '3600',
@@ -179,7 +188,7 @@ export function ConfigPage() {
         <div className="space-y-3">
           {(['Name', 'Owner', 'Password'] as const).map((key) => (
             <label key={key} className="block">
-              <span className="text-xs" style={{ color: '#94A3B8' }}>{key}</span>
+              <span className="text-xs" style={{ color: '#94A3B8' }}>{FIELD_LABELS[key]}</span>
               <Input value={String(fields[key])} onChange={(e) => handleFieldChange(key, e.target.value)}
                 className="mt-1 h-8 text-sm" type={key === 'Password' ? 'password' : 'text'} />
             </label>
@@ -193,7 +202,7 @@ export function ConfigPage() {
         <div className="space-y-3">
           {(['Map', 'Mode', 'Perspective'] as const).map((key) => (
             <label key={key} className="block">
-              <span className="text-xs" style={{ color: '#94A3B8' }}>{key}</span>
+              <span className="text-xs" style={{ color: '#94A3B8' }}>{FIELD_LABELS[key]}</span>
               <Input value={String(fields[key])} onChange={(e) => handleFieldChange(key, e.target.value)}
                 className="mt-1 h-8 text-sm" />
             </label>
@@ -207,7 +216,7 @@ export function ConfigPage() {
         <div className="space-y-3">
           {(['Port', 'MaxPlayers', 'Timeout', 'Queue_Size'] as const).map((key) => (
             <label key={key} className="block">
-              <span className="text-xs" style={{ color: '#94A3B8' }}>{key}</span>
+              <span className="text-xs" style={{ color: '#94A3B8' }}>{FIELD_LABELS[key]}</span>
               <Input value={String(fields[key])} onChange={(e) => handleFieldChange(key, e.target.value)}
                 className="mt-1 h-8 text-sm" />
             </label>
@@ -242,7 +251,7 @@ export function ConfigPage() {
         <div className="grid grid-cols-2 gap-3">
           {(['Chatrate', 'Cycle', 'GSLT'] as const).map((key) => (
             <label key={key} className="block">
-              <span className="text-xs" style={{ color: '#94A3B8' }}>{key}</span>
+              <span className="text-xs" style={{ color: '#94A3B8' }}>{FIELD_LABELS[key]}</span>
               <Input value={String(fields[key])} onChange={(e) => handleFieldChange(key, e.target.value)}
                 className="mt-1 h-8 text-sm" type={key === 'GSLT' ? 'password' : 'text'} />
             </label>
