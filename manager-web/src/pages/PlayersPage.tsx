@@ -127,42 +127,47 @@ export function PlayersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid #334155' }}>
-                {['Player', 'Steam ID', 'Character', 'Ping', 'Actions'].map((h) => (
-                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: '#64748B' }}>{h}</th>
+                {['Player', 'Steam ID', 'Character', 'Ping', 'Online', 'Actions'].map((h) => (
+                  <th key={h} className="text-left px-3 py-2 text-xs font-medium" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.steamId} style={{ borderBottom: '1px solid #1E293B' }} className="hover:bg-slate-800/30">
-                  <td className="px-4 py-2.5 flex items-center gap-2">
+                  <td className="px-3 py-2 flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium"
                       style={{ backgroundColor: '#22C55E', color: '#fff' }}>
                       {p.name.charAt(0).toUpperCase()}
                     </div>
-                    <span style={{ color: '#F1F5FB' }}>{p.name}</span>
+                    <span style={{ color: '#F1F5FB', fontSize: 13 }}>{p.name}</span>
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs" style={{ color: '#94A3B8' }}>{p.steamId}</td>
-                  <td className="px-4 py-2.5" style={{ color: '#94A3B8' }}>{p.character}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="text-xs px-2 py-0.5 rounded"
-                      style={{
-                        backgroundColor: p.ping < 80 ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                        color: p.ping < 80 ? '#22C55E' : '#F59E0B',
-                      }}>
-                      {p.ping}ms
+                  <td className="px-3 py-2 font-mono text-xs" style={{ color: '#94A3B8' }}>{p.steamId}</td>
+                  <td className="px-3 py-2 text-xs" style={{ color: '#94A3B8' }}>{p.character}</td>
+                  <td className="px-3 py-2">
+                    {(() => {
+                      let bg = 'rgba(34,197,94,0.15)', color = '#22C55E';
+                      if (p.ping >= 150) { bg = 'rgba(239,68,68,0.15)'; color = '#EF4444'; }
+                      else if (p.ping >= 80) { bg = 'rgba(245,158,11,0.15)'; color = '#F59E0B'; }
+                      return <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ backgroundColor: bg, color }}>{p.ping}ms</span>;
+                    })()}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1 text-xs" style={{ color: '#22C55E' }}>
+                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22C55E' }} />
+                      在线
                     </span>
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 py-2">
                     <div className="flex items-center gap-1">
-                      <Button onClick={() => setConfirmAction({ type: 'kick', target: p })}
-                        className="h-6 text-xs px-2" style={{ backgroundColor: 'transparent', color: '#F59E0B' }}>
-                        <DoorOpen size={12} className="mr-1" /> Kick
-                      </Button>
-                      <Button onClick={() => setConfirmAction({ type: 'ban', target: p })}
-                        className="h-6 text-xs px-2" style={{ backgroundColor: 'transparent', color: '#EF4444' }}>
-                        <Gavel size={12} className="mr-1" /> Ban
-                      </Button>
+                      <button onClick={() => setConfirmAction({ type: 'kick', target: p })}
+                        className="p-1 rounded hover:bg-slate-700 transition-colors" title="踢出" style={{ color: '#F59E0B' }}>
+                        <DoorOpen size={14} />
+                      </button>
+                      <button onClick={() => setConfirmAction({ type: 'ban', target: p })}
+                        className="p-1 rounded hover:bg-slate-700 transition-colors" title="封禁" style={{ color: '#EF4444' }}>
+                        <Gavel size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>

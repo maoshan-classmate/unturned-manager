@@ -22,7 +22,7 @@ export function ServerSetupPage() {
   const { start, stop, restart, pendingId } = useServerActions();
 
   const [tab, setTab] = useState<SetupTab>('servers');
-  const [steamCmdStatus, setSteamCmdStatus] = useState<{ isInstalled: boolean; installPath?: string } | null>(null);
+  const [steamCmdStatus, setSteamCmdStatus] = useState<{ isInstalled: boolean; installPath?: string; version?: string; lastChecked?: string } | null>(null);
   const [scLoading, setScLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState({ id: '', name: '', port: '27015', owner: '', installDir: '', password: '' });
@@ -163,6 +163,7 @@ export function ServerSetupPage() {
                       <p className="text-xs" style={{ color: '#64748B' }}>
                         {s.id} · 端口 {s.gamePort} · {stateLabel(s.state ?? 'STOPPED')}
                       </p>
+                      {s.installDir && <p className="text-xs mt-0.5" style={{ color: '#475569' }}>路径: {s.installDir}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -202,9 +203,18 @@ export function ServerSetupPage() {
           {scLoading ? (
             <Loader2 size={16} className="animate-spin" style={{ color: '#22C55E' }} />
           ) : (
-            <div className="space-y-2 text-sm" style={{ color: '#94A3B8' }}>
-              <p>安装状态：{steamCmdStatus?.isInstalled ? '✅ 已安装' : '❌ 未安装'}</p>
-              {steamCmdStatus?.installPath && <p>安装路径：{steamCmdStatus.installPath}</p>}
+            <div className="space-y-2">
+              {[
+                ['安装状态', steamCmdStatus?.isInstalled ? '已安装' : '未安装', steamCmdStatus?.isInstalled ? '#22C55E' : '#EF4444'],
+                ['安装路径', steamCmdStatus?.installPath || '—'],
+                ['版本', steamCmdStatus?.version || '—'],
+                ['最后检查', steamCmdStatus?.lastChecked ? new Date(steamCmdStatus.lastChecked).toLocaleString() : '—'],
+              ].map(([label, value, color]) => (
+                <div key={label as string} className="flex items-center text-sm">
+                  <span className="w-24 text-slate-500 flex-shrink-0">{label}</span>
+                  <span style={{ color: (color as string) || '#94A3B8' }}>{value as string}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>

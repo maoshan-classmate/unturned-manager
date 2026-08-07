@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import {
-  Sliders, Shield, Key, Globe, FileText, Gamepad2,
-  AlertCircle, Loader2, Save, Check,
+  Shuffle, Shield, Key, Globe, FileText, Gamepad2,
+  AlertCircle, Save, Check,
 } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
+import { PasswordInput } from '../components/shared/PasswordInput.js';
+import { Card } from '../components/shared/Card.js';
 
 /**
  * Settings 页面——Figma 23:19917 🎨 System Settings (P1)。
@@ -53,22 +55,20 @@ export function SettingsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 账户安全 */}
-        <div className="p-4 rounded-lg" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Key size={16} style={{ color: '#22C55E' }} />
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>账户安全</h3>
-          </div>
+        <Card icon={Key} title="账户安全">
           <div className="space-y-3">
             {[
-              ['current', '当前密码', 'password'],
-              ['newPass', '新密码', 'password'],
-              ['confirm', '确认新密码', 'password'],
-            ].map(([key, label, type]) => (
+              ['current', '当前密码'],
+              ['newPass', '新密码'],
+              ['confirm', '确认新密码'],
+            ].map(([key, label]) => (
               <label key={key as string} className="block">
                 <span className="text-xs" style={{ color: '#64748B' }}>{label as string}</span>
-                <Input value={String(passwordForm[key as keyof typeof passwordForm] ?? '')}
+                <PasswordInput
+                  value={String(passwordForm[key as keyof typeof passwordForm] ?? '')}
                   onChange={(e) => setPasswordForm((prev) => ({ ...prev, [key as string]: e.target.value }))}
-                  className="mt-1 h-8 text-sm" type={type as string} />
+                  className="mt-1 h-8 text-sm"
+                />
               </label>
             ))}
             <Button onClick={handleChangePassword} disabled={saving}
@@ -76,14 +76,10 @@ export function SettingsPage() {
               <Save size={12} className="mr-1" /> {saving ? '保存中...' : '修改密码'}
             </Button>
           </div>
-        </div>
+        </Card>
 
         {/* 安全配置 */}
-        <div className="p-4 rounded-lg" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Shield size={16} style={{ color: '#22C55E' }} />
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>安全配置</h3>
-          </div>
+        <Card icon={Shield} title="安全配置">
           <div className="space-y-2 text-sm" style={{ color: '#94A3B8' }}>
             <div className="flex items-center justify-between">
               <span>凭据加密</span>
@@ -102,14 +98,10 @@ export function SettingsPage() {
               <span style={{ color: '#64748B' }}>暂未配置</span>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* 网页设置 */}
-        <div className="p-4 rounded-lg" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Globe size={16} style={{ color: '#22C55E' }} />
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>网页设置</h3>
-          </div>
+        <Card icon={Globe} title="网页设置">
           <div className="space-y-2 text-sm" style={{ color: '#94A3B8' }}>
             <div className="flex items-center justify-between">
               <span>主题</span>
@@ -124,14 +116,10 @@ export function SettingsPage() {
               <span style={{ color: '#64748B' }}>Dashboard</span>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* 面板日志 */}
-        <div className="p-4 rounded-lg" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <FileText size={16} style={{ color: '#22C55E' }} />
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>面板日志</h3>
-          </div>
+        <Card icon={FileText} title="面板日志">
           <div className="space-y-2 text-sm" style={{ color: '#94A3B8' }}>
             <div className="flex items-center justify-between">
               <span>日志级别</span>
@@ -146,14 +134,10 @@ export function SettingsPage() {
               <span>结构化 JSON</span>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* 游戏默认值 */}
-        <div className="p-4 rounded-lg md:col-span-2" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Gamepad2 size={16} style={{ color: '#22C55E' }} />
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>游戏默认值</h3>
-          </div>
+        <Card icon={Gamepad2} title="游戏默认值" className="md:col-span-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" style={{ color: '#94A3B8' }}>
             {[
               ['默认端口', '27015'],
@@ -171,7 +155,7 @@ export function SettingsPage() {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

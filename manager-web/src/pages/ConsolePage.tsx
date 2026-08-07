@@ -30,12 +30,63 @@ const PRESET_COMMANDS: PresetCommand[] = [
   { label: '帮助', command: 'Help' },
 ];
 
-// ─── ANSI 简易着色 ────────────────────────────────────
+// ─── ANSI 着色 ────────────────────────────────────────
 
-const ANSI_RE = /\x1b\[(\d+)m/g;
+/** ANSI color code → CSS color */
+const ANSI_COLORS: Record<number, string> = {
+  // 常规
+  0: '',        // reset
+  1: 'font-weight:bold',
+  30: '#000',  31: '#EF4444', 32: '#22C55E', 33: '#F59E0B',
+  34: '#3B82F6', 35: '#A855F7', 36: '#06B6D4', 37: '#F1F5FB',
+  // 亮色
+  90: '#64748B', 91: '#FCA5A5', 92: '#86EFAC', 93: '#FDE68A',
+  94: '#93C5FD', 95: '#D8B4FE', 96: '#67E8F9', 97: '#FFF',
+  // 背景
+  40: 'background:#000', 41: 'background:#EF4444', 42: 'background:#22C55E',
+};
 
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[\d+m/g, '');
+/** 将 ANSI 转义序列转换为 HTML span 标签，保留颜色 */
+function ansiToHtml(text: string): string {
+  // 先转义 HTML 实体
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  let result = '';
+  let i = 0;
+  let currentStyles: string[] = [];
+
+  while (i < html.length) {
+    // 匹配 ANSI 转义序列 \x1b[Nm 或 \x1b[N;Nm
+    if (html[i] === '\x1b' && html[i + 1] === '[') {
+      const end = html.indexOf('m', i);
+      if (end === -1) { result += html[i]; i++; continue; }
+
+      const codes = html.slice(i + 2, end).split(';').map(Number);
+      i = end + 1;
+
+      // 关闭之前的 span
+      if (currentStyles.length > 0) result += '</span>';
+
+      for (const code of codes) {
+        if (code === 0) { currentStyles = []; }
+        else if (ANSI_COLORS[code]) { currentStyles.push(ANSI_COLORS[code]); }
+      }
+
+      // 开启新 span
+      if (currentStyles.length > 0) {
+        result += `<span style="${currentStyles.join(';')}">`;
+      }
+    } else {
+      result += html[i];
+      i++;
+    }
+  }
+
+  if (currentStyles.length > 0) result += '</span>';
+  return result;
 }
 
 // ─── Console 页面 ──────────────────────────────────────
@@ -220,9 +271,8 @@ export function ConsolePage() {
                       ? '#EF4444'
                       : '#94A3B8',
               }}
-            >
-              {stripAnsi(line.text)}
-            </div>
+              dangerouslySetInnerHTML={{ __html: ansiToHtml(line.text) }}
+            />
           ))
         )}
       </div>
