@@ -46,7 +46,7 @@ function AppLayout() {
             <Route path="/:serverId/config/commands" element={<ConfigPage />} />
             <Route path="/:serverId/files" element={<FilesPage />} />
             <Route path="/:serverId/server-setup" element={<ServerSetupPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/:serverId/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>

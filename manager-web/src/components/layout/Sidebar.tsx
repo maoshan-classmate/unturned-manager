@@ -84,7 +84,7 @@ export function Sidebar() {
       {/* ── Navigation (Figma: 9 items, y=80→420, 40px rhythm, 14px Regular) ── */}
       <nav className="mt-2">
         {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-          // Dashboard always links to root "/"; other routes use serverId prefix
+          // Dashboard 始终指向根路由
           const fullTo = to === '/' ? '/' : `${prefix}${to}`;
           return (
             <NavLink
