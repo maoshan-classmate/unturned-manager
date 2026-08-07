@@ -70,6 +70,41 @@
 - Sprint 4：Settings + Config 剩余 Tab（Config.txt/Workshop/OpenMod/Rocket 编辑器）
 - Sprint 5：3 项真机验证 + PTY 自举 + 多 ServerID 实例
 
+### 组件抽象 Session（2026-08-07 第三次会话）
+
+#### 创建的文件（7 个）
+- `manager-web/src/components/shared/PageState.tsx` — 页面四态容器（loading/error/empty/data）
+- `manager-web/src/components/shared/ConfirmDialog.tsx` — 统一确认弹窗（支持 danger variant）
+- `manager-web/src/components/shared/Dialog.tsx` — 通用对话框（含 Title/Footer）
+- `manager-web/src/components/shared/SearchInput.tsx` — 带搜索图标的输入框
+- `manager-web/src/components/shared/TabBar.tsx` — 页面内 Tab 切换
+- `manager-web/src/components/shared/Card.tsx` — 暗色卡片容器（#1E293B + #334059）
+- `docs/architecture/component-abstraction-rules.md` — 组件抽象铁律文档
+
+#### 修改的文件（8 个）
+- `lib/utils.ts` — 新增 formatSize / formatDate / stateLabel / stateColor / errorMessage
+- `Pages/ConfigPage.tsx` — TabBar 替换内联 Tab + 删除 TAB_LABELS
+- `Pages/ServerSetupPage.tsx` — TabBar 替换 + utils stateLabel/stateColor 替换 + 删除内联 Plus SVG
+- `Pages/ModsPage.tsx` — SearchInput 替换 + utils formatSize 替换
+- `Pages/PlayersPage.tsx` — PageState + SearchInput + ConfirmDialog 替换
+- `Pages/FilesPage.tsx` — SearchInput 替换 + formatSize/formatDate from utils
+- `Pages/ConsolePage.tsx` — 预设命令中文化（Say→广播 等 8 条）
+- `index.css` — @keyframes spin + :-webkit-autofill 暗色覆盖 + input/button 边框暗色
+
+#### 识别出的重复模式（25 种）
+- 18 处 loading/error/empty 三件套 → PageState
+- 30+ 处 #1E293B + #334059 卡片 → Card
+- 3 处 Search + Input 搜索框 → SearchInput
+- 2 处 TabBar → TabBar 组件
+- 2 处 formatSize → lib/utils
+- 2 处 stateColor/stateLabel（颜色还不一致）→ lib/utils
+- 3 处内联确认弹窗 → ConfirmDialog
+- 40+ 个 Button 用 inline style 而非 CVA variant（待后续修复）
+
+#### E2E 验证
+- 8 路由全覆盖，hasContent: true, jsErrors: 0, crash: false
+- 重构零破坏
+
 ### 踩坑记录
 - **ESM + dotenv 不兼容**：ESM `import` 在模块体之前执行，`dotenv.config()` 跑在 `config.ts` 的 `requireEnv()` 之后。解决方案：Node 22 原生 `--env-file=.env` 标志，无需 dotenv
 - **ESM + pino-pretty**：`createRequire` 在 ESM 下不可靠，直接安装 `pino-pretty` 并用 `transport.target: 'pino-pretty'`
