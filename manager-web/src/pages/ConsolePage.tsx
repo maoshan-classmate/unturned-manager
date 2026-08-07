@@ -10,6 +10,7 @@ import {
 import { useServer } from '../hooks/useServer.js';
 import { useConsole } from '../hooks/useConsole.js';
 import { Button } from '../components/ui/button.js';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
 
 // ─── 预设命令 ──────────────────────────────────────────
 
@@ -26,6 +27,7 @@ const PRESET_COMMANDS: PresetCommand[] = [
   { label: '踢出', command: 'Kick ', dangerous: true },
   { label: '白天', command: 'Day' },
   { label: '黑夜', command: 'Night' },
+  { label: '空投', command: 'Airdrop' },
   { label: '关服', command: 'Shutdown ', dangerous: true },
   { label: '帮助', command: 'Help' },
 ];
@@ -279,19 +281,6 @@ export function ConsolePage() {
 
       {/* ── Input ── */}
       <div className="flex items-center gap-2 shrink-0">
-        {showConfirm && (
-          <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-xs"
-            style={{
-              backgroundColor: '#EF444420',
-              border: '1px solid #EF444440',
-              color: '#EF4444',
-            }}
-          >
-            <AlertTriangle size={14} />
-            确认执行 "{showConfirm}"？按 Enter 确认，Esc 取消
-          </div>
-        )}
         <div className="flex-1 flex items-center gap-2">
           <span style={{ color: '#22C55E' }}>&gt;</span>
           <input
@@ -318,6 +307,17 @@ export function ConsolePage() {
           发送
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={!!showConfirm}
+        title="危险指令确认"
+        message={`确认执行 "${showConfirm}"？此操作可能影响服务器运行。`}
+        confirmLabel="确认执行"
+        variant="danger"
+        icon={AlertTriangle}
+        onConfirm={() => { handleSend(showConfirm); }}
+        onCancel={() => setShowConfirm('')}
+      />
     </div>
   );
 }
