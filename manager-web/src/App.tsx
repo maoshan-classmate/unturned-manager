@@ -30,12 +30,14 @@ function AppLayout() {
         <main className="flex-1 overflow-auto p-6">
           <Routes>
             <Route path="/" element={<Placeholder title="Dashboard" />} />
+            <Route path="/_default" element={<Navigate to="/" replace />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/:serverId/console" element={<Placeholder title="Console" />} />
             <Route path="/:serverId/mods" element={<Placeholder title="Mods" />} />
             <Route path="/:serverId/players" element={<Placeholder title="Players" />} />
             <Route path="/:serverId/config/commands" element={<Placeholder title="Config" />} />
             <Route path="/:serverId/files" element={<Placeholder title="Files" />} />
+            <Route path="/:serverId/permissions" element={<Placeholder title="Permissions" />} />
             <Route path="/:serverId/server-setup" element={<Placeholder title="Server Setup" />} />
             <Route path="/settings" element={<Placeholder title="Settings" />} />
           </Routes>

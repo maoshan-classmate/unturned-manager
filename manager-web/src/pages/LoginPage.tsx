@@ -195,6 +195,7 @@ export function LoginPage() {
               </Label>
               <PasswordInput
                 id="login-password"
+                required
                 className="h-10 rounded-lg text-sm"
                 style={{
                   backgroundColor: '#0F172A',
