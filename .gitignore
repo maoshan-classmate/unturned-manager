@@ -34,5 +34,6 @@ Thumbs.db
 # Research (read-only third-party)
 .research/
 
-# Serena (tool config, not project code)
-.serena/
+# Serena (only ignore tool configs, keep project memories)
+.serena/*
+!.serena/memories/

@@ -20,6 +20,11 @@
 11. 乐观锁：ConfigService 所有 write 方法接受 `expectedVersion?: number`，config_snapshots.version 做并发控制
 12. WorkshopDownloadConfig.json 细粒度权限：面板只写 `File_IDs`（通过 `writeWorkshopFileIds`），其余字段只读
 
+13. **前端动画**：Motion (framer-motion v13)，从 `motion/react` 导入。全局 `<MotionConfig reducedMotion="user">` 处理无障碍。详见 ADR-0001。
+14. **Tailwind v4**：CSS-first 配置 (@theme inline)，移除 tailwind.config.ts。PostCSS 用 @tailwindcss/postcss，Vite 用 @tailwindcss/vite。
+15. **shadcn v4**：基于 @base-ui/react 原语（非 @radix-ui）。组件复制到 src/components/ui/，可按需修改源码（如 forwardRef）。
+16. **表单方案**：react-hook-form + zod + shadcn Input/Button。已修改 shadcn Input 添加 forwardRef 以支持 register()。
+
 ## 配置文件优先级
 Commands.dat (启动参数/模式) → Config.txt (游戏玩法/浏览器) → WorkshopDownloadConfig.json (Mod) → Rocket/OpenMod 插件配置
 
