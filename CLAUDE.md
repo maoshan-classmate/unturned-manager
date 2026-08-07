@@ -42,12 +42,16 @@
 |---|---|---|
 | 框架 | React 18 + TypeScript | |
 | 构建 | Vite | |
-| 样式 | Tailwind CSS 3 + shadcn/ui（基于 shadcn 的组件库） | 深色主题用 slate 色系，点睛色用 `emerald-500`（对应设计稿在 `claudedocs/figma-exports/`） |
+| 样式 | Tailwind CSS 4 + shadcn/ui（CSS-first 配置） | 深色主题用 slate 色系，点睛色用 HSL(160, 84%, 39%) emerald-500，设计稿在 Figma `🎨 Login` 页面 |
 | 图表 | recharts | |
 | 表格 | @tanstack/react-table | |
 | 图标 | lucide-react | |
 | 状态管理 | （实现阶段决定，轻量级、Zustand 风格） | |
 | 实时通信 | 浏览器原生 `ws`（WebSocket 客户端） | **不能用 Socket.IO**，后端用的是 `ws`，要统一 |
+| 动画(CSS) | tw-animate-css（Tailwind v4 动画工具类） | |
+| 动画(React) | Motion（framer-motion v13），从 `motion/react` 导入 | ADR-0001 采纳，全局 `<MotionConfig reducedMotion="user">` 已配置 |
+
+### 2.2 后端
 
 ### 2.2 后端
 | 分层 | 锁定的库 | 备注 |
@@ -117,6 +121,7 @@ D:/unturned-manager/
 ├── .idea/                   ← 本地 IDE 状态（已 git 忽略）
 │
 ├── docs/                    ← 架构文档
+│   ├── adr/                 ← 架构决策记录
 │   └── architecture/        ← architecture-spec.md + design-system-mapping.md
 │
 ├── manager-server/          ← 后端源码（Express 4 + ws + SQLite）
@@ -132,7 +137,7 @@ D:/unturned-manager/
 │   │   └── utils/            ← 工具（logger）
 │   └── .env.example
 │
-├── manager-web/             ← 前端源码（React 18 + shadcn/ui + Tailwind CSS 3）
+├── manager-web/             ← 前端源码（React 18 + shadcn/ui + Tailwind CSS 4 + Motion）
 │   ├── src/
 │   │   ├── main.tsx          ← 入口
 │   │   ├── App.tsx           ← 路由根（8 页面 + Sidebar 布局）

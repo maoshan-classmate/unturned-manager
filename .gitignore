@@ -25,6 +25,12 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Playwright (test artifacts)
+.playwright-mcp/
+
+# Debug
+*.stackdump
+
 # Research (read-only third-party)
 .research/
 

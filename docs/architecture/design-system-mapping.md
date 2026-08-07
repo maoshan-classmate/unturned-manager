@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 设计令牌 Figma Paint Style → Tailwind v3 主题
+## 1. 设计令牌 Figma Paint Style → Tailwind v4 主题
 
 | Figma Token 名 | RGB | Hex（推荐） | Tailwind class | 用途 |
 |---|---|---|---|---|
@@ -20,7 +20,7 @@
 | `text/primary` | (0.945, 0.961, 0.984) | `#F1F5FB` | `text-slate-100` | 主文本 |
 | `text/secondary` | (0.580, 0.639, 0.722) | `#94A3B8` | `text-slate-400` | 次级文本 |
 | `text/muted` | (0.392, 0.455, 0.545) | `#64748B` | `text-slate-500` | 弱化文本 |
-| `accent/primary` | (0.133, 0.773, 0.369) | `#22C55E` | `text-emerald-500` / `bg-emerald-500` | 强调色 |
+| `accent/primary` | (0.063, 0.725, 0.506) | `#10B981` | `text-emerald-500` / `bg-emerald-500` | 强调色 |
 | `accent/hover` | (0.086, 0.639, 0.290) | `#16A34A` | `bg-emerald-600` | 强调色 hover |
 | `status/online` | (同 accent/primary) | `#22C55E` | `text-emerald-500` | 在线徽章 |
 | `status/warning` | (0.961, 0.620, 0.043) | `#F59E0B` | `text-amber-500` | 警告徽章 |
@@ -231,4 +231,31 @@ theme: {
 
 ---
 
-*本文件是 docs/architecture/ 的子文件，跟 `business-panel-architecture-2026-08-06.md` 同一棵目录。任何设计变更先改这里、再改 `tailwind.config.ts`，最后动组件代码。*
+*本文件是 docs/architecture/ 的子文件，跟 `business-panel-architecture-2026-08-06.md` 同一棵目录。任何设计变更先改这里、再改 CSS（Tailwind v4 @theme），最后动组件代码。*
+
+---
+
+## 9. 登录页组件映射（新增 2026-08-07）
+
+### 9.1 组件映射
+
+| Figma 元素 | 代码实现 | 备注 |
+|---|---|---|
+| Login Card (420×540) | shadcn `Card` `@/components/ui/card.js` | max-w-[420px], shadow-lg |
+| Icon Circle (72×72) | `<img>` 引用 `@/assets/sign.png` | Motion drop-shadow 辉光 |
+| 标题 + 副标题 | `CardTitle` + `CardDescription` | Inter SemiBold 24px / Regular 14px |
+| 用户名 Input | shadcn `Input` + shadcn `Label` | autoFocus |
+| 密码 Input | `@/components/shared/PasswordInput.js` | shadcn Input + Eye/EyeOff toggle |
+| Error Alert | shadcn `Alert variant="destructive"` | Motion AnimatePresence |
+| 登录 Button | shadcn `Button variant="default"` | 全宽, Loader2 spinner |
+
+### 9.2 动画 Token (Motion)
+
+| Token | 时长 | Easing | 用途 |
+|---|---|---|---|
+| card-enter | 500ms | easeOut | 卡片入场 |
+| error-enter | 250ms | easeOut | 错误滑入 |
+| error-exit | 200ms | easeIn | 错误滑出 |
+| bg-breathe | 6000-8000ms | easeInOut loop | 背景辉光 |
+
+全局 `<MotionConfig reducedMotion="user">` 处理无障碍需求。详见 `docs/adr/0001-adopt-motion-animation-library.md`。

@@ -52,8 +52,9 @@
 │                 (自托管 Web 管理面板)                      │
 │                                                          │
 │   ┌────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│   │ React SPA  │  │ Express + ws │  │   SQLite       │  │
-│   │ (前端容器)  │  │ (后端容器)    │  │   (单文件数据库) │  │
+│   │ React SPA      │  │ Express + ws  │  │   SQLite       │  │
+│   │ (Vite + TW4 +  │  │ (后端容器)     │  │   (单文件数据库) │  │
+│   │  shadcn/ui)     │  │               │  │                │  │
 │   └────────────┘  └──────────────┘  └────────────────┘  │
 │                                                          │
 └──────┬──────────────┬──────────────────┬─────────────────┘
@@ -132,6 +133,9 @@ Panel ──► 自动探测 ──► ① OpenMod Valve Source RCON (rcon-srcds
 │  │                                                   │  │
 │  │  构建：Vite (dev) / nginx 静态托管 (prod)          │  │
 │  │  路由：react-router-dom v6                         │  │
+│  │  样式：Tailwind CSS 4 + shadcn/ui (slate+emerald)  │  │
+│  │  动画：Motion (framer-motion v13, ADR-0001)        │  │
+│  │  表单：react-hook-form + zod                        │  │
 │  │  状态：AuthContext + WebSocketContext (Zustand风格) │  │
 │  │                                                   │  │
 │  │  HTTP client: axios (JWT 注入 / 401 拦截)          │  │
