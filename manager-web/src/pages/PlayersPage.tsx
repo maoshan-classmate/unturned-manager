@@ -1,0 +1,229 @@
+import { useState, useCallback, useEffect } from 'react';
+import { Users, Search, Gavel, DoorOpen, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { useServer } from '../hooks/useServer.js';
+import { apiClient } from '../api/client.js';
+import { Button } from '../components/ui/button.js';
+import { Input } from '../components/ui/input.js';
+
+interface PlayerInfo {
+  name: string;
+  steamId: string;
+  character: string;
+  ping: number;
+  online: boolean;
+}
+
+/**
+ * Players 页面——Figma 2:5 🎨 Players。
+ *
+ * 玩家列表表格 + Kick/Ban 操作。
+ */
+export function PlayersPage() {
+  const { servers, loading: serverLoading, error: serverError } = useServer();
+  const server = servers[0];
+
+  const [players, setPlayers] = useState<PlayerInfo[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
+  const [playersError, setPlayersError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [confirmAction, setConfirmAction] = useState<{ type: 'kick' | 'ban'; target: PlayerInfo } | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+
+  const fetchPlayers = useCallback(async () => {
+    if (!server) return;
+    setPlayersLoading(true);
+    setPlayersError(null);
+    try {
+      // 通过 A2S + RCON 获取玩家列表
+      const res = await apiClient.post(`/servers/${server.id}/rcon/execute`, { command: 'Players' });
+      // RCON 返回的文本解析：每行 "Name | SteamID | Character | Ping"
+      const text: string = res.data.data ?? '';
+      const lines = text.split('\n').filter((l: string) => l.includes('|'));
+      const list: PlayerInfo[] = lines.map((line: string) => {
+        const parts = line.split('|').map((s) => s.trim());
+        return {
+          name: parts[0] || '—',
+          steamId: parts[1] || '—',
+          character: parts[2] || '—',
+          ping: parseInt(parts[3] || '0', 10),
+          online: true,
+        };
+      });
+      setPlayers(list);
+    } catch {
+      // 服务器未运行时 A2S/RCON 不可用，显示空列表
+      setPlayers([]);
+    } finally {
+      setPlayersLoading(false);
+    }
+  }, [server]);
+
+  useEffect(() => { fetchPlayers(); }, [server?.id]);
+
+  const handleAction = async () => {
+    if (!confirmAction || !server) return;
+    setActionPending(true);
+    try {
+      const cmd = confirmAction.type === 'kick'
+        ? `Kick ${confirmAction.target.steamId}`
+        : `Ban ${confirmAction.target.steamId}`;
+      await apiClient.post(`/servers/${server.id}/rcon/execute`, { command: cmd, confirmed: true });
+      setPlayers((prev) => prev.filter((p) => p.steamId !== confirmAction.target.steamId));
+    } catch (err) {
+      setPlayersError(err instanceof Error ? err.message : '操作失败');
+    } finally {
+      setActionPending(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const filtered = searchQuery
+    ? players.filter((p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.steamId.includes(searchQuery),
+      )
+    : players;
+
+  // ── Loading ──
+  if (serverLoading || playersLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#22C55E' }} />
+          <span className="text-sm" style={{ color: '#94A3B8' }}>加载中...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error ──
+  if (serverError || playersError) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3 max-w-md text-center">
+          <AlertCircle size={32} style={{ color: '#EF4444' }} />
+          <span className="text-sm" style={{ color: '#F1F5FB' }}>无法加载玩家数据</span>
+          <span className="text-xs" style={{ color: '#64748B' }}>{serverError || playersError}</span>
+          <Button onClick={fetchPlayers} className="h-8 text-xs"
+            style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>重试</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!server) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <Users size={32} style={{ color: '#64748B' }} />
+          <span className="text-sm" style={{ color: '#64748B' }}>还没有服务器</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold" style={{ color: '#F1F5FB' }}>Players</h1>
+          <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#1E293B', color: '#64748B' }}>
+            {players.length} 在线
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#64748B' }} />
+            <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索玩家..." className="pl-8 h-8 text-xs w-48" />
+          </div>
+          <Button onClick={fetchPlayers} className="h-8 text-xs gap-1"
+            style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>
+            <RefreshCw size={14} /> 刷新
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto rounded-lg" style={{ border: '1px solid #334155' }}>
+        {filtered.length === 0 ? (
+          <div className="flex items-center justify-center h-32">
+            <span className="text-sm" style={{ color: '#64748B' }}>
+              {searchQuery ? '没有匹配的玩家' : '暂无在线玩家'}
+            </span>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid #334155' }}>
+                {['Player', 'Steam ID', 'Character', 'Ping', 'Actions'].map((h) => (
+                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: '#64748B' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p) => (
+                <tr key={p.steamId} style={{ borderBottom: '1px solid #1E293B' }} className="hover:bg-slate-800/30">
+                  <td className="px-4 py-2.5 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium"
+                      style={{ backgroundColor: '#22C55E', color: '#fff' }}>
+                      {p.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span style={{ color: '#F1F5FB' }}>{p.name}</span>
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs" style={{ color: '#94A3B8' }}>{p.steamId}</td>
+                  <td className="px-4 py-2.5" style={{ color: '#94A3B8' }}>{p.character}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="text-xs px-2 py-0.5 rounded"
+                      style={{
+                        backgroundColor: p.ping < 80 ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: p.ping < 80 ? '#22C55E' : '#F59E0B',
+                      }}>
+                      {p.ping}ms
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <Button onClick={() => setConfirmAction({ type: 'kick', target: p })}
+                        className="h-6 text-xs px-2" style={{ backgroundColor: 'transparent', color: '#F59E0B' }}>
+                        <DoorOpen size={12} className="mr-1" /> Kick
+                      </Button>
+                      <Button onClick={() => setConfirmAction({ type: 'ban', target: p })}
+                        className="h-6 text-xs px-2" style={{ backgroundColor: 'transparent', color: '#EF4444' }}>
+                        <Gavel size={12} className="mr-1" /> Ban
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Confirm Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="rounded-lg p-6 w-80" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
+            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>
+              确认{confirmAction.type === 'kick' ? '踢出' : '封禁'}
+            </h3>
+            <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
+              确定要{confirmAction.type === 'kick' ? '踢出' : '封禁'}玩家 {confirmAction.target.name} ({confirmAction.target.steamId})？
+            </p>
+            <div className="flex items-center gap-2 mt-4 justify-end">
+              <Button onClick={() => setConfirmAction(null)} disabled={actionPending}
+                className="h-7 text-xs" style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>取消</Button>
+              <Button onClick={handleAction} disabled={actionPending}
+                className="h-7 text-xs"
+                style={{ backgroundColor: confirmAction.type === 'ban' ? '#EF4444' : '#F59E0B', color: '#fff' }}>
+                {actionPending ? '执行中...' : '确认'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

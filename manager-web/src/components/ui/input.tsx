@@ -3,6 +3,13 @@ import { Input as InputPrimitive } from '@base-ui/react/input';
 
 import { cn } from '@/lib/utils';
 
+/**
+ * 暗色主题适配版 Input——保留 @base-ui/react 的可访问性/语义原语，
+ * 仅修改 Tailwind class 适配 slate 暗色主题。
+ *
+ * 原 shadcn 用 CSS 变量（bg-input/text-foreground 等），
+ * 在纯暗色场景下变量默认值偏亮（白框）。此处改用显式 slate 色值。
+ */
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>(
   ({ className, type, ...props }, ref) => {
     return (
@@ -11,7 +18,14 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>(
         type={type}
         data-slot="input"
         className={cn(
-          'h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-all duration-200 file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus:border-transparent focus:ring-2 focus:ring-emerald-500/50 focus:scale-[1.01] focus:shadow-lg disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive/60 aria-invalid:ring-1 aria-invalid:ring-destructive/25 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40',
+          // 用显式 slate 色值替代 CSS 变量，适配暗色主题
+          'h-8 w-full min-w-0 rounded-lg border px-2.5 py-1 text-sm',
+          'bg-slate-800 text-slate-100',
+          'border-slate-600',
+          'placeholder:text-slate-500',
+          'outline-none transition-all duration-200',
+          'focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30',
+          'disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}

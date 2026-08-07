@@ -39,7 +39,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/config/commands', icon: Settings, label: '配置' },
   { to: '/mods', icon: Package, label: '模组' },
   { to: '/files', icon: FolderOpen, label: '文件' },
-  { to: '/permissions', icon: Key, label: '权限' },
   { to: '/server-setup', icon: Rocket, label: '服务器设置' },
   { to: '/settings', icon: Zap, label: '系统设置' },
 ] as const;

@@ -121,7 +121,7 @@ Panel ──► 自动探测 ──► ① OpenMod Valve Source RCON (rcon-srcds
 > Docker 部署拓扑不在本文档范围（用户指示"docker先不管"）。此处描述的是应用层容器——前端 SPA 和后端服务的进程边界。
 > 技术栈详见 [CLAUDE.md §2](../../CLAUDE.md#2-技术栈铁律钉死的)，本节只描述应用层容器边界。
 >
-> **API 契约层（Sprint 2）**：`shared/schemas/` 用 Zod 定义 API schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范 → Swagger UI 托管在 `/api/docs`。前后端共用同一 schema 真相源，后端自动校验入参，前端 `react-hook-form + zod` 复用校验逻辑。
+> **API 契约层（已实现）**：`shared/schemas/` 用 Zod 定义 API schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范 → Swagger UI 托管在 `/api/docs`。前后端共用同一 schema 真相源，后端自动校验入参，前端 `react-hook-form + zod` 复用校验逻辑。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -407,7 +407,7 @@ App
 ## 5. 模块接口契约
 
 > 所有接口定义在 `shared/contracts/` 目录。使用 branded types 防止原始类型混淆。
-> **Sprint 2 引入 `shared/schemas/`**：Zod schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范。运行时校验替代手写参数检查，前后端共用同一 schema。
+> **`shared/schemas/`（已实现）**：Zod schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范。运行时校验替代手写参数检查，前后端共用同一 schema。
 
 ### 5.1 共享类型 (`shared/types/branded.ts`)
 

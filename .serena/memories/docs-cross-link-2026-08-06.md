@@ -1,0 +1,1 @@
+三份项目局部权威文档互链：① CLAUDE.md（项目宪法）§3.3 引用 → `docs/architecture/design-system-mapping.md` + `docs/architecture/architecture-spec.md`.md`；② business panel §0/§4.1 引用 → mapping；③ mapping §8 reverse 引用 business panel。**Why:** 实现时任何一项修改必须三处联动，否则设计源头脱节。**How to apply:** 改颜色/路由/component → 先改 mapping → 改 CLAUDE.md §2.3 / §3.3 → 必要时改 business panel。**绝对不要**改 PNG 截图当设计源头——那是快照。

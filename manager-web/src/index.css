@@ -59,3 +59,36 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* 暗色主题：Input/Select 组件边框显式覆盖为 slate-600 */
+input:not([type='checkbox']):not([type='radio']),
+[data-slot='input'],
+select,
+textarea {
+  border-color: hsl(217 33% 25%);
+  background-color: hsl(217 33% 17%);
+  color: hsl(210 40% 98%);
+}
+
+/* Chrome :-webkit-autofill——浏览器默认注入 #E8F0FE 白色背景，优先级高于 Tailwind。
+ * 用 box-shadow inset 技巧强力覆盖，并延迟 autofill 样式生效时间规避闪白。 */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  background-color: hsl(217 33% 17%) !important;
+  -webkit-box-shadow: 0 0 0 30px hsl(217 33% 17%) inset !important;
+  -webkit-text-fill-color: hsl(210 40% 98%) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* 暗色主题：Button 组件抹掉 shadcn 全局 border 覆盖 */
+[data-slot='button'] {
+  border-color: transparent;
+}
+
+/* 旋转动画（刷新按钮等） */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

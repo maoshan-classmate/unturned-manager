@@ -20,14 +20,14 @@ interface PresetCommand {
 }
 
 const PRESET_COMMANDS: PresetCommand[] = [
-  { label: 'Say', command: 'Say ' },
-  { label: 'Save', command: 'Save' },
-  { label: 'Players', command: 'Players' },
-  { label: 'Kick', command: 'Kick ', dangerous: true },
-  { label: 'Day', command: 'Day' },
-  { label: 'Night', command: 'Night' },
-  { label: 'Shutdown', command: 'Shutdown ', dangerous: true },
-  { label: 'Help', command: 'Help' },
+  { label: '广播', command: 'Say ' },
+  { label: '存档', command: 'Save' },
+  { label: '玩家列表', command: 'Players' },
+  { label: '踢出', command: 'Kick ', dangerous: true },
+  { label: '白天', command: 'Day' },
+  { label: '黑夜', command: 'Night' },
+  { label: '关服', command: 'Shutdown ', dangerous: true },
+  { label: '帮助', command: 'Help' },
 ];
 
 // ─── ANSI 简易着色 ────────────────────────────────────

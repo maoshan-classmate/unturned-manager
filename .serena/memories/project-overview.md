@@ -3,20 +3,31 @@ Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前
 
 ## Sprint 2 实现进度 (2026-08-07)
 
-### 后端模块 (6/12 real)
+### 后端模块 (12/12 real) ✅
 - ✅ AuthService — JWT + Argon2id + token rotation
 - ✅ ServerManager — 五状态机 + activeOperation 竞态防护 + audit_log
 - ✅ ProcessSupervisor — child_process.spawn + 优雅关停 + cwd
 - ✅ RconManager — OpenMod→RocketMod 自动探测 + 凭证分离 + 心跳
 - ✅ A2SClient — UDP A2S_INFO 查询 (30s 超时)
 - ✅ FileLockProvider — 进程内文件互斥锁
-- ⏳ ConfigService / FilesService / SteamCmdManager / WorkshopMetadataService / LogStreamer / WsBroadcaster（stub/部分实现）
+- ✅ ConfigService — 5 种格式（Commands.dat/Config.txt/Workshop.json/OpenMod yaml/Rocket xml）+ 备份 + 乐观锁
+- ✅ FilesService — 路径白名单 + realpath 防护 + 敏感字段脱敏 + 7 REST 端点
+- ✅ SteamCmdManager — getStatus + updateU3DS 安全门控（spawn 留 Sprint 3）
+- ✅ WorkshopMetadataService — Steam ?xml=1 拉取 + DB LRU 缓存 + stale-while-revalidate
+- ✅ LogStreamer — 脱敏管道 + 文件 tail 轮询（PTY 留 Sprint 3）
+- ✅ WsBroadcaster — 单例接线，JWT 认证 + 按 ServerID 订阅广播
 
-### 前端页面 (3/10 real)
+### 前端页面 (10/10 real) ✅
 - ✅ LoginPage — shadcn/ui + Motion + RHF + Zod + 401 自动刷新
-- ✅ DashboardPage — StatCard×4 + QuickActions (启动/停止/重启) + loading/error/empty 三态
+- ✅ DashboardPage — StatCard×4 + QuickActions + loading/error/empty 三态
 - ✅ ConsolePage — ServerTabBar + 8 预设命令 + Output (WS+REST) + Input (↑↓历史+危险确认)
-- ⏳ Mods / Players / Config / Files / Permissions / Server Setup / Settings（Placeholder）
+- ✅ ModsPage — Mod 卡片网格 + 搜索 + AddModDialog + PendingBar
+- ✅ PlayersPage — 玩家表格 + Kick/Ban + ConfirmDialog
+- ✅ ConfigPage — Commands/Txt/Workshop 三 Tab 编辑器 + dirty tracking
+- ✅ FilesPage — 面包屑 + 文件网格 + 右键菜单 + 新建/删除/查看
+- ✅ ServerSetupPage — 实例管理 + SteamCMD 状态 + 更新触发
+- ✅ SettingsPage — 5 张卡片（账户/安全/网页/日志/游戏默认值）
+- ✅ Permissions — 路由重定向到 Files 页面
 
 ## 技术选型（已确认）
 - 前端：React 18 + TypeScript + Vite + Tailwind CSS 3 + shadcn/ui

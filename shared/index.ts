@@ -18,3 +18,6 @@ export type { IFileLockProvider } from './contracts/filelock.js';
 export type { ISteamCmdManager } from './contracts/steamcmd.js';
 export type { IWorkshopMetadataService } from './contracts/workshop.js';
 export type { ILogStreamer } from './contracts/logstream.js';
+
+// Schemas (Sprint 2: zod-openapi 契约层)
+export * from './schemas/index.js';

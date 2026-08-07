@@ -7,7 +7,7 @@ export function createConfigRouter(configService: IConfigService): Router {
   router.use(authenticateToken);
 
   // Commands.dat
-  router.get('/:id/commands', async (req, res) => {
+  router.get('/:id/config/commands', async (req, res) => {
     try {
       const data = await configService.readCommandsDat(req.params.id as never);
       res.json({ data });
@@ -16,7 +16,7 @@ export function createConfigRouter(configService: IConfigService): Router {
     }
   });
 
-  router.put('/:id/commands', async (req, res) => {
+  router.put('/:id/config/commands', async (req, res) => {
     try {
       await configService.writeCommandsDat(req.params.id as never, req.body, req.body.expectedVersion);
       res.json({ data: { message: 'Commands.dat 已保存' } });
@@ -26,7 +26,7 @@ export function createConfigRouter(configService: IConfigService): Router {
   });
 
   // Config.txt
-  router.get('/:id/txt', async (req, res) => {
+  router.get('/:id/config/txt', async (req, res) => {
     try {
       const data = await configService.readConfigTxt(req.params.id as never);
       res.json({ data });
@@ -35,7 +35,7 @@ export function createConfigRouter(configService: IConfigService): Router {
     }
   });
 
-  router.put('/:id/txt', async (req, res) => {
+  router.put('/:id/config/txt', async (req, res) => {
     try {
       await configService.writeConfigTxt(req.params.id as never, req.body, req.body.expectedVersion);
       res.json({ data: { message: 'Config.txt 已保存' } });
@@ -45,7 +45,7 @@ export function createConfigRouter(configService: IConfigService): Router {
   });
 
   // WorkshopDownloadConfig.json
-  router.get('/:id/workshop', async (req, res) => {
+  router.get('/:id/config/workshop', async (req, res) => {
     try {
       const data = await configService.readWorkshopConfig(req.params.id as never);
       res.json({ data });
@@ -54,7 +54,7 @@ export function createConfigRouter(configService: IConfigService): Router {
     }
   });
 
-  router.put('/:id/workshop', async (req, res) => {
+  router.put('/:id/config/workshop', async (req, res) => {
     try {
       await configService.writeWorkshopFileIds(req.params.id as never, req.body.fileIds, req.body.expectedVersion);
       res.json({ data: { message: 'Workshop File IDs 已更新' } });

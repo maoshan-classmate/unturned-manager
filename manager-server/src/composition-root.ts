@@ -1,7 +1,5 @@
 import Database from 'better-sqlite3';
 import {
-  ServerState,
-  RconProtocol,
   type IServerManager,
   type IConfigService,
   type IFilesService,
@@ -22,69 +20,12 @@ import { ProcessSupervisor } from './modules/process/ProcessSupervisor.js';
 import { A2SClient } from './modules/a2s/A2SClient.js';
 import { RconManager } from './modules/rcon/RconManager.js';
 import { ServerManager } from './modules/server/ServerManager.js';
-
-// ─── Stub factories (Wave 2+ 逐步替换为真实实现) ────────
-
-function createBroadcasterStub(): IBroadcaster {
-  return {
-    broadcast: () => {},
-    register: () => {},
-    unregister: () => {},
-    destroy: async () => {},
-  };
-}
-
-function createConfigServiceStub(): IConfigService {
-  return {
-    readCommandsDat: async () => { throw new Error('Not implemented'); },
-    writeCommandsDat: async () => { throw new Error('Not implemented'); },
-    readConfigTxt: async () => { throw new Error('Not implemented'); },
-    writeConfigTxt: async () => { throw new Error('Not implemented'); },
-    readWorkshopConfig: async () => { throw new Error('Not implemented'); },
-    writeWorkshopFileIds: async () => { throw new Error('Not implemented'); },
-    backup: async () => { throw new Error('Not implemented'); },
-    readOpenModConfig: async () => { throw new Error('Not implemented'); },
-    writeOpenModConfig: async () => { throw new Error('Not implemented'); },
-    readRocketModConfig: async () => { throw new Error('Not implemented'); },
-    writeRocketModConfig: async () => { throw new Error('Not implemented'); },
-  };
-}
-
-function createFilesServiceStub(): IFilesService {
-  return {
-    listDirectory: async () => [],
-    readFile: async () => new Uint8Array(0),
-    writeFile: async () => {},
-    deleteEntry: async () => {},
-    createDirectory: async () => {},
-    renameEntry: async () => {},
-    getPermissions: async () => ({ owner: 'read', group: 'none', other: 'none' }),
-    createUploadStream: () => { throw new Error('Not implemented'); },
-  };
-}
-
-function createSteamCmdManagerStub(): ISteamCmdManager {
-  return {
-    getStatus: async () => ({ isInstalled: false }),
-    install: async () => { throw new Error('Not implemented'); },
-    updateU3DS: async () => { throw new Error('Not implemented'); },
-  };
-}
-
-function createWorkshopMetadataServiceStub(): IWorkshopMetadataService {
-  return {
-    getModDetails: async () => null,
-    searchMods: async () => [],
-    refreshCache: async () => {},
-  };
-}
-
-function createLogStreamerStub(): ILogStreamer {
-  return {
-    startStreaming: () => {},
-    stopStreaming: () => {},
-  };
-}
+import { ConfigService } from './modules/config/ConfigService.js';
+import { FilesService } from './modules/files/FilesService.js';
+import { SteamCmdManager } from './modules/steamcmd/SteamCmdManager.js';
+import { WorkshopMetadataService } from './modules/workshop/WorkshopMetadataService.js';
+import { LogStreamer } from './modules/logs/LogStreamer.js';
+import { wsBroadcaster } from './ws/gateway.js';
 
 // ─── Container ────────────────────────────────────────
 
@@ -103,27 +44,28 @@ export interface AppContainer {
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
-  // ── Wave 1: 基础设施层（真实实现）────────────────────
+  // ── 基础设施层 ───────────────────────────────────────
   const fileLock = new FileLockProvider();
   const a2sClient = new A2SClient();
   const rconManager = new RconManager();
   const processSupervisor = new ProcessSupervisor();
 
-  // ── Wave 1: API 层 ───────────────────────────────────
-  const broadcaster = createBroadcasterStub();
-  // ── Wave 2: 核心域层（逐步替换 stub）──────────────
-  const configService = createConfigServiceStub();
-  const filesService = createFilesServiceStub();
-  const steamCmdManager = createSteamCmdManagerStub();
-  const workshopMeta = createWorkshopMetadataServiceStub();
-  const logStreamer = createLogStreamerStub();
+  // ── API 层 ────────────────────────────────────────────
+  const broadcaster = wsBroadcaster;  // 单例，已在 index.ts 中 init
 
-  // ServerManager (Wave 2: 真实实现)
+  // ── 核心域层 ──────────────────────────────────────────
+  const configService = new ConfigService(db, fileLock);
+  const filesService = new FilesService(fileLock, db);
+  const steamCmdManager = new SteamCmdManager(db);
+  const workshopMeta = new WorkshopMetadataService(db);
+  const logStreamer = new LogStreamer(broadcaster, processSupervisor, db);
+
+  // ServerManager（聚合根）
   const serverManager = new ServerManager(
     db, processSupervisor, rconManager, a2sClient, configService, broadcaster,
   );
 
-  // AuthService (Sprint 1: 真实实现)
+  // AuthService
   const authService = new AuthService(db);
 
   return {
