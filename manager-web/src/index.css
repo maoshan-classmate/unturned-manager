@@ -23,7 +23,7 @@
   --color-accent-foreground: hsl(210 40% 98%);
   --color-destructive: hsl(0 63% 31%);
   --color-destructive-foreground: hsl(210 40% 98%);
-  --color-border: hsl(217 33% 17%);
+  --color-border: hsl(218 27% 27%);
   --color-input: hsl(217 33% 17%);
   --color-ring: hsl(160 84% 39%);
 
@@ -48,8 +48,13 @@
   --radius-lg: 0.5rem;
 }
 
+/*
+ * Figma 设计 Token: border/strokes = #334059 (rgb 51,64,89)
+ * 必须用不透明实色，不用半透明——Tailwind v4 的 border 回退到 currentColor，
+ * 而 body color = near-white，半透明叠加后仍然偏亮，导致所有边框显白。
+ */
 * {
-  border-color: hsl(var(--color-border) / 0.5);
+  border-color: #334059;
 }
 
 body {
@@ -60,12 +65,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 暗色主题：Input/Select 组件边框显式覆盖为 slate-600 */
+/* 暗色主题：Input/Select 边框对齐 Figma border/strokes = #334059 */
 input:not([type='checkbox']):not([type='radio']),
 [data-slot='input'],
 select,
 textarea {
-  border-color: hsl(217 33% 25%);
+  border-color: #334059;
   background-color: hsl(217 33% 17%);
   color: hsl(210 40% 98%);
 }

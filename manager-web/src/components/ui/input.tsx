@@ -21,7 +21,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>(
           // 用显式 slate 色值替代 CSS 变量，适配暗色主题
           'h-8 w-full min-w-0 rounded-lg border px-2.5 py-1 text-sm',
           'bg-slate-800 text-slate-100',
-          'border-slate-600',
+          'border-slate-700',
           'placeholder:text-slate-500',
           'outline-none transition-all duration-200',
           'focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30',
