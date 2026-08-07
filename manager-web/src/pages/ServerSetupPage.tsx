@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  Server, Play, Square, RefreshCw, Download, Settings,
-  AlertCircle, Loader2, Wrench, Monitor,
+  Server, Play, Square, RefreshCw, Download,
+  AlertCircle, Loader2, Wrench, Monitor, Plus,
 } from 'lucide-react';
+import { TabBar } from '../components/shared/TabBar.js';
+import { stateColor, stateLabel } from '@/lib/utils';
 import { useServer, useServerActions } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
@@ -92,21 +94,6 @@ export function ServerSetupPage() {
     );
   }
 
-  const stateColor = (state: string) => {
-    if (state === 'RUNNING') return '#22C55E';
-    if (state === 'STARTING' || state === 'STOPPING') return '#F59E0B';
-    if (state === 'DEGRADED') return '#EF4444';
-    return '#64748B';
-  };
-
-  const stateLabel = (state: string) => {
-    const labels: Record<string, string> = {
-      STOPPED: '已停止', STARTING: '启动中', RUNNING: '运行中',
-      DEGRADED: '降级运行', STOPPING: '停止中',
-    };
-    return labels[state] ?? state;
-  };
-
   return (
     <div className="flex flex-col h-full gap-4">
       <h1 className="text-2xl font-semibold" style={{ color: '#F1F5FB' }}>Server Setup</h1>
@@ -120,18 +107,15 @@ export function ServerSetupPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-lg" style={{ backgroundColor: '#0F172A' }}>
-        {([['servers', Monitor], ['steamcmd', Wrench], ['update', Download]] as const).map(([key, Icon]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: tab === key ? '#1E293B' : 'transparent',
-              color: tab === key ? '#F1F5FB' : '#64748B',
-            }}>
-            <Icon size={14} /> {key === 'servers' ? '实例管理' : key === 'steamcmd' ? 'SteamCMD' : '更新'}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        tabs={[
+          { key: 'servers', label: '实例管理', icon: Monitor },
+          { key: 'steamcmd', label: 'SteamCMD', icon: Wrench },
+          { key: 'update', label: '更新', icon: Download },
+        ]}
+        active={tab}
+        onChange={(k) => setTab(k as SetupTab)}
+      />
 
       {/* Tab: 实例管理 */}
       {tab === 'servers' && (
@@ -243,12 +227,3 @@ export function ServerSetupPage() {
   );
 }
 
-// Local Plus icon as inline component
-function Plus() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}

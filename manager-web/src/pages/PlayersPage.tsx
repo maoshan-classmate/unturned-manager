@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Users, Search, Gavel, DoorOpen, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Users, Gavel, DoorOpen, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
-import { Input } from '../components/ui/input.js';
+import { SearchInput } from '../components/shared/SearchInput.js';
+import { PageState } from '../components/shared/PageState.js';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
+import { errorMessage } from '@/lib/utils';
 
 interface PlayerInfo {
   name: string;
@@ -84,46 +87,17 @@ export function PlayersPage() {
       )
     : players;
 
-  // ── Loading ──
-  if (serverLoading || playersLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#22C55E' }} />
-          <span className="text-sm" style={{ color: '#94A3B8' }}>加载中...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Error ──
-  if (serverError || playersError) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3 max-w-md text-center">
-          <AlertCircle size={32} style={{ color: '#EF4444' }} />
-          <span className="text-sm" style={{ color: '#F1F5FB' }}>无法加载玩家数据</span>
-          <span className="text-xs" style={{ color: '#64748B' }}>{serverError || playersError}</span>
-          <Button onClick={fetchPlayers} className="h-8 text-xs"
-            style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>重试</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!server) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <Users size={32} style={{ color: '#64748B' }} />
-          <span className="text-sm" style={{ color: '#64748B' }}>还没有服务器</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-full gap-4">
+    <PageState
+      loading={serverLoading || playersLoading}
+      error={serverError || playersError}
+      empty={!server}
+      errorText="无法加载玩家数据"
+      emptyText="还没有服务器"
+      emptyIcon={Users}
+      onRetry={fetchPlayers}
+    >
+      <div className="flex flex-col h-full gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -133,11 +107,7 @@ export function PlayersPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#64748B' }} />
-            <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索玩家..." className="pl-8 h-8 text-xs w-48" />
-          </div>
+          <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索玩家..." />
           <Button onClick={fetchPlayers} className="h-8 text-xs gap-1"
             style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>
             <RefreshCw size={14} /> 刷新
@@ -202,28 +172,18 @@ export function PlayersPage() {
         )}
       </div>
 
-      {/* Confirm Dialog */}
-      {confirmAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="rounded-lg p-6 w-80" style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}>
-            <h3 className="text-sm font-medium" style={{ color: '#F1F5FB' }}>
-              确认{confirmAction.type === 'kick' ? '踢出' : '封禁'}
-            </h3>
-            <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
-              确定要{confirmAction.type === 'kick' ? '踢出' : '封禁'}玩家 {confirmAction.target.name} ({confirmAction.target.steamId})？
-            </p>
-            <div className="flex items-center gap-2 mt-4 justify-end">
-              <Button onClick={() => setConfirmAction(null)} disabled={actionPending}
-                className="h-7 text-xs" style={{ backgroundColor: '#1E293B', color: '#94A3B8' }}>取消</Button>
-              <Button onClick={handleAction} disabled={actionPending}
-                className="h-7 text-xs"
-                style={{ backgroundColor: confirmAction.type === 'ban' ? '#EF4444' : '#F59E0B', color: '#fff' }}>
-                {actionPending ? '执行中...' : '确认'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction ? `确认${confirmAction.type === 'kick' ? '踢出' : '封禁'}` : ''}
+        message={confirmAction ? `确定要${confirmAction.type === 'kick' ? '踢出' : '封禁'}玩家 ${confirmAction.target.name} (${confirmAction.target.steamId})？` : ''}
+        confirmLabel="确认"
+        variant={confirmAction?.type === 'ban' ? 'danger' : 'default'}
+        icon={ShieldAlert}
+        loading={actionPending}
+        onConfirm={handleAction}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
+    </PageState>
   );
 }

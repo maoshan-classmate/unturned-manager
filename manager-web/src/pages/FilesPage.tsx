@@ -1,12 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  FolderOpen, File, Folder, Plus, Trash2, RefreshCw, Upload, Search,
+  FolderOpen, File, Folder, Plus, Trash2, RefreshCw, Upload,
   AlertCircle, Loader2, Key, Copy, Scissors, Download, Pencil, ExternalLink,
 } from 'lucide-react';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
-import { Input } from '../components/ui/input.js';
+import { Dialog } from '../components/shared/Dialog.js';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
+import { SearchInput } from '../components/shared/SearchInput.js';
+import { formatSize, formatDate } from '@/lib/utils';
 
 interface FileEntry {
   name: string;
@@ -44,18 +47,6 @@ function FileCardComp({
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
-  const formatSize = (bytes: number) => {
-    if (bytes <= 0) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const formatDate = (iso: string) => {
-    try { return new Date(iso).toISOString().slice(0, 10); }
-    catch { return iso.slice(0, 10); }
-  };
-
   // Icon color per file type
   const getIconColor = () => {
     if (entry.isDirectory) return '#3B82F6'; // blue (Figma)
@@ -295,17 +286,8 @@ export function FilesPage() {
 
         <div className="flex-1" />
 
-        {/* Search (Figma: 200×32, bg=#0F172A, border=#334059) */}
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#64748B' }} />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索文件名..."
-            className="pl-8 pr-3 h-8 text-xs rounded outline-none"
-            style={{ width: 200, fontSize: 13, backgroundColor: '#0F172A', border: '1px solid #334059', color: '#F1F5FB' }}
-          />
-        </div>
+        {/* Search */}
+        <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索文件名..." />
 
         {/* 递归 checkbox (Figma: fs=11, color=#64748B) */}
         <label className="flex items-center gap-1 cursor-pointer select-none">

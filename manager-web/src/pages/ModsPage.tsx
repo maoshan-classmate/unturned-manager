@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Package, Plus, Search, Trash2, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Package, Plus, Trash2, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
+import { SearchInput } from '../components/shared/SearchInput.js';
+import { formatSize } from '@/lib/utils';
 
 interface ModInfo {
   fileId: string;
@@ -161,13 +163,6 @@ export function ModsPage() {
     );
   }
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '—';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
-
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Toolbar */}
@@ -179,15 +174,7 @@ export function ModsPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#64748B' }} />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索 Mod..."
-              className="pl-8 h-8 text-xs w-48"
-            />
-          </div>
+          <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索 Mod..." />
           <Button onClick={() => setShowAdd(true)} className="h-8 text-xs gap-1.5"
             style={{ backgroundColor: '#22C55E', color: '#fff' }}>
             <Plus size={14} /> 添加 Mod

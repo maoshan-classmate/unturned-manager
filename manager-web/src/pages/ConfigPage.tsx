@@ -3,18 +3,13 @@ import {
   Settings, Save, AlertCircle, Loader2, Check,
   FileText, Package, Wrench, Cpu,
 } from 'lucide-react';
+import { TabBar } from '../components/shared/TabBar.js';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 
 type ConfigTab = 'commands' | 'txt' | 'workshop';
-
-const TAB_LABELS: Record<ConfigTab, string> = {
-  commands: 'Commands.dat',
-  txt: 'Config.txt',
-  workshop: 'Workshop',
-};
 
 interface CommandsFields {
   Name: string;
@@ -302,18 +297,15 @@ export function ConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-lg" style={{ backgroundColor: '#0F172A' }}>
-        {([['commands', FileText], ['txt', Cpu], ['workshop', Wrench]] as const).map(([key, Icon]) => (
-          <button key={key} onClick={() => { setTab(key); setDirty(false); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: tab === key ? '#1E293B' : 'transparent',
-              color: tab === key ? '#F1F5FB' : '#64748B',
-            }}>
-            <Icon size={14} /> {TAB_LABELS[key]}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        tabs={[
+          { key: 'commands', label: 'Commands.dat', icon: FileText },
+          { key: 'txt', label: 'Config.txt', icon: Cpu },
+          { key: 'workshop', label: 'Workshop', icon: Wrench },
+        ]}
+        active={tab}
+        onChange={(k) => { setTab(k as ConfigTab); setDirty(false); }}
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
