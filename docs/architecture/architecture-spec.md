@@ -29,10 +29,10 @@
                          │     Steam WebAPI          │
                          │  (steamcommunity.com)     │
                          │                           │
-                         │  · ?xml=1 Mod 元数据       │
-                         │  · GetPublishedFileDetails│
-                         │  · 零凭证优先，WebAPI Key   │
-                         │    可选升级                │
+                         │  · IPublishedFileService  │
+                         │    GetDetails/QueryFiles   │
+                         │  · WebAPI Key 主路径       │
+                         │  · ?xml=1 已废弃           │
                          └────────────┬─────────────┘
                                       │ HTTPS (按需拉取, 本地 LRU 缓存)
                                       │
@@ -71,8 +71,9 @@
 │ · 每实例独立  │ │ · Server/    │ │ 下载 Workshop 内容 │
 │   状态机      │ │ · Workshop/  │ │                  │
 │ · 独立端口    │ │ · Logs/      │ │ 生命周期约束：     │
-│ · 独立 RCON   │ │ · Rocket/    │ │ 写入前 U3DS 必须  │
-│              │ │ · openmod/   │ │ 全部 STOPPED      │
+│ · 独立 RCON   │ │ · Rocket/    │ │ 写 content/ 前必须 │
+│              │ │ · openmod/   │ │ STOPPED；staging  │
+│              │ │              │ │ 下载可不停服 (§1.4) │
 │ A2S: 游戏端口+1│ │ · Bundles/   │ └──────────────────┘
 └──────────────┘ └──────────────┘
 ```
@@ -84,8 +85,8 @@
 | **浏览器** | 双向 | HTTPS (REST) + WSS | 管理面板 UI | 单用户 JWT 认证 |
 | **U3DS 进程 × N** | 双向 | TCP (RCON) + UDP (A2S) + stdout pipe | 运行时命令、玩家查询、控制台输出、状态检测 | 每实例独立状态机、独立端口、独立 RCON 连接 |
 | **服务端文件系统** | 单向读/写 | 本地文件 IO | 配置文件 CRUD、Mod 列表、日志 tail、文件浏览 | 写入受生命周期门控（§4.6 重启流水线） |
-| **SteamCMD** | 单向 spawn | child_process | 安装/更新 U3DS 二进制、下载 Workshop 内容 | 写入前所有 U3DS 实例必须 STOPPED |
-| **Steam WebAPI** | 单向拉取 | HTTPS | Workshop Mod 元数据 | 零凭证优先，WebAPI Key 可选升级 |
+| **SteamCMD** | 单向 spawn | child_process | 安装/更新 U3DS 二进制、下载 Workshop 内容 | 写 `content/1110390/` 或 validate 前 U3DS 必须 STOPPED；下载到 staging（`Workshop/staging/`）可不停服（§1.4） |
+| **Steam WebAPI** | 单向拉取 | HTTPS | Workshop Mod 元数据 | WebAPI Key 主路径（`IPublishedFileService`）；`?xml=1` 已废弃 |
 
 ### 1.3 RCON 链路详解
 
@@ -112,7 +113,8 @@ Panel ──► 自动探测 ──► ① OpenMod Valve Source RCON (rcon-srcds
 | Config.txt | 任意（U3DS 运行时只读） | 接受写入，UI 提示可能需重启 |
 | 插件配置 (openmod/*.yaml) | 任意（OpenMod reload 实验性） | 接受写入，UI 提示 reload 或重启 |
 | 日志文件 | 只读，永不写入 | — |
-| Workshop/ 内容 | SteamCMD 写入时 U3DS STOPPED | 拒绝启动 SteamCMD |
+| Workshop/ 内容（`content/1110390/`、validate、U3DS 二进制） | SteamCMD 写入时 U3DS 必须 STOPPED | 拒绝启动 SteamCMD |
+| Workshop/ staging（`Workshop/staging/`） | 任意（U3DS 运行中不扫描 staging） | 允许下载；应用前必须走重启流水线 |
 
 ---
 
@@ -270,8 +272,8 @@ Panel ──► 自动探测 ──► ① OpenMod Valve Source RCON (rcon-srcds
 | **ServerManager** | 核心域 | 服务端生命周期编排 + 五态状态机 + 操作互斥 | 聚合根，不直接 spawn 进程（委托 ProcessSupervisor） |
 | **ConfigService** | 核心域 | 配置文件语义读写 + 备份-写-恢复 | 只处理 5 种已知格式，保留未知键 |
 | **FilesService** | 核心域 | 通用文件浏览/上传/删除 | 无文件格式知识，路径白名单 + realpath 校验 |
-| **SteamCmdManager** | 核心域 | SteamCMD 安装/更新子进程管理 | 写入前校验所有实例 STOPPED |
-| **WorkshopMetadataService** | 核心域 | Steam Workshop Mod 元数据拉取 + 缓存 | 两档（零凭证/WebAPI Key）自动切换 |
+| **SteamCmdManager** | 核心域 | SteamCMD 安装/更新子进程管理 | 写 content/ 前校验 STOPPED；staging 下载可不停服 |
+| **WorkshopMetadataService** | 核心域 | Steam Workshop Mod 元数据拉取 + 缓存 | WebAPI Key（IPublishedFileService）主路径 |
 | **AuthService** | 核心域 | JWT 签发/校验/刷新 + 密码哈希 | access token 15min + refresh token httpOnly cookie |
 | **LogStreamer** | 核心域 | 双路日志采集 + 凭证脱敏 + 推送 | 单向：文件/stdout → WsBroadcaster，禁止反向 |
 | **WsBroadcaster** | API 层 | WebSocket 事件广播 + 连接管理 | 实现 IBroadcaster 接口，含 JWT 认证 |
@@ -735,7 +737,7 @@ interface IWorkshopMetadataService {
   getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null>;
   searchMods(query: string): Promise<WorkshopModMeta[]>;
   refreshCache(modId: WorkshopFileId): Promise<void>;
-  // 两档自动切换：?xml=1 (零凭证) → GetPublishedFileDetails (WebAPI Key)
+  // WebAPI Key（IPublishedFileService/GetDetails）主路径；?xml=1 已废弃
   // 缓存：DB-backed LRU，stale-while-revalidate（600s 后尝试刷新但不驱逐旧数据）
 }
 
@@ -997,7 +999,7 @@ CREATE TABLE workshop_mods (
   file_size   INTEGER,
   updated_at_steam TEXT,                     -- Steam 上的更新时间
   cached_at   TEXT NOT NULL DEFAULT (datetime('now')),  -- 本地缓存时间
-  raw_xml     TEXT                            -- 原始 ?xml=1 响应
+  raw_xml     TEXT                            -- 废弃字段：原 ?xml=1 响应（保留兼容）
 );
 
 -- 审计日志（危险操作全记录）

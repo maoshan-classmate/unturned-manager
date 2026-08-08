@@ -14,8 +14,8 @@
 | 2 | Config.txt 含 RCON 段？ | ❌ 不含。 | 高 | SDG 官方 Server Configuration 文档 |
 | 3 | Should_Monitor_Updates 精确行为？ | ✅ 已确认：检测→广播→倒计时→强制踢出→关机。SDG 有官方文档页。 | 高 | SDG `dedicated-workshop-update-monitor.html` |
 | 4 | 原生 RCON 配置指令存在？ | ✅ 存在（Commands.dat: `RCON Enabled/Port/Password`）。线协议细节仍未知。 | 中 | Zonely 托管面板文档 |
-| 5 | Steam WebAPI `GetPublishedFileDetails` 需要 Key？ | ✅ **不需要**。官方参数表无 `key` 字段；Rust 库 `steam-workshop-api` 用 `apikey: None` 调用。 | 高 | Steamworks 官方文档、`steamapi.xpaw.me`、`docs.rs/steam-workshop-api` |
-| 6 | `?xml=1` 对私有 Mod 是否可用？ | ❌ 不可用。私有/Friends-Only 需要 Steam 认证。 | 高 | Steam 社区讨论（visibility settings） |
+| 5 | Steam WebAPI `IPublishedFileService` 需要 Key？ | ✅ **需要**。`GetDetails/v1` / `QueryFiles/v1` 均要求 `key` 参数（参考仓 DST 管理平台实证）。**原「`GetPublishedFileDetails` 无需 Key」条目作废**（该接口非元数据主路径）。 | 高 | `.research/dst-management-platform-api/app/mod/utils.go`、`claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1 |
+| 6 | `?xml=1` 零凭证获取是否可用？ | ❌ **已失效（2026-08-08 实测）**。3 个 Mod ID 全部返回 HTML 而非 XML（46KB 网页），`<title>Steam Community :: Screenshot</title>`。私有 Mod 更早确认需认证。→ 迁移 WebAPI Key 主路径。 | 高 | 实测 + `claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1 |
 | 7 | RconBindAddress 在 Commands.dat？ | ❌ **不存在此指令**。全网无一命中。 | 高 | 穷举搜索未命中 |
 | 8 | Game Labs / SynUW 是什么？ | ❌ 不存在于 Unturned 生态。 | 高 | 穷举搜索未命中 |
 | 9 | Alpine Linux musl 兼容性？ | ❌ 不官方支持。Unity Linux player 仅支持 glibc。直接用 Ubuntu/Debian。 | 高 | 常识 + 搜索确认 |
