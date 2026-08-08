@@ -109,7 +109,7 @@ D:/unturned-manager/
 
 ## 6. git commit 前文档过时检测
 
-① `git add` → ② `git diff --cached --name-only`，**仅当 staged 含 `.md` 文件时**才调 `doc-outdated-guard` subagent（`@.claude/agents/doc-outdated-guard.md`），输出 `🔍 正在调取文档语义分析...` → ③ `git commit`。每步独立 Bash 调用。详细流程见 `.claude/rules/development.md`。
+① `git add` → ② `git diff --cached --name-only`，**仅当 staged 含 `.md` 文件时**才调 `doc-outdated-guard` subagent（`@.claude/agents/doc-outdated-guard.md`），输出 `正在调取文档语义分析...` → ③ `git commit`。每步独立 Bash 调用。详细流程见 `.claude/rules/development.md`。
 
 ---
 
