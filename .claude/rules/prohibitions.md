@@ -55,6 +55,6 @@
 ## 踩过的坑（直接照搬前确认）
 
 1. `installgame.json` 端口 `28015/28016` 不能用——未转变者实际是 `27015/27016`
-2. `installgame.json` 那条 tip「`Unturned.exe -batchmode -nographics`」是 Windows 端——Linux 启动的是 `ServerHelper.sh`
+2. `installgame.json` 那条 tip「`Unturned.exe -batchmode -nographics`」是 Windows 端——Linux 单服启动 `ExampleServer.sh`；多实例模式用 `ServerHelper.sh +InternetServer/<ServerID> -ThreadedConsole`
 3. GSM 的 PTY 二进制在它的镜像里——本项目要么自己打包进镜像，要么启动时网络下载
 4. `installgame.json` 的 `cloud` 字段（厂商推广图片）——本项目用不上，值留空

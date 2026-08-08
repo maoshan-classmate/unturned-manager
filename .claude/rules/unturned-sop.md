@@ -32,6 +32,8 @@ Servers/
 
 ## 安装 + 启动
 
+### 单服模式（Phase 1 — 当前）
+
 ```bash
 # SteamCMD 安装（幂等、匿名、AppID 1110390）
 steamcmd +login anonymous +force_install_dir /opt/unturned +app_update 1110390 validate +quit
@@ -39,9 +41,23 @@ steamcmd +login anonymous +force_install_dir /opt/unturned +app_update 1110390 v
 # 运行时前置（Debian/Ubuntu）
 sudo apt-get install -y mono-complete lib32gcc-s1
 
-# 启动一个服
+# 首次启动——生成默认配置（Servers/Default/ 目录）
+/opt/unturned/ExampleServer.sh
+
+# 编辑配置后再次启动
+/opt/unturned/ExampleServer.sh
+```
+
+`ExampleServer.sh` 是 U3DS 自带的默认启动脚本（SteamCMD 安装后自动生成），对应 `Servers/Default/` 这个 ServerID。**参考**：GSM3 单服模式也走同一条路径（`.research/GameServerManager` 配套文档）。
+
+### 多实例模式（Phase 5+ — 后续扩展）
+
+```bash
+# 启动一个命名的服
 /opt/unturned/ServerHelper.sh +InternetServer/<ServerID> -ThreadedConsole
 ```
+
+多个 ServerID 共用同一个 U3DS 安装目录，省 10GB×N 磁盘。
 
 **硬规则**：
 - 一个 ServerID 一个进程。多个 ServerID 共用同一个 U3DS 安装目录。

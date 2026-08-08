@@ -36,6 +36,7 @@
 | GSLT 指南 | https://docs.smartlydressedgames.com/en/latest/servers/game-server-login-tokens.html | Game Server Login Token 配置说明 |
 | 官方文档 GitHub | https://github.com/SmartlyDressedGames/Unturned-Docs | SDG 官方文档源仓库（可提 PR 贡献） |
 | 服务端托管规则 | https://docs.smartlydressedgames.com/en/stable/servers/server-hosting-rules.html | 盈利化/内容限制/Anycast 等规则 |
+| GSM3 Unturned 食用说明 | https://docs.gsm.xiaozhuhouses.asia/%E6%B8%B8%E6%88%8F%E7%99%BE%E7%A7%91/Steam/%E6%9C%AA%E8%BD%AC%E5%8F%98%E8%80%85%E9%A3%9F%E7%94%A8%E8%AF%B4%E6%98%8E.html | GSM3 平台的 Unturned 单服开服教程（Commands.dat 示例/ExampleServer.sh/Mod 添加流程） |
 | U3-SDK（客户端源码） | `.research/U3-SDK` | AppID `304930`，仅供 schema 参考、禁止编译 |
 | WorkshopDownloadConfig.cs | `.research/U3-SDK/Assets/Runtime/Assembly-CSharp/Unturned/Provider/WorkshopDownloadConfig.cs` | WorkshopDownloadConfig.json 的 schema 权威来源 |
 
