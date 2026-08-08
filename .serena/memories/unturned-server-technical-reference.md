@@ -16,9 +16,15 @@
 - RocketMod: Node.js net 模块 (Telnet fallback)
 - A2S 查询: @fabricio-191/valve-server-query (npm)
 
-## Steam Workshop
-- 无需 API Key 获取 Mod 元数据: steamcommunity.com/sharedfiles/filedetails/?id=X&xml=1
-- ISteamRemoteStorage/GetPublishedFileDetails/v1 不需要 Key
+## Steam Workshop（2026-08 调研更新）
+- 元数据获取：IPublishedFileService/QueryFiles + GetDetails（需 WebAPI Key，Settings 配置，AES-GCM 加密存储）
+- QueryFiles 用 appid=304930（客户端 AppID，非服务端 1110390）
+- ?xml=1 零凭证接口已废弃（2026-08 实测返回 HTML）
+- 两阶段查询：QueryFiles 取 ID → GetDetails 批量补 title/preview/creator
+- query_type 官方枚举（实测有效）：3=最热门 0=评分 1=最近发行 21=最新更新 9=订阅数 12=搜索相关度
+- days 参数仅 RankedByTrend 生效：day=1 week=7 month=30 months3=90 months6=180 year=365（发布至今=不传）
+- date_range_created/updated、requiredtags 时间 tag 实测全被 Steam WebAPI 忽略
+- 全局代理绕过：index.ts setGlobalDispatcher(new Agent({connectTimeout:30000}))
+- 浏览失败不降级缓存，抛 AppError（workshop-key-missing/timeout/upstream-error）
 - Workshop 内容分类：Map/Item/Vehicle/Skin/Object/Localization/Server Curation
 - Mod 变更必须重启服务器（不存在热加载）
-- 客户端连接时自动订阅并下载服务端配置的 Workshop Mod

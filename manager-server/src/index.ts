@@ -1,6 +1,7 @@
-// 全局绕过系统 HTTP_PROXY——所有 fetch() 直连不走代理
+// 全局绕过系统 HTTP_PROXY——所有 fetch() 直连不走代理。
+// connectTimeout 默认 10s 对 Steam 直连偏短（首连易超时），放大到 30s。
 import { setGlobalDispatcher, Agent } from 'undici';
-setGlobalDispatcher(new Agent());
+setGlobalDispatcher(new Agent({ connectTimeout: 30_000, headersTimeout: 30_000, bodyTimeout: 30_000 }));
 
 import express from 'express';
 import { createServer } from 'http';

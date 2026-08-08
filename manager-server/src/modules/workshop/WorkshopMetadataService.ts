@@ -6,6 +6,7 @@ import type {
   BrowseResult,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { AppError } from '../../utils/AppError.js';
 import { getSteamWebApiKey } from '../settings/settingsStorage.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -19,7 +20,7 @@ const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`
 const CACHE_FRESH_MS = 600_000;
 const CACHE_STALE_MS = 3_600_000;
 
-const FETCH_TIMEOUT_MS = 10_000;
+const FETCH_TIMEOUT_MS = 30_000;
 
 const U3DS_APPID = '1110390';
 /** Unturned 客户端 AppID——创意工坊 API 用此 ID 而非服务端 AppID */
@@ -75,16 +76,52 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
    * 浏览 Steam 创意工坊——两阶段查询：
    * 1. QueryFiles：获取 ID 列表 + 总数（QueryFiles 不返回 title/creator 等元数据）
    * 2. GetDetails：批量拉取完整元数据
+   *
+   * @param query - 搜索关键词或 fileId
+   * @param sort - 排序：'popular'|'rated'|'published'|'updated'|'subscribed'|'relevance'（映射 Steam query_type）
+   * @param timeRange - 时间范围：'day'|'week'|'month'|'months3'|'months6'|'year'|'all'
+   *   （映射 QueryFiles days 参数。注意：Steam 官方 days 仅对 RankedByTrend 生效，其余排序 Steam 忽略时间参数）
+   * @param searchType - 'text' 按名称/描述；'id' 按 fileId 精确
+   * @param page - 页码（1-based）
+   * @param pageSize - 每页条数（默认 10，前端可选 10/15/30/50）
    */
-  async browseMods(query: string, page: number): Promise<BrowseResult> {
+  async browseMods(
+    query: string,
+    sort: 'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance' = 'popular',
+    timeRange: 'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all' = 'day',
+    searchType: 'text' | 'id' = 'text',
+    page: number = 1,
+    pageSize: number = 10,
+  ): Promise<BrowseResult> {
     const apiKey = getSteamWebApiKey(this.db);
     if (!apiKey) {
-      logger.warn('WebAPI Key 未配置，browseMods 降级到 DB 缓存');
-      const cached = this.searchMods(query);
-      return { mods: await cached, total: (await cached).length, page: 1, pageSize: 20 };
+      // 不降级缓存——明确告知用户配置缺失
+      throw new AppError('workshop-key-missing', '未配置 Steam WebAPI Key，请在系统设置中配置后重试', 503);
     }
+    // Steam 官方 EPublishedFileQueryType 枚举（IPublishedFileService/QueryFiles）
+    // 依据：https://partner.steamgames.com/doc/webapi/IPublishedFileService
+    const sortToQueryType: Record<string, string> = {
+      popular: '3', // RankedByTrend 最热门
+      rated: '0', // RankedByVote 最受好评（发布至今）
+      published: '1', // RankedByPublicationDate 最近发行
+      updated: '21', // RankedByLastUpdatedDate 最新更新
+      subscribed: '9', // RankedByTotalUniqueSubscriptions 不重复订阅者总计
+      relevance: '12', // RankedByTextSearch 搜索相关度（需配合 search_text）
+    };
 
-    const pageSize = 12;
+    // 时间范围 → QueryFiles days 参数。
+    // Steam 官方文档：days 仅对 RankedByTrend 生效，范围 [1,7]；
+    // 其余排序 Steam 自动忽略 days（等效"发布至今"），此为 Steam 原生行为。
+    const rangeToDays: Record<string, number> = {
+      day: 1, // 今天
+      week: 7, // 1 周
+      month: 30, // 30 天
+      months3: 90, // 3 个月
+      months6: 180, // 6 个月
+      year: 365, // 1 年
+      all: 0, // 发布至今（不传 days）
+    };
+
     try {
       // ── 阶段 1: QueryFiles 获取 ID ──
       const qfParams = new URLSearchParams({
@@ -97,20 +134,19 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
         return_children: 'false',
       });
 
-      if (query) {
-        qfParams.set('query_type', '0');
-        qfParams.set('search_text', query);
-      } else {
-        qfParams.set('query_type', '9'); // 按终身平均游玩时长排序（反映 Mod 实际使用量）
-      }
+      // query_type 与 sort 绑定：搜索模式下也用 sort 对应的排序字段（用户期望搜过的结果也按选中排序）
+      qfParams.set('query_type', sortToQueryType[sort] ?? '9');
+      if (query) qfParams.set('search_text', query);
+      // 时间范围：仅"最热门"排序 Steam 实际生效（其余排序忽略 days）
+      const days = rangeToDays[timeRange] ?? 0;
+      if (days > 0) qfParams.set('days', String(days));
 
       const qfUrl = `${API_QUERY_FILES}?${qfParams.toString()}`;
       const qfRes = await fetch(qfUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
       if (!qfRes.ok) {
         logger.warn({ status: qfRes.status }, 'QueryFiles 失败');
-        const cached = await this.searchMods(query);
-        return { mods: cached, total: cached.length, page: 1, pageSize };
+        throw new AppError('workshop-upstream-error', `Steam QueryFiles 返回异常（HTTP ${qfRes.status}）`, 502);
       }
 
       const qfJson = (await qfRes.json()) as {
@@ -135,8 +171,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
 
       if (!gdRes.ok) {
         logger.warn({ status: gdRes.status }, 'GetDetails 批量查询失败');
-        const cached = await this.searchMods(query);
-        return { mods: cached, total: cached.length, page: 1, pageSize };
+        throw new AppError('workshop-upstream-error', `Steam GetDetails 返回异常（HTTP ${gdRes.status}）`, 502);
       }
 
       const gdJson = (await gdRes.json()) as {
@@ -168,9 +203,17 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
 
       return { mods, total, page, pageSize };
     } catch (err) {
-      logger.warn({ query, page, err }, 'Steam API 浏览失败，降级 DB');
-      const cached = await this.searchMods(query);
-      return { mods: cached, total: cached.length, page: 1, pageSize };
+      logger.warn({ query, page, err }, 'Steam API 浏览失败');
+      // 明确区分超时与其他网络错误，前端据此展示"请求超时"
+      if (err instanceof AppError) throw err;
+      const isTimeout =
+        err instanceof Error &&
+        /timeout|timed out|aborted/i.test(`${err.name} ${err.message}`);
+      throw new AppError(
+        isTimeout ? 'workshop-timeout' : 'workshop-upstream-error',
+        isTimeout ? '请求 Steam 创意工坊超时，请稍后重试' : `无法访问 Steam 创意工坊：${err instanceof Error ? err.message : '未知错误'}`,
+        isTimeout ? 504 : 502,
+      );
     }
   }
 

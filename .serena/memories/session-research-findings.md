@@ -8,7 +8,7 @@
 - Mono 依赖：LinuxGSM 2026 仍要求 Mono 5（原"不需要 Mono"假设被推翻）
 - Devlog #012 HTTP API 不存在于 3.x（仅 Unturned II）
 - Config.txt 无 RCON 段（RCON 全部分散在 Commands.dat/Rocket.config.xml/openmod.yaml）
-- Steam WebAPI GetPublishedFileDetails 无需 API Key（Rust 库 steam-workshop-api 确认）
+- ~~Steam WebAPI GetPublishedFileDetails 无需 API Key（Rust 库 steam-workshop-api 确认）~~ 已被作废：IPublishedFileService/GetDetails+QueryFiles 需 WebAPI Key（2026-08 实测）
 - 不存在 Unturned 专用开源 Web 管理面板（差异化空间明确）
 - AMP (CubeCoders) 是唯一内置 Steam Workshop 浏览器的面板（付费商业产品）
 

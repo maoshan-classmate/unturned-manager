@@ -86,7 +86,7 @@
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| GET | `/mods/:fileId` | `WorkshopMetadataService.getModDetails` | — | `ModsPage` 添加 Mod 拉元数据 | ⚠️ Steam `?xml=1` 返回 HTML → 恒 404 |
+| GET | `/mods/:fileId` | `WorkshopMetadataService.getModDetails` | — | `ModsPage` 添加 Mod 拉元数据 | ✅ C6 已修复（IPublishedFileService/GetDetails，需 WebAPI Key） |
 
 ### 2.8 SteamCMD `/api/steamcmd`
 
@@ -155,7 +155,7 @@
 | C3 | Commands.dat 写：前端传普通对象，后端 `serializeCommandsDat` 对 `record.known` 做 `for...of` | `ConfigPage.tsx:141` vs `ConfigService.ts:198` | 保存必 500 | `domain.ts` 改 `Record<string,string>` |
 | C4 | Commands.dat 读：后端返回 Map → `JSON.stringify` 成 `{}` | `routes/config.ts:12` vs `ConfigPage.tsx:93-96` | 前端读空 | 同 C3，路由层 `Object.fromEntries` |
 | C5 | 前端"应用变更"从不调 `POST /:id/apply` | `ModsPage.tsx:96` | apply 流水线永不触发 | ModsPage 改调 `POST /servers/:id/apply`，进度走 WS |
-| C6 | Steam `?xml=1` 返回 HTML 非 XML | 实测 3 个 Mod ID 全部 HTML | `GET /workshop/mods/:fileId` 恒 404 | 重调研，转 WebAPI Key |
+| C6 | Steam `?xml=1` 返回 HTML 非 XML | 实测 3 个 Mod ID 全部 HTML | `GET /workshop/mods/:fileId` 恒 404 | ✅ 已落地：IPublishedFileService/GetDetails + QueryFiles（需 WebAPI Key） |
 | C7 | 上传二进制经 `TextEncoder` 破坏 | `FilesPage.tsx:186`(base64) → `files.ts:44` | `.unity3d` 无法上传 | `createUploadStream` 分块 + Buffer |
 | C8 | WS 无订阅协议 | `gateway.ts:40,60` + 前端从不发消息 | 实时功能全哑 | 补 subscribe 协议 + 前端发消息 |
 

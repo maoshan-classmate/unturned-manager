@@ -16,7 +16,7 @@ export type { IAuthService, JwtPayload } from './contracts/auth.js';
 export type { IA2SClient } from './contracts/a2s.js';
 export type { IFileLockProvider } from './contracts/filelock.js';
 export type { ISteamCmdManager } from './contracts/steamcmd.js';
-export type { IWorkshopMetadataService, BrowseResult } from './contracts/workshop.js';
+export type { IWorkshopMetadataService, BrowseResult, BrowseSort, BrowseTimeRange, BrowseSearchType } from './contracts/workshop.js';
 export type { ILogStreamer } from './contracts/logstream.js';
 
 // Schemas (Sprint 2: zod-openapi 契约层)

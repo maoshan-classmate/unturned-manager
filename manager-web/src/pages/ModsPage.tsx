@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Package, Loader2, AlertCircle } from 'lucide-react';
+import { Package, Loader2, AlertCircle, Search } from 'lucide-react';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
-import { SearchInput } from '../components/shared/SearchInput.js';
+import { Dropdown, type DropdownOption } from '../components/shared/Dropdown.js';
 import { ModCard } from '../components/mods/ModCard.js';
 import { PaginationBar } from '../components/shared/PaginationBar.js';
+import { SearchInput } from '../components/shared/SearchInput.js';
 import { Button } from '../components/ui/button.js';
 
 interface ModInfo {
@@ -15,6 +16,41 @@ interface ModInfo {
   previewUrl?: string;
   fileSize?: number;
   subscriptions?: string;
+}
+
+/** 排序选项——Steam 客户端创意工坊官方 5 项 + 搜索相关度，映射 EPublishedFileQueryType */
+const SORT_OPTIONS: ReadonlyArray<DropdownOption<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>> = [
+  { value: 'popular', label: '最热门' },
+  { value: 'rated', label: '最受好评（发布至今）' },
+  { value: 'published', label: '最近发行' },
+  { value: 'updated', label: '最新更新' },
+  { value: 'subscribed', label: '不重复订阅者总计' },
+  { value: 'relevance', label: '搜索相关度' },
+];
+
+/** 时间范围选项——Steam 客户端官方 7 档，映射 QueryFiles days 参数（仅最热门排序生效） */
+const RANGE_OPTIONS: ReadonlyArray<DropdownOption<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>> = [
+  { value: 'day', label: '今天' },
+  { value: 'week', label: '1 周' },
+  { value: 'month', label: '30 天' },
+  { value: 'months3', label: '3 个月' },
+  { value: 'months6', label: '6 个月' },
+  { value: 'year', label: '1 年' },
+  { value: 'all', label: '发布至今' },
+];
+
+/** 每页条数选项——默认 10 */
+const PAGE_SIZE_OPTIONS: ReadonlyArray<DropdownOption<number>> = [
+  { value: 10, label: '10 条/页' },
+  { value: 15, label: '15 条/页' },
+  { value: 30, label: '30 条/页' },
+  { value: 50, label: '50 条/页' },
+];
+
+/** 从 axios 错误中提取后端返回的中文 message（后端 AppError 统一格式） */
+function getApiError(err: unknown, fallback: string): string {
+  const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+  return msg ?? (err instanceof Error ? err.message : fallback);
 }
 
 /** Mods 页面——Figma 2:4 🎨 Mods。
@@ -33,8 +69,11 @@ export function ModsPage() {
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installedLoading, setInstalledLoading] = useState(false);
 
-  // 搜索 & 错误
+  // 搜索 & 筛选
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sort, setSort] = useState<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>('popular');
+  const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>('week');
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // 待移除
@@ -43,20 +82,25 @@ export function ModsPage() {
   // 操作状态: { fileId: 'subscribing' | 'removing' }
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
 
-  const pageSize = 12;
+  // 每页条数——默认 10，可选 10/15/30/50
+  const [pageSize, setPageSize] = useState(10);
   const totalPages = Math.max(1, Math.ceil(browseTotal / pageSize));
 
   /** 加载 Workshop 浏览数据 */
-  const fetchBrowse = useCallback(async (query: string, page: number) => {
+  const fetchBrowse = useCallback(async (
+    query: string, sortBy: typeof sort, range: typeof timeRange, page: number, size: number,
+  ) => {
     setBrowseLoading(true);
     setFetchError(null);
     try {
-      const res = await apiClient.get('/workshop/browse', { params: { q: query, page } });
+      const res = await apiClient.get('/workshop/browse', {
+        params: { q: query, sort: sortBy, range, page, pageSize: size },
+      });
       const data = res.data.data;
       setBrowseMods(data.mods ?? []);
       setBrowseTotal(data.total ?? 0);
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : '浏览创意工坊失败');
+      setFetchError(getApiError(err, '浏览创意工坊失败'));
     } finally {
       setBrowseLoading(false);
     }
@@ -78,21 +122,84 @@ export function ModsPage() {
   }, [server?.id]);
 
   // 初始加载 + server 切换时刷新
-  useEffect(() => { fetchBrowse(searchQuery, browsePage); }, []);
+  useEffect(() => { fetchBrowse(searchQuery, sort, timeRange, browsePage, pageSize); }, []);
   useEffect(() => { fetchInstalled(); }, [server?.id]);
 
-  /** 搜索 */
-  const handleSearch = (q: string) => {
-    setSearchQuery(q);
+  /**
+   * 输入框清空时自动清除已提交的搜索词——
+   * 否则用户删掉输入内容后 searchQuery 仍残留（如"坦克"），接口继续带 q=坦克。
+   * 仅在"输入框为空但已提交查询非空"时触发一次，避免循环。
+   */
+  useEffect(() => {
+    if (searchInput === '' && searchQuery !== '') {
+      setSearchQuery('');
+      setSort('popular'); // 清空搜索后恢复默认"最热门"排序
+      setTimeRange('week');
+      setBrowsePage(1);
+      fetchBrowse('', 'popular', 'week', 1, pageSize);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  /**
+   * 搜索按钮点击——搜索框有内容时按内容搜索（自动切相关度排序）；
+   * 搜索框为空时清空当前搜索，恢复浏览全部。
+   */
+  const handleSearchClick = () => {
+    const trimmed = searchInput.trim();
+    if (trimmed === '') {
+      // 空搜索 = 清除搜索，恢复"最热门+1周"浏览全部
+      setSearchQuery('');
+      setSort('popular');
+      setTimeRange('week');
+      setBrowsePage(1);
+      fetchBrowse('', 'popular', 'week', 1, pageSize);
+    } else {
+      setSearchQuery(trimmed);
+      setSort('relevance'); // 搜索时自动切到相关度排序
+      setBrowsePage(1);
+      fetchBrowse(trimmed, 'relevance', timeRange, 1, pageSize);
+    }
+  };
+
+  /** 搜索触发（回车）——自动切换为"搜索相关度"排序 */
+  const triggerSearch = (q: string) => {
+    const trimmed = q.trim();
+    setSearchQuery(trimmed);
+    setSort('relevance'); // 搜索时自动切到相关度排序
     setBrowsePage(1);
-    fetchBrowse(q, 1);
+    fetchBrowse(trimmed, 'relevance', timeRange, 1, pageSize);
+  };
+
+  /** 排序改变——每选一个自动筛选 */
+  const handleSortChange = (next: typeof sort) => {
+    setSort(next);
+    setBrowsePage(1);
+    // 非"最热门"排序时时间范围被 Steam 忽略，重置为发布至今避免误导
+    const range = next === 'popular' ? timeRange : 'all';
+    if (next !== 'popular') setTimeRange('all');
+    fetchBrowse(searchQuery, next, range, 1, pageSize);
+  };
+
+  /** 时间范围改变——每选一个自动筛选 */
+  const handleRangeChange = (next: typeof timeRange) => {
+    setTimeRange(next);
+    setBrowsePage(1);
+    fetchBrowse(searchQuery, sort, next, 1, pageSize);
+  };
+
+  /** 每页条数改变——自动重新筛选 */
+  const handlePageSizeChange = (next: number) => {
+    setPageSize(next);
+    setBrowsePage(1);
+    fetchBrowse(searchQuery, sort, timeRange, 1, next);
   };
 
   /** 翻页 */
   const handlePage = (p: number) => {
     if (p < 1 || p > totalPages || p === browsePage) return;
     setBrowsePage(p);
-    fetchBrowse(searchQuery, p);
+    fetchBrowse(searchQuery, sort, timeRange, p, pageSize);
   };
 
   /** 订阅 Mod（添加到服务器） */
@@ -104,7 +211,7 @@ export function ModsPage() {
       await apiClient.post(`/servers/${server.id}/apply`, { fileIds: current });
       setInstalledIds(new Set(current));
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : '订阅失败');
+      setFetchError(getApiError(err, '订阅失败'));
     } finally {
       setActionLoading((prev) => { const next = { ...prev }; delete next[fileId]; return next; });
     }
@@ -138,7 +245,7 @@ export function ModsPage() {
       setInstalledIds(new Set(newMods));
       setPendingRemovals(new Set());
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : '移除失败');
+      setFetchError(getApiError(err, '移除失败'));
     } finally {
       setActionLoading({});
     }
@@ -173,7 +280,7 @@ export function ModsPage() {
           <AlertCircle size={32} style={{ color: '#EF4444' }} />
           <span className="text-sm text-slate-100">无法加载创意工坊</span>
           <span className="text-xs text-slate-500">{serverError || fetchError}</span>
-          <Button onClick={() => fetchBrowse(searchQuery, browsePage)} variant="ghost" size="sm" className="text-slate-400">重试</Button>
+          <Button onClick={() => fetchBrowse(searchQuery, sort, timeRange, browsePage, pageSize)} variant="ghost" size="sm" className="text-slate-400">重试</Button>
         </div>
       </div>
     );
@@ -186,12 +293,59 @@ export function ModsPage() {
         <h1 className="text-xs font-normal text-slate-100">模组管理</h1>
       </div>
 
-      {/* Filter Bar — Figma 10:16234: 搜索 + 过滤文字 */}
-      <div className="shrink-0 mx-4 md:mx-6 px-4 rounded-lg flex flex-wrap items-center gap-4 h-11"
+      {/* Filter Bar — Figma 10:16234: 搜索 + 可交互筛选 */}
+      <div className="shrink-0 mx-4 md:mx-6 px-4 rounded-lg flex flex-wrap items-center gap-3 h-11"
         style={{ backgroundColor: '#172133' }}>
-        <SearchInput value={searchQuery} onChange={handleSearch} placeholder="搜索名称或ID..." width={260} />
-        <span className="text-sm text-slate-400 hidden md:inline">
-          按名称 &nbsp;&nbsp; 按ID &nbsp;&nbsp; 类型: 全部 &nbsp;&nbsp; 排序: 评分
+        {/* 搜索输入框（复用 SearchInput 组件，仅按名称搜索） */}
+        <SearchInput
+          value={searchInput}
+          onChange={setSearchInput}
+          onEnter={triggerSearch}
+          placeholder="搜索 Mod 名称..."
+          width={260}
+        />
+
+        {/* 排序下拉——含"搜索相关度"（搜索时自动切换） */}
+        <Dropdown<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>
+          value={sort}
+          options={SORT_OPTIONS}
+          onChange={handleSortChange}
+          width={170}
+          ariaLabel="排序方式"
+        />
+
+        {/* 时间范围下拉——Steam days 参数仅"最热门"排序生效，其余排序置灰 */}
+        <Dropdown<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>
+          value={timeRange}
+          options={RANGE_OPTIONS}
+          onChange={handleRangeChange}
+          disabled={sort !== 'popular'}
+          width={110}
+          ariaLabel="时间范围"
+        />
+
+        {/* 每页条数下拉——默认 10，可选 10/15/30/50 */}
+        <Dropdown<number>
+          value={pageSize}
+          options={PAGE_SIZE_OPTIONS}
+          onChange={handlePageSizeChange}
+          width={110}
+          ariaLabel="每页条数"
+        />
+
+        {/* 搜索按钮——始终用主题强调色（Button default variant），默认即可点击 */}
+        <Button
+          size="sm"
+          onClick={handleSearchClick}
+          className="h-9 text-xs gap-1"
+        >
+          <Search size={14} /> 搜索
+        </Button>
+
+        {/* 结果摘要 */}
+        <span className="text-xs text-slate-500 ml-auto">
+          {searchQuery ? <>搜索「{searchQuery}」</> : <>浏览全部</>}
+          {browseTotal > 0 && <> · 共 {browseTotal} 条</>}
         </span>
       </div>
 

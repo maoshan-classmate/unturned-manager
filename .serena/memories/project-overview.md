@@ -13,7 +13,7 @@ Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前
 - ✅ ConfigService — 5 种格式（Commands.dat/Config.txt/Workshop.json/OpenMod yaml/Rocket xml）+ 备份 + 乐观锁
 - ✅ FilesService — 路径白名单 + realpath 防护 + 敏感字段脱敏 + 7 REST 端点
 - ✅ SteamCmdManager — getStatus + updateU3DS 安全门控（spawn 留 Sprint 3）
-- ✅ WorkshopMetadataService — Steam ?xml=1 拉取 + DB LRU 缓存 + stale-while-revalidate
+- ✅ WorkshopMetadataService — Steam WebAPI IPublishedFileService 拉取（需 WebAPI Key）+ DB LRU 缓存 + stale-while-revalidate
 - ✅ LogStreamer — 脱敏管道 + 文件 tail 轮询（PTY 留 Sprint 3）
 - ✅ WsBroadcaster — 单例接线，JWT 认证 + 按 ServerID 订阅广播
 
