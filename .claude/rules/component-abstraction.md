@@ -1,3 +1,8 @@
+---
+paths:
+  - "manager-web/**"
+---
+
 # 前端组件抽象铁律
 
 > 每次新增页面或功能后，必须对照本文档检查是否有可抽象的模式。违反铁律的 PR 不予合并。
@@ -49,6 +54,11 @@ if (loading) return <div className="flex..."><Loader2 />加载中...</div>
 | SearchInput | `components/shared/SearchInput.tsx` | 带搜索图标的输入框 |
 | TabBar | `components/shared/TabBar.tsx` | 页面内 Tab 切换 |
 | Card | `components/shared/Card.tsx` | 暗色卡片容器（#1E293B + #334059） |
+| DataTable | `components/shared/DataTable.tsx` | 共享数据表格（内置空状态 + 分页器） |
+| ConfigSection | `components/shared/ConfigSection.tsx` | 配置表单分组容器 |
+| ConfigToggle | `components/shared/ConfigToggle.tsx` | 复选框开关 |
+| ConfigField | `components/shared/ConfigField.tsx` | 标签 + Input 组合 |
+| PasswordInput | `components/shared/PasswordInput.tsx` | 密码输入框（含显示/隐藏切换） |
 
 ## 已提取工具函数（lib/utils.ts）
 
@@ -75,7 +85,3 @@ if (loading) return <div className="flex..."><Loader2 />加载中...</div>
 | `#EF4444` | 危险/删除/错误 |
 | `#F59E0B` | 警告/进行中 |
 | `#3B82F6` | 文件夹图标 |
-
----
-
-*创建日期：2026-08-07 · 组件抽象 Sprint*
