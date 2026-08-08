@@ -12,64 +12,48 @@ paths:
 ### 1. 三行原则
 同一 JSX 模式出现 **≥3 次**，必须提取为组件。出现 **2 次**，提取为工具函数。
 
-### 2. 状态容器必须用 PageState
-所有页面必须用 `<PageState>` 包裹，禁止手写 loading/error/empty 三件套。
-```tsx
-// ❌ 禁止
-if (loading) return <div className="flex..."><Loader2 />加载中...</div>
-
-// ✅ 必须
-<PageState loading={loading} error={error} empty={!data} onRetry={refetch}>
-  {children}
-</PageState>
-```
+### 2. 复用优先
+编写任何 UI 之前，先用 `Glob` 列出 `components/shared/` 下的所有组件。
+目录中已存在的组件**必须复用**，禁止重新手写。
+这包括但不限于：状态容器、弹窗、卡片、输入控件、导航控件等——具体有哪些以目录实际内容为准。
 
 ### 3. 样式禁用手写 hex
-卡片容器（`#1E293B` + `#334059`）用 `<Card>` 组件，禁用 inline style 复制粘贴。按钮用 CVA variant，禁止 inline `style={{ backgroundColor: '#22C55E' }}`。
+用 `components/shared/` 中的容器组件承载内容，禁止 inline `style={{ backgroundColor: ... }}`。
 
-### 4. 对话框用 Dialog/ConfirmDialog
-禁止每页写 `fixed inset-0 z-50 bg-black/50`。Dialog 用于通用弹窗，ConfirmDialog 用于确认操作。
+### 4. 工具函数放 lib/utils
+新增通用工具函数**必须**加到 `manager-web/src/lib/utils.ts`。
+开发前用 `Read` 查看该文件，避免重复实现。
 
-### 5. 工具函数放 lib/utils
-`formatSize`、`formatDate`、`stateLabel`、`stateColor`、`errorMessage` 已提取。发现新的通用工具函数必须加到这里。
+### 5. 表单必须用 react-hook-form + zod
+所有表单使用 `react-hook-form` + `zod` 校验。
+禁止手写 `useState` 管理表单字段。Zod schema 放在页面同级 `xxxSchema.ts` 文件中。实现样板用 `Grep` 搜索项目中 `useForm` 的现有调用。
 
-### 6. Tab/搜索输入用共享组件
-`<TabBar>` 和 `<SearchInput>` 已抽象。新页面需要 Tab 切换或搜索框时直接用，不要复制 ConfigPage 或 ServerSetupPage 的旧代码。
+### 6. 组件 JSDoc 必须完整
+共享组件必须写传统 JSDoc：`/**` 多行——`@param props` + `@returns` + `@example`。Props interface 每个属性 `/**` 单行。
+
+## 组件存放位置
+
+```
+components/
+├── ui/          ← shadcn/ui 原生包装（Button / Input / Card / Dialog 等）
+├── shared/      ← 跨页面复用的业务组件（提取条件：≥3 次重复）
+├── layout/      ← 全局布局组件（Sidebar 等）
+└── <feature>/   ← 特定功能的专属组件（如 stats/StatCard）
+```
+
+新增组件前，用 `Glob` 列出 `components/shared/` 目录下已有组件，避免重复。修改 `components/ui/` 中 shadcn 组件时保持与原版 API 兼容。
 
 ## 抽象流程
 
 1. **写完功能后自检**：搜索项目中是否有相同的 JSX pattern 重复 ≥3 次
-2. **提取到 components/shared/**：组件名 PascalCase，Props 接口完整定义
+2. **提取到 components/shared/**：组件名 PascalCase，Props 接口完整定义 + JSDoc
 3. **现有页面替换**：更新所有使用旧 pattern 的页面
 4. **typecheck + e2e**：确保零破坏
-5. **更新本文档**：新增组件记入下方清单
+5. **更新本文档**：如新增了抽象原则，记入上方铁律列表
 
-## 已抽象组件清单
+## 工具函数
 
-| 组件 | 路径 | 用途 |
-|---|---|---|
-| PageState | `components/shared/PageState.tsx` | 页面四态容器（loading/error/empty/data） |
-| ConfirmDialog | `components/shared/ConfirmDialog.tsx` | 确认弹窗（支持 danger variant） |
-| Dialog | `components/shared/Dialog.tsx` | 通用对话框（含 Title/Footer） |
-| SearchInput | `components/shared/SearchInput.tsx` | 带搜索图标的输入框 |
-| TabBar | `components/shared/TabBar.tsx` | 页面内 Tab 切换 |
-| Card | `components/shared/Card.tsx` | 暗色卡片容器（#1E293B + #334059） |
-| DataTable | `components/shared/DataTable.tsx` | 共享数据表格（内置空状态 + 分页器） |
-| ConfigSection | `components/shared/ConfigSection.tsx` | 配置表单分组容器 |
-| ConfigToggle | `components/shared/ConfigToggle.tsx` | 复选框开关 |
-| ConfigField | `components/shared/ConfigField.tsx` | 标签 + Input 组合 |
-| PasswordInput | `components/shared/PasswordInput.tsx` | 密码输入框（含显示/隐藏切换） |
-
-## 已提取工具函数（lib/utils.ts）
-
-| 函数 | 用途 |
-|---|---|
-| `formatSize(bytes?)` | 文件大小 B→KB→MB |
-| `formatDate(iso)` | ISO→YYYY-MM-DD |
-| `stateLabel(state)` | 服务端状态→中文 |
-| `stateColor(state)` | 服务端状态→色值 |
-| `errorMessage(err, fallback)` | 统一错误消息提取 |
-| `cn(...inputs)` | Tailwind class 合并 |
+工具函数集中放在 `manager-web/src/lib/utils.ts`。开发前用 `Read` 查看该文件，确认是否已有可复用的工具函数。新增通用工具函数必须加到此文件。
 
 ## 色值常量（全局统一，禁止新色值）
 
@@ -85,3 +69,8 @@ if (loading) return <div className="flex..."><Loader2 />加载中...</div>
 | `#EF4444` | 危险/删除/错误 |
 | `#F59E0B` | 警告/进行中 |
 | `#3B82F6` | 文件夹图标 |
+
+---
+
+*创建日期：2026-08-07 · 组件抽象 Sprint*
+*最后更新：2026-08-08——移除硬编码组件清单→目录指向；新增表单强制规范、组件存放位置、JSDoc 要求*

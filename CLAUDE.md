@@ -33,20 +33,30 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 - **认证**：单用户 JWT + Argon2id，数据库预留 `users` 表
 - **设计源头**：`docs/architecture/design-system-mapping.md`（真 Figma 拉取），不用 PNG 猜
 
+### 技术栈
+
+| 层 | 技术 |
+|---|---|
+| **前端** | React 18 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui（基于 @base-ui/react）+ Motion (framer-motion v13) + @tanstack/react-table + recharts + lucide-react |
+| **后端** | Node.js 20 + Express 4 + TypeScript + `ws` + better-sqlite3 + pino |
+| **游戏集成** | `rcon-srcds`（OpenMod Valve Source RCON）→ `net`（RocketMod Telnet 回落）+ `@fabricio-191/valve-server-query`（A2S）+ `fast-xml-parser` + `js-yaml` |
+| **API 契约** | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0，前后端共用 |
+| **部署** | Docker Compose（panel + U3DS 同主机、共享卷、同 bridge 网络）；Caddy/nginx 反向代理 TLS 终结 |
+
 ---
 
 ## 3. 铁律文档索引
 
-技术栈铁律、禁用清单、SOP、组件规范等已拆入 `.claude/rules/`——CLAUDE.md 只保留方向，细则按需加载：
-
 | 规则文件 | 加载条件 | 内容 |
 |---|---|---|
-| @.claude/rules/tech-stack.md | 全局 | 前端/后端/集成/部署 技术栈铁律 |
 | @.claude/rules/prohibitions.md | 全局 | 禁用清单 + GSM 白名单/黑名单 |
+| @.claude/rules/document-organization.md | 全局 | 文档存放位置/命名/生命周期 |
 | @.claude/rules/component-abstraction.md | `manager-web/**` | 前端组件抽象铁律 + 色值常量 |
+| @.claude/rules/frontend-development.md | `manager-web/**` | 前端开发规范（样式/表单/状态/JSDoc） |
+| @.claude/rules/backend-development.md | `manager-server/**` | 后端开发规范（模块/错误/校验/JSDoc） |
 | @.claude/rules/unturned-sop.md | `manager-server/src/modules/**` | 开服 SOP（目录布局/配置/状态机/重启流水线） |
 | @.claude/rules/rcon-protocol.md | `manager-server/src/modules/rcon/**` | RCON 双协议凭证分离 + 安全门控 |
-| @.claude/rules/development.md | 全局 | 验证门槛 + PR 5 件套 + DoD |
+| @.claude/rules/development.md | 全局 | 提交规范/验证门槛/PR 5 件套/完成定义 |
 | @.claude/rules/communication.md | 全局 | 沟通规则（问/不问）+ Serena 记忆纪律 |
 
 ### 关键参考文档
@@ -66,9 +76,11 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 ```
 D:/unturned-manager/
 ├── CLAUDE.md                ← 你在读这个（入口）
-├── .claude/rules/           ← 铁律文档（渐进式披露）
+├── .claude/rules/           ← 铁律文档（渐进式披露，9 文件）
+├── .claude/agents/          ← 自定义 agent 定义
+├── .claude/hooks/           ← 自动化钩子脚本
 ├── docs/                    ← 架构文档（adr/ + architecture/）
-├── claudedocs/              ← 调研产出 + 活参考
+├── claudedocs/              ← 调研产出 + 活参考 + archive/
 ├── manager-server/          ← 后端（Express 4 + ws + SQLite）
 ├── manager-web/             ← 前端（React 18 + shadcn/ui + Tailwind CSS 4 + Motion）
 ├── shared/                  ← 前后端共享（types/ + contracts/ + schemas/）
@@ -78,4 +90,4 @@ D:/unturned-manager/
 
 ---
 
-*最近修订：2026-08-08，架构改造——511 行 → 82 行，铁律拆入 `.claude/rules/`。*
+*最近修订：2026-08-08——合并 tech-stack 信息、新增 3 个规范文件、rules 增至 9 个。*
