@@ -123,7 +123,7 @@ export class ConfigService implements IConfigService {
       content = await fs.readFile(absPath, 'utf-8');
     } catch {
       logger.warn({ serverId, path: absPath }, 'Commands.dat 不存在，返回空记录');
-      return { known: new Map(), unknown: new Map(), comments: [] };
+      return { known: {}, unknown: {}, comments: [] };
     }
 
     return this.parseCommandsDat(content);
@@ -145,8 +145,8 @@ export class ConfigService implements IConfigService {
 
   /** 行解析：每行 `key value` 或 `key`（flag），`#`/`;` 为注释 */
   private parseCommandsDat(content: string): CommandsDatRecord {
-    const known = new Map<string, string>();
-    const unknown = new Map<string, string>();
+    const known: Record<string, string> = {};
+    const unknown: Record<string, string> = {};
     const comments: string[] = [];
 
     for (const line of content.split('\n')) {
@@ -167,17 +167,17 @@ export class ConfigService implements IConfigService {
         // 无空格：flag 型或单键
         const key = trimmed;
         if (KNOWN_KEYS.has(key)) {
-          known.set(key, '');
+          known[key] = '';
         } else {
-          unknown.set(key, '');
+          unknown[key] = '';
         }
       } else {
         const key = trimmed.slice(0, spaceIdx);
         const value = trimmed.slice(spaceIdx + 1).trim();
         if (KNOWN_KEYS.has(key)) {
-          known.set(key, value);
+          known[key] = value;
         } else {
-          unknown.set(key, value);
+          unknown[key] = value;
         }
       }
     }
@@ -195,7 +195,7 @@ export class ConfigService implements IConfigService {
     }
 
     // 已知键
-    for (const [key, value] of record.known) {
+    for (const [key, value] of Object.entries(record.known)) {
       if (FLAG_KEYS.has(key)) {
         lines.push(key); // flag 型不带 value
       } else {
@@ -204,7 +204,7 @@ export class ConfigService implements IConfigService {
     }
 
     // 未知键
-    for (const [key, value] of record.unknown) {
+    for (const [key, value] of Object.entries(record.unknown)) {
       if (value) {
         lines.push(key + ' ' + value);
       } else {
@@ -225,7 +225,7 @@ export class ConfigService implements IConfigService {
       content = await fs.readFile(absPath, 'utf-8');
     } catch {
       logger.warn({ serverId, path: absPath }, 'Config.txt 不存在，返回空记录');
-      return { sections: [] };
+      return { sections: {} };
     }
 
     return this.parseConfigTxt(content);
@@ -246,8 +246,15 @@ export class ConfigService implements IConfigService {
   }
 
   private parseConfigTxt(content: string): ConfigTxtRecord {
-    const sections: ConfigSection[] = [];
+    const sections: Record<string, ConfigSection> = {};
     let currentSection: ConfigSection = { name: '_unlabeled', entries: [] };
+    let hasCurrent = false;
+
+    const flush = () => {
+      if (hasCurrent && currentSection.entries.length > 0) {
+        sections[currentSection.name] = currentSection;
+      }
+    };
 
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
@@ -255,10 +262,9 @@ export class ConfigService implements IConfigService {
 
       // 节头
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        if (currentSection.entries.length > 0) {
-          sections.push(currentSection);
-        }
+        flush();
         currentSection = { name: trimmed.slice(1, -1), entries: [] };
+        hasCurrent = true;
         continue;
       }
 
@@ -293,16 +299,13 @@ export class ConfigService implements IConfigService {
       }
     }
 
-    if (currentSection.entries.length > 0) {
-      sections.push(currentSection);
-    }
-
+    flush();
     return { sections };
   }
 
   private serializeConfigTxt(record: ConfigTxtRecord): string {
     const lines: string[] = [];
-    for (const section of record.sections) {
+    for (const section of Object.values(record.sections)) {
       if (section.name !== '_unlabeled') {
         lines.push('[' + section.name + ']');
       }

@@ -18,8 +18,13 @@ import { createModsRouter } from './routes/mods.js';
 import { createRconRouter } from './routes/rcon.js';
 import { createConfigRouter } from './routes/config.js';
 import { createFilesRouter } from './routes/files.js';
+import { createPlayersRouter } from './routes/players.js';
 import { createSteamCmdRouter } from './routes/steamcmd.js';
 import { createWorkshopRouter } from './routes/workshop.js';
+import { createAuditLogsRouter } from './routes/audit-logs.js';
+import { createSettingsRouter } from './routes/settings.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { noCache } from './middleware/noCache.js';
 
 // ─── 初始化数据库 ──────────────────────────────────────
 const db = initDb(config.dbPath);
@@ -30,14 +35,24 @@ await seedAdminUser(db);
 const container = buildContainer(db);
 setAuthService(container.authService as import('./modules/auth/AuthService.js').AuthService);
 
+// ─── LogStreamer 接线（Phase 0 修复——日志流此前从未启动）──
+for (const serverId of container.serverManager.listServersSync()) {
+  container.logStreamer.startStreaming(serverId as never);
+}
+logger.info({ count: container.serverManager.listServersSync().length }, 'LogStreamer 已启动所有已加载服务器');
+
 // ─── Express 应用 ──────────────────────────────────────
 const app = express();
 const server = createServer(app);
 
 // 中间件塔
+app.set('etag', false);
+app.use(noCache);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: config.corsOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+// 二进制文件 raw 上传（不解析为 JSON）—— Phase 0 /files/raw 配套
+app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 
 // 请求日志
 app.use((req, _res, next) => {
@@ -57,18 +72,17 @@ app.use('/api/servers', createModsRouter(container.serverManager));
 app.use('/api/servers', createRconRouter(container.rconManager));
 app.use('/api/servers', createConfigRouter(container.configService));
 app.use('/api/servers', createFilesRouter(container.filesService));
+app.use('/api/servers', createPlayersRouter(container.rconManager));
 app.use('/api/steamcmd', createSteamCmdRouter(container.steamCmdManager));
 app.use('/api/workshop', createWorkshopRouter(container.workshopMeta));
+app.use('/api/audit-logs', createAuditLogsRouter());
+app.use('/api/settings', createSettingsRouter(db));
 
 // WebSocket
 wsBroadcaster.init(server, container.authService as import('./modules/auth/AuthService.js').AuthService);
 
-// 全局错误处理
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  logger.error({ err }, '未处理的错误');
-  const message = config.nodeEnv === 'development' ? err.message : '服务器内部错误';
-  res.status(500).json({ error: { code: 'server_error', message } });
-});
+// 全局错误处理（必须注册在所有路由之后）
+app.use(errorHandler);
 
 // ─── 优雅关闭 ──────────────────────────────────────────
 let shuttingDown = false;

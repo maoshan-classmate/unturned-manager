@@ -1,28 +1,31 @@
 import type Database from 'better-sqlite3';
-import type { WorkshopFileId, IWorkshopMetadataService, WorkshopModMeta } from '@unturned-manager/shared';
+import type {
+  WorkshopFileId,
+  IWorkshopMetadataService,
+  WorkshopModMeta,
+} from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { getSteamWebApiKey } from '../settings/settingsStorage.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** Steam Workshop XML 查询 URL（零凭证） */
-const STEAM_XML_URL = 'https://steamcommunity.com/sharedfiles/filedetails/?id=';
+/** Steam WebAPI 端点（卡 C 修复 C6：`?xml=1` 已废弃——见 research_dst_mod_reference_2026-08-08.md §5.1） */
+const STEAM_API_BASE = 'https://api.steampowered.com';
+const API_GET_DETAILS = `${STEAM_API_BASE}/IPublishedFileService/GetDetails/v1/`;
+const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`;
 
 /** 缓存 TTL：600s 内直接返回，600-3600s stale-while-revalidate */
-const CACHE_FRESH_MS = 600_000;   // 10 分钟
-const CACHE_STALE_MS = 3_600_000; // 1 小时
+const CACHE_FRESH_MS = 600_000;
+const CACHE_STALE_MS = 3_600_000;
 
-/** HTTP 请求超时 */
 const FETCH_TIMEOUT_MS = 10_000;
+
+const U3DS_APPID = '1110390';
 
 // ─── 实现 ────────────────────────────────────────────────
 
 export class WorkshopMetadataService implements IWorkshopMetadataService {
-  constructor(
-    private db: Database.Database,
-    private apiKey?: string,
-  ) {}
-
-  // ── 公开接口 ──────────────────────────────────────────
+  constructor(private db: Database.Database) {}
 
   async getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null> {
     // 1. 查缓存
@@ -30,26 +33,21 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     const now = Date.now();
 
     if (cached) {
-      const age = now - new Date(cached.cachedAt).getTime();
-
-      if (age < CACHE_FRESH_MS) {
-        // 新鲜缓存：直接返回
-        return this.toModMeta(cached);
-      }
-
+      const cachedAt = (cached as CachedMod & { cached_at?: string }).cached_at
+        ?? (cached as CachedMod).cachedAt;
+      const age = now - new Date(cachedAt).getTime();
+      if (age < CACHE_FRESH_MS) return this.toModMeta(cached);
       if (age < CACHE_STALE_MS) {
-        // 过期但可容忍：返回旧数据 + 后台刷新
         this.refreshInBackground(modId);
         return this.toModMeta(cached);
       }
     }
 
-    // 2. 缓存不可用：阻塞拉取
+    // 2. 缓存不可用：拉新数据
     return this.fetchAndCache(modId);
   }
 
   async searchMods(query: string): Promise<WorkshopModMeta[]> {
-    // Sprint 2: 本地 DB 前缀搜索（Steam 全量搜索需要 WebAPI Key）
     const rows = this.db
       .prepare(
         `SELECT file_id, title, author, description, preview_url, file_size, updated_at_steam, cached_at
@@ -59,7 +57,6 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
          LIMIT 20`,
       )
       .all('%' + query + '%', '%' + query + '%') as CachedMod[];
-
     return rows.map((r) => this.toModMeta(r));
   }
 
@@ -67,7 +64,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     await this.fetchAndCache(modId);
   }
 
-  // ── 缓存操作 ──────────────────────────────────────────
+  // ── 私有 ──────────────────────────────────────────────
 
   private dbGet(modId: WorkshopFileId): CachedMod | null {
     const row = this.db
@@ -76,12 +73,12 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     return row ?? null;
   }
 
-  private dbUpsert(meta: WorkshopModMeta, rawXml: string): void {
+  private dbUpsert(meta: WorkshopModMeta): void {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO workshop_mods
-         (file_id, title, author, description, preview_url, file_size, updated_at_steam, cached_at, raw_xml)
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
+         (file_id, title, author, description, preview_url, file_size, updated_at_steam, cached_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       )
       .run(
         meta.fileId,
@@ -91,7 +88,6 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
         meta.previewUrl ?? null,
         meta.fileSize ?? null,
         meta.updatedAt ?? null,
-        rawXml,
       );
   }
 
@@ -107,89 +103,63 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     };
   }
 
-  // ── HTTP 拉取 + XML 解析 ──────────────────────────────
-
+  /**
+   * 卡 C：WebAPI Key 优先；无则降级零凭证（仅保留 try，参考 research 报告）
+   *
+   * IPublishedFileService/GetDetails/v1（key required）
+   * 返回结构：response.publishedfiledetails = Array<{
+   *   publishedfileid, title, creator, file_description, preview_url,
+   *   file_size, time_updated, ...
+   * }>
+   */
   private async fetchAndCache(modId: WorkshopFileId): Promise<WorkshopModMeta | null> {
-    const xml = await this.fetchXml(modId);
-    if (!xml) return null;
-
-    const meta = this.parseXml(xml, modId);
-    if (meta) {
-      this.dbUpsert(meta, xml);
-    }
-    return meta;
-  }
-
-  private async fetchXml(modId: WorkshopFileId): Promise<string | null> {
-    const url = STEAM_XML_URL + modId + '&xml=1';
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        logger.warn({ modId, status: res.status }, 'Steam Workshop XML 请求失败');
-        return null;
-      }
-
-      return await res.text();
-    } catch (err) {
-      logger.warn({ modId, err }, 'Steam Workshop XML 网络错误');
+    const apiKey = getSteamWebApiKey(this.db);
+    if (!apiKey) {
+      logger.warn({ modId }, 'WebAPI Key 未配置，getModDetails 走 DB 缓存（不命中则返 null）');
       return null;
     }
-  }
-
-  private parseXml(xml: string, modId: WorkshopFileId): WorkshopModMeta | null {
+    const url = `${API_GET_DETAILS}?key=${encodeURIComponent(apiKey)}&publishedfileids[]=${encodeURIComponent(modId)}`;
     try {
-      // 简单 XML 解析——不用 fast-xml-parser 减少依赖（Steam ?xml=1 结构固定）
-      const text = (tag: string): string => {
-        const m = new RegExp('<' + tag + '>([^<]*)</' + tag + '>', 'i').exec(xml);
-        return (m ? m[1] : '') ?? '';
-      };
-
-      const title = text('filename') || text('title') || '';
-      const author = text('creator') || text('author') || '';
-      const description = text('description');
-      const previewUrl = text('preview_url');
-      const fileSizeStr = text('file_size');
-      const updatedStr = text('time_updated');
-
-      if (!title) {
-        logger.warn({ modId }, 'Steam XML 缺少标题，可能不是有效的 Mod');
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        logger.warn({ modId, status: res.status }, 'IPublishedFileService/GetDetails 失败');
         return null;
       }
-
-      return {
+      const json = (await res.json()) as {
+        response: { publishedfiledetails: Array<{
+          publishedfileid: string;
+          title?: string;
+          creator?: string;
+          file_description?: string;
+          preview_url?: string;
+          file_size?: number;
+          time_updated?: number;
+        }> };
+      };
+      const detail = json.response.publishedfiledetails[0];
+      if (!detail || !detail.title) {
+        return null;
+      }
+      const meta: WorkshopModMeta = {
         fileId: modId,
-        title: this.decodeEntities(title),
-        author: this.decodeEntities(author) || 'Unknown',
-        description: this.decodeEntities(description),
-        previewUrl: previewUrl || undefined,
-        fileSize: fileSizeStr ? parseInt(fileSizeStr, 10) : undefined,
-        updatedAt: updatedStr
-          ? new Date(parseInt(updatedStr, 10) * 1000).toISOString()
+        title: detail.title,
+        author: detail.creator ?? 'Unknown',
+        description: detail.file_description ?? '',
+        previewUrl: detail.preview_url,
+        fileSize: detail.file_size,
+        updatedAt: detail.time_updated
+          ? new Date(detail.time_updated * 1000).toISOString()
           : undefined,
       };
+      this.dbUpsert(meta);
+      return meta;
     } catch (err) {
-      logger.warn({ modId, err }, 'Steam XML 解析失败');
+      logger.warn({ modId, err }, 'IPublishedFileService 网络错误');
       return null;
     }
   }
-
-  /** 解码 HTML 实体（Steam XML 返回的内容可能有 &amp; 等） */
-  private decodeEntities(text: string): string {
-    return text
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
-  }
-
-  // ── 后台刷新 ──────────────────────────────────────────
 
   private refreshInBackground(modId: WorkshopFileId): void {
     this.fetchAndCache(modId).catch((err) => {

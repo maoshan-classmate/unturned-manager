@@ -173,10 +173,10 @@ export function ConfigPage() {
   const wsTotalPages = Math.max(1, Math.ceil(filteredWorkshop.length / PAGE_SIZE));
   const wsPaged = filteredWorkshop.slice(workshopPage * PAGE_SIZE, (workshopPage + 1) * PAGE_SIZE);
 
-  // ── Loading / Error / Empty ──
+  // ── Loading / Error ──
   if (serverLoading || configLoading) return <Centered><Loader2 className="h-8 w-8 animate-spin text-emerald-500" /><span className="text-sm text-slate-400">加载中...</span></Centered>;
   if (serverError || configError) return <Centered><AlertCircle size={32} className="text-red-500" /><span className="text-sm text-slate-100">无法加载配置</span><span className="text-xs text-slate-500">{serverError || configError}</span><Button onClick={fetchConfig} variant="ghost" size="sm" className="text-slate-400">重试</Button></Centered>;
-  if (!server) return <Centered><Package size={32} className="text-slate-500" /><span className="text-sm text-slate-500">还没有服务器</span></Centered>;
+  // 无服务器时仍然渲染完整页面骨架，仅禁用保存
 
   return (
     <div className="flex flex-col h-full">
@@ -186,7 +186,7 @@ export function ConfigPage() {
           <h1 className="text-[15px] font-semibold text-slate-100">服务器配置</h1>
           <div className="flex items-center gap-2">
             {saved && <span className="flex items-center gap-1 text-xs text-emerald-500"><Check size={14} /> 已保存</span>}
-            <Button onClick={handleSave} disabled={!dirty || saving} size="sm" className={`h-8 text-xs gap-1.5 ${dirty ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+            <Button onClick={handleSave} disabled={!dirty || saving || !server} size="sm" className={`h-8 text-xs gap-1.5 ${dirty ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
               <Save size={14} /> {saving ? '保存中...' : '保存配置'}
             </Button>
           </div>

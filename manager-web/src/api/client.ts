@@ -12,6 +12,10 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 // 请求拦截器：注入 JWT
 apiClient.interceptors.request.use((config) => {
   if (accessToken) {

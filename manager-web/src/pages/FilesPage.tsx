@@ -173,17 +173,16 @@ export function FilesPage() {
       const name = uploadFileName.trim() || uploadFile.name;
       const entryPath = currentPath ? `${currentPath}/${name}` : name;
 
-      // 读文件内容为 base64（小文件直接读，大文件后续 Sprint 用流式上传）
-      const reader = new FileReader();
-      const content: string = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
-        reader.onerror = () => reject(new Error('读取文件失败'));
-        reader.readAsDataURL(uploadFile);
-      });
-
-      await apiClient.post(`/servers/${server.id}/upload`, {
-        path: entryPath,
-        content: atob(content), // base64 decode → raw text for backend
+      // 使用 /files/raw 端点直接上传原始二进制，不再经过 base64（修复 C7 二进制破坏）
+      const { getAccessToken } = await import('../api/client.js');
+      const token = getAccessToken() ?? '';
+      await fetch(`/api/servers/${server.id}/files/raw?path=${encodeURIComponent(entryPath)}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: uploadFile,
       });
       setUploadFileName(''); setUploadFile(null); setShowUploadDialog(false); fetchFiles();
     } catch (err) { setError(err instanceof Error ? err.message : '上传失败'); }

@@ -6,6 +6,7 @@ export interface IServerManager {
   getState(serverId: ServerId): ServerState;
   getActiveOperation(serverId: ServerId): ActiveOperation;
   listServers(): Promise<ServerConfig[]>;
+  listServersSync(): string[];
 
   createServer(config: ServerConfig): Promise<void>;
   configureServer(serverId: ServerId, patch: Partial<ServerConfig>): Promise<void>;

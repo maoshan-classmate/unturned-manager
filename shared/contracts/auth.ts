@@ -9,4 +9,5 @@ export interface IAuthService {
   refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }>;
   logout(refreshJti: string): Promise<void>;
   validateAccessToken(token: string): JwtPayload | null;
+  changePassword(userId: number, currentPassword: string, newPassword: string): Promise<void>;
 }

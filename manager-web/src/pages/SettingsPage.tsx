@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { PasswordInput } from '../components/shared/PasswordInput.js';
 import { Card } from '../components/shared/Card.js';
+import { apiClient } from '../api/client.js';
 
 /**
  * Settings 页面——Figma 23:19917 🎨 System Settings (P1)。
@@ -26,13 +27,21 @@ export function SettingsPage() {
     }
     setSaving(true);
     setError(null);
-    // Sprint 2: 改密码 API 留到后续实现
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      await apiClient.post('/auth/change-password', {
+        current: passwordForm.current,
+        newPass: passwordForm.newPass,
+        confirm: passwordForm.confirm,
+      });
       setSaved(true);
       setPasswordForm({ current: '', newPass: '', confirm: '' });
       setTimeout(() => setSaved(false), 2000);
-    }, 500);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      setError(msg ?? '修改密码失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

@@ -16,11 +16,11 @@ export default defineConfig({
     // Vite 的 proxy 不走系统 HTTP_PROXY，直接转发到 localhost
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3098',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: 'ws://localhost:3098',
         ws: true,
       },
     },

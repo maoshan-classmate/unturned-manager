@@ -93,7 +93,8 @@ export function ModsPage() {
     if (!server || pendingRemovals.size === 0) return;
     try {
       const newMods = mods.filter((m) => !pendingRemovals.has(m.fileId));
-      await apiClient.put(`/servers/${server.id}/config/workshop`, { fileIds: newMods.map((m) => m.fileId) });
+      // Phase 0 修复 C5：调 POST /apply 触发重启流水线（不直接写 config）
+      await apiClient.post(`/servers/${server.id}/apply`, { fileIds: newMods.map((m) => m.fileId) });
       setMods(newMods);
       setPendingRemovals(new Set());
     } catch (err) {
@@ -113,17 +114,15 @@ export function ModsPage() {
     <PageState
       loading={serverLoading || loading}
       error={serverError || fetchError}
-      empty={!server}
+      empty={false}
       errorText="无法加载 Mod"
-      emptyText="还没有服务器"
-      emptyIcon={Package}
       onRetry={fetchMods}
     >
       <div className="flex flex-col h-full">
         {/* TopBar — Figma: 标题 + 添加按钮 */}
         <div className="shrink-0 flex items-center justify-between px-4 md:px-6 h-16">
           <h1 className="text-sm font-normal text-slate-100">模组管理</h1>
-          <Button onClick={() => setShowAdd(true)} size="sm" className="h-7 text-xs gap-1 bg-emerald-500 text-white">
+          <Button onClick={() => setShowAdd(true)} disabled={!server} size="sm" className="h-7 text-xs gap-1 bg-emerald-500 text-white disabled:opacity-50">
             <Plus size={14} /> 添加 Mod
           </Button>
         </div>

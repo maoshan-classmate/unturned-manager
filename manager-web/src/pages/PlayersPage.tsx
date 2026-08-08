@@ -43,13 +43,16 @@ export function PlayersPage() {
     if (!server) return;
     setLoading(true); setFetchError(null);
     try {
-      const res = await apiClient.post(`/servers/${server.id}/rcon/execute`, { command: 'Players' });
-      const text: string = res.data.data ?? '';
-      const lines = text.split('\n').filter((l: string) => l.includes('|'));
-      setPlayers(lines.map((line: string) => {
-        const p = line.split('|').map((s) => s.trim());
-        return { name: p[0] || '—', steamId: p[1] || '—', character: p[2] || '—', ping: parseInt(p[3] || '0', 10), online: true };
-      }));
+      const res = await apiClient.get(`/servers/${server.id}/players`);
+      const data = res.data.data;
+      if (data?.players) {
+        setPlayers(data.players.map((p: { name: string; steamId: string; character: string; ping: number; timeOnline: string }) => ({
+          ...p,
+          online: true,
+        })));
+      } else {
+        setPlayers([]);
+      }
     } catch { setPlayers([]); } finally { setLoading(false); }
   }, [server]);
 
@@ -66,16 +69,8 @@ export function PlayersPage() {
     finally { setActionPending(false); setConfirmAction(null); }
   };
 
-  // Demo data
-  const demoPlayers: PlayerInfo[] = [
-    { name: 'Renaxon', steamId: '76561198000000001', character: 'Soldier', ping: 45, online: true },
-    { name: 'DarkWolf', steamId: '76561198000000002', character: 'Scout', ping: 120, online: true },
-    { name: 'CyberCat', steamId: '76561198000000003', character: 'Engineer', ping: 78, online: true },
-    { name: 'NightHawk', steamId: '76561198000000004', character: 'Medic', ping: 230, online: true },
-    { name: 'ShadowX', steamId: '76561198000000005', character: 'Sniper', ping: 15, online: true },
-  ];
-  const displayPlayers = players.length > 0 ? players : demoPlayers;
-  const displayCount = players.length || 18;
+  const displayPlayers = players;
+  const displayCount = players.length;
 
   const filtered = searchQuery
     ? displayPlayers.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.steamId.includes(searchQuery))
@@ -109,8 +104,8 @@ export function PlayersPage() {
   }));
 
   return (
-    <PageState loading={serverLoading || loading} error={serverError || fetchError} empty={!server}
-      errorText="无法加载玩家数据" emptyText="还没有服务器" emptyIcon={RefreshCw} onRetry={fetchPlayers}>
+    <PageState loading={serverLoading || loading} error={serverError || fetchError} empty={false}
+      errorText="无法加载玩家数据" emptyText="" onRetry={fetchPlayers}>
       <div className="flex flex-col h-full">
         <div className="shrink-0 flex items-center px-6 h-16">
           <h1 className="text-xl font-normal text-slate-100">在线玩家: {displayCount} / {Math.max(displayCount, 24)}</h1>

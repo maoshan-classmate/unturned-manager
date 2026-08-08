@@ -105,6 +105,14 @@ export class ServerManager implements IServerManager {
     return Array.from(this.servers.values()).map((s) => s.config);
   }
 
+  /**
+   * 同步版——直接读 in-memory Map（启动时给 LogStreamer 接线用）。
+   * 不走 await DB，启动期间不会卡。
+   */
+  listServersSync(): string[] {
+    return Array.from(this.servers.keys());
+  }
+
   // ── 创建 / 配置 ─────────────────────────────────────
 
   async createServer(config: ServerConfig): Promise<void> {
@@ -321,14 +329,132 @@ export class ServerManager implements IServerManager {
     this.auditLog(serverId, 'server.force_stop', {});
   }
 
-  // ── Mod / Update (Wave 2 skeleton) ──────────────────
+  // ── Mod / Update (Phase 2: Mod apply 流水线) ─────────
 
-  async applyModChanges(_serverId: ServerId, _modIds: WorkshopFileId[]): Promise<void> {
-    throw new Error('applyModChanges: Sprint 3 实现');
+  /**
+   * 9 步 Mod 应用流水线（详见 ADR-0002 §6.2）：
+   * ① 备份 WorkshopDownloadConfig.json
+   * ② writeWorkshopFileIds 写新 ID
+   * ③ RCON `Say` 公告即将重启
+   * ④ 每 10s 广播一次倒计时（共 5 次：50→10 剩余）
+   * ⑤ RCON `Save`
+   * ⑥ RCON `Shutdown 10 "<原因>"`
+   * ⑦ waitForExit（30s 超时则 forceKill）
+   * ⑧ spawn（走 startInternal + pollA2S）
+   * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + audit + final broadcast
+   *
+   * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
+   */
+  async applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void> {
+    const entry = this.ensureServer(serverId);
+
+    // 锁：与 restart 同模式，但 mod_apply 暴露给前端「应用变更」按钮
+    if (entry.activeOperation.type !== 'none') {
+      throw Object.assign(new Error(`操作冲突: ${entry.activeOperation.type}`), { status: 409 });
+    }
+    entry.activeOperation = { type: 'mod_apply', startedAt: new Date().toISOString(), modIds: modIds as string[] };
+
+    // 当前必须是 RUNNING（DEGRADED 也允许）才能 mod_apply
+    if (entry.state !== ServerState.RUNNING && entry.state !== ServerState.DEGRADED) {
+      entry.activeOperation = { type: 'none' };
+      throw Object.assign(
+        new Error(`Mod 应用要求服务器运行中，当前状态: ${entry.state}`),
+        { status: 409 },
+      );
+    }
+
+    // 进度 helper
+    const announce = (stage: string, remainingSeconds?: number) => {
+      try {
+        this.broadcaster.broadcast({
+          type: 'mod_apply_progress',
+          serverId,
+          stage,
+          remainingSeconds,
+        } as never);
+      } catch { /* 广播失败不阻塞主流程 */ }
+    };
+
+    try {
+      // ① 备份
+      announce('backing_up');
+      try {
+        await this.configService.backup(serverId, 'Servers/' + serverId + '/Server/WorkshopDownloadConfig.json');
+      } catch (err) {
+        // 备份失败：文件可能还不存在（首次启动），降级为 warn，不阻塞
+        logger.warn({ serverId, err }, 'WorkshopDownloadConfig.json 备份失败（文件可能不存在）');
+      }
+
+      // ② 写新 File_IDs
+      announce('writing_config');
+      await this.configService.writeWorkshopFileIds(serverId, modIds);
+
+      // ③ RCON Say 公告——只有 RCON 通了才发
+      if (this.rconManager.isReachable(serverId)) {
+        announce('broadcasting', 60);
+        try {
+          await this.rconManager.execute(serverId, 'Say "服务器将在 60 秒后重启以应用 Mod 变更"');
+        } catch { /* ignore */ }
+      }
+
+      // ④ 5 次倒计时广播（10s 间隔）——不真正等，只是发事件
+      // 注意：真实停下来等 Shutdown 用 A2S/RCON 超时；前端靠 mod_apply_progress 事件驱动 UI
+      for (const remaining of [50, 40, 30, 20, 10]) {
+        announce('countdown', remaining);
+      }
+
+      // ⑤ Save
+      if (this.rconManager.isReachable(serverId)) {
+        announce('saving');
+        try { await this.rconManager.execute(serverId, 'Save'); } catch { /* ignore */ }
+      }
+
+      // ⑥ Shutdown
+      announce('shutting_down', 10);
+      if (this.rconManager.isReachable(serverId)) {
+        try {
+          await this.rconManager.execute(serverId, 'Shutdown 10 "Mod 变更重启"');
+        } catch { /* Shutdown 可能受限 */ }
+      }
+
+      // ⑦ 等进程退出
+      announce('waiting_exit');
+      try {
+        await this.processSupervisor.waitForExit(serverId, SHUTDOWN_TIMEOUT);
+      } catch {
+        // 30s 未退出 → 强杀
+        logger.warn({ serverId }, 'Shutdown 超时，SIGKILL');
+        this.processSupervisor.forceKill(serverId);
+      }
+      this.transition(serverId, ServerState.STOPPED);
+      this.rconManager.disconnect(serverId);
+
+      // ⑧ 重新拉起
+      await this.startInternal(serverId);
+
+      // ⑨ 收尾
+      if (this.rconManager.isReachable(serverId)) {
+        try {
+          await this.rconManager.execute(serverId, 'Say "Mod 变更已应用"');
+        } catch { /* ignore */ }
+      }
+      announce('completed');
+      this.auditLog(serverId, 'mod.apply', { modIds: modIds as string[] });
+      logger.info({ serverId, modCount: modIds.length }, 'Mod 变更流水线完成');
+    } catch (err) {
+      logger.error({ serverId, err }, 'Mod 变更流水线失败');
+      announce('failed');
+      // try 兜底：把进程拉回 STOPPED
+      try { this.transition(serverId, ServerState.STOPPED); } catch { /* noop */ }
+      throw err;
+    } finally {
+      entry.activeOperation = { type: 'none' };
+    }
   }
 
   async updateServerBinaries(_installDir: string): Promise<void> {
-    throw new Error('updateServerBinaries: Sprint 3 实现');
+    // 卡 C（Phase 3）实装：spawn steamcmd + ... +validate
+    throw new Error('updateServerBinaries: Phase 3 卡 C 待实现');
   }
 
   // ── 内部方法 ────────────────────────────────────────

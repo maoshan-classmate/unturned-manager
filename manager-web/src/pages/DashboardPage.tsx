@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Server,
   Users,
@@ -11,21 +11,34 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useServer, useServerActions } from '../hooks/useServer.js';
+import { apiClient } from '../api/client.js';
 import { StatCard } from '../components/stats/StatCard.js';
 import { Button } from '../components/ui/button.js';
 
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
  *
- * 四张 StatCard + 快速操作按钮 + 图表占位。
+ * 四张 StatCard + 快速操作按钮。
  */
 export function DashboardPage() {
   const { servers, loading, error, refresh } = useServer();
   const { start, stop, restart, pendingId } = useServerActions();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [modCount, setModCount] = useState<number | null>(null);
 
   // 取第一个服务器作为主显示（v1 单服或首服）
   const server = servers[0];
+
+  // 加载 Mod 数量
+  const fetchModCount = useCallback(async () => {
+    if (!server) { setModCount(null); return; }
+    try {
+      const res = await apiClient.get(`/servers/${server.id}/config/workshop`);
+      setModCount(res.data.data?.File_IDs?.length ?? 0);
+    } catch { setModCount(null); }
+  }, [server?.id]);
+
+  useEffect(() => { fetchModCount(); }, [fetchModCount]);
 
   const handleAction = async (
     action: 'start' | 'stop' | 'restart',
@@ -200,34 +213,37 @@ export function DashboardPage() {
         <StatCard
           icon={Users}
           label="在线玩家"
-          value="—"
-          subtext="A2S 查询待实现"
+          value={isRunning ? '—' : '0'}
+          subtext={isRunning ? 'A2S 查询需启动后生效' : '服务器未运行'}
           status="neutral"
         />
         <StatCard
           icon={Cpu}
           label="CPU 使用"
           value="—"
-          subtext="系统监控待实现"
+          subtext="需部署后启用系统监控"
           status="neutral"
         />
         <StatCard
           icon={Package}
           label="已装 Mod"
-          value="—"
-          subtext="Workshop 待实现"
+          value={modCount != null ? String(modCount) : '—'}
+          subtext={modCount != null && modCount > 0 ? `${modCount} 个已启用` : '暂无已启用 Mod'}
           status="neutral"
         />
       </div>
 
-      {/* ── Charts (占位) ── */}
+      {/* ── Charts（需 U3DS 运行 + 历史数据积累后启用）── */}
       <div className="grid grid-cols-2 gap-4">
         <div
           className="flex flex-col items-center justify-center rounded-lg h-48"
           style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
         >
           <span className="text-sm" style={{ color: '#64748B' }}>
-            24h 玩家趋势图（Sprint 3）
+            24h 玩家趋势图
+          </span>
+          <span className="text-xs mt-1" style={{ color: '#475569' }}>
+            服务器运行后自动采集
           </span>
         </div>
         <div
@@ -235,7 +251,10 @@ export function DashboardPage() {
           style={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
         >
           <span className="text-sm" style={{ color: '#64748B' }}>
-            资源使用图（Sprint 3）
+            资源使用图
+          </span>
+          <span className="text-xs mt-1" style={{ color: '#475569' }}>
+            服务器运行后自动采集
           </span>
         </div>
       </div>

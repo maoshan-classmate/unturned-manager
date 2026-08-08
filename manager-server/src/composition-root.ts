@@ -56,7 +56,7 @@ export function buildContainer(db: Database.Database): AppContainer {
   // ── 核心域层 ──────────────────────────────────────────
   const configService = new ConfigService(db, fileLock);
   const filesService = new FilesService(fileLock, db);
-  const steamCmdManager = new SteamCmdManager(db);
+  const steamCmdManager = new SteamCmdManager(db, processSupervisor, broadcaster);
   const workshopMeta = new WorkshopMetadataService(db);
   const logStreamer = new LogStreamer(broadcaster, processSupervisor, db);
 

@@ -1,6 +1,10 @@
 import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import type { IRconManager } from '@unturned-manager/shared';
+import { RconExecuteSchema } from '@unturned-manager/shared';
 import { authenticateToken } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { getDb } from '../db/connection.js';
 
 /**
@@ -23,14 +27,10 @@ export function createRconRouter(rconManager: IRconManager): Router {
   const router = Router();
   router.use(authenticateToken);
 
-  router.post('/:id/execute', async (req, res) => {
+  // 抽成函数：/execute 与 /rcon/execute 共享（C1 修复——两个路径行为完全一致）
+  const rconExecuteHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { command, confirmed } = req.body;
-      if (!command || typeof command !== 'string') {
-        res.status(400).json({ error: { code: 'invalid_request', message: '请提供有效的命令' } });
-        return;
-      }
-
+      const { command, confirmed } = req.body as { command: string; confirmed?: boolean };
       const cmdName = command.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
 
       // 危险指令门控：后端强制二次确认
@@ -46,9 +46,9 @@ export function createRconRouter(rconManager: IRconManager): Router {
 
       const serverId = req.params.id;
 
-      // Owner 专属指令鉴权（CLAUDE.md §4.5 + §8.6）
+      // Owner 专属指令鉴权
       if (OWNER_ONLY_COMMANDS.has(cmdName)) {
-        const user = (req as any).user;
+        const user = (req as unknown as { user?: { role?: string } }).user;
         if (!user || user.role !== 'admin') {
           res.status(403).json({
             error: {
@@ -67,24 +67,36 @@ export function createRconRouter(rconManager: IRconManager): Router {
         try {
           const db = getDb();
           db.prepare(
-            'INSERT INTO audit_logs (server_id, action, actor, detail, ip_address, created_at) VALUES (?, ?, ?, ?, ?, datetime(?))',
+            'INSERT INTO audit_logs (server_id, action, actor, detail, ip_address, created_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))',
           ).run(
             serverId,
             `rcon.${cmdName}`,
             'admin',
             JSON.stringify({ command }),
-            req.ip,
-            'now',
+            req.ip ?? '',
           );
         } catch { /* 审计日志写入失败不影响主流程 */ }
       }
 
       res.json({ data: { output: result } });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '命令执行失败';
-      res.status(500).json({ error: { code: 'rcon_error', message: msg } });
+    } catch (err) {
+      next(err);
     }
-  });
+  };
+
+  // /execute（v1 原路径，前端 ConsolePage 在用）
+  router.post(
+    '/:id/execute',
+    validate(RconExecuteSchema),
+    asyncHandler(rconExecuteHandler),
+  );
+
+  // /rcon/execute（Phase 0 别名，PlayersPage 在用——修复 C1）
+  router.post(
+    '/:id/rcon/execute',
+    validate(RconExecuteSchema),
+    asyncHandler(rconExecuteHandler),
+  );
 
   return router;
 }

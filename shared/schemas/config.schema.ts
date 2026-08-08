@@ -16,8 +16,8 @@ export const FLAG_ONLY_KEYS = new Set([
 ]);
 
 export const CommandsDatRecordSchema = z.object({
-  known: z.map(z.string(), z.string()),
-  unknown: z.map(z.string(), z.string()),
+  known: z.record(z.string(), z.string()),
+  unknown: z.record(z.string(), z.string()),
   comments: z.array(z.string()),
 });
 
@@ -37,7 +37,7 @@ export const ConfigSectionSchema = z.object({
 });
 
 export const ConfigTxtRecordSchema = z.object({
-  sections: z.array(ConfigSectionSchema),
+  sections: z.record(z.string(), ConfigSectionSchema),
 });
 
 // ─── WorkshopDownloadConfig.json ───────────────────────
@@ -61,13 +61,13 @@ export const WriteWorkshopFileIdsSchema = z.object({
 // ─── Write payloads ─────────────────────────────────────
 
 export const WriteCommandsDatSchema = z.object({
-  known: z.map(z.string(), z.string()),
-  unknown: z.map(z.string(), z.string()),
+  known: z.record(z.string(), z.string()),
+  unknown: z.record(z.string(), z.string()),
   comments: z.array(z.string()),
   expectedVersion: z.number().int().positive().optional(),
 });
 
 export const WriteConfigTxtSchema = z.object({
-  sections: z.array(ConfigSectionSchema),
+  sections: z.record(z.string(), ConfigSectionSchema),
   expectedVersion: z.number().int().positive().optional(),
 });

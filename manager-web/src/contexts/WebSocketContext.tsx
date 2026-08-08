@@ -30,6 +30,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         setConnected(true);
         retryDelay.current = 1000;
+        // 卡 B：建连后发 subscribe（修复 C8）。Phase 0 默认订阅所有 serverId + 所有事件；
+        // 后续可在 useServer/useConsole 提供更精细的 serverIds/eventTypes。
+        ws.send(JSON.stringify({ type: 'subscribe', serverIds: [], eventTypes: null }));
       };
 
       ws.onclose = () => {

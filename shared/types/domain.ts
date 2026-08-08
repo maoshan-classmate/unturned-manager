@@ -12,15 +12,17 @@ export interface ServerConfig {
 
 // Commands.dat 解析结果
 // CLAUDE.md §4.3 硬约束：保留未知键，面板不能删除不认识的指令
+// Phase 0 修复：Map → Record，JSON.stringify 兼容（C4 根因）
 export interface CommandsDatRecord {
-  known: Map<string, string>;
-  unknown: Map<string, string>;
+  known: Record<string, string>;
+  unknown: Record<string, string>;
   comments: string[];
 }
 
 // Config.txt 解析结果
+// Phase 0 修复：[] → Record<string, ConfigSection>，贴合前端现状（C2 根因）
 export interface ConfigTxtRecord {
-  sections: ConfigSection[];
+  sections: Record<string, ConfigSection>;
 }
 
 export interface ConfigSection {
