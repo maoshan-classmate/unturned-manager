@@ -56,7 +56,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | @.claude/rules/backend-development.md | `manager-server/**` | 后端开发规范（模块/错误/校验/JSDoc） |
 | @.claude/rules/unturned-sop.md | `manager-server/src/modules/**` | 开服 SOP（目录布局/配置/状态机/重启流水线） |
 | @.claude/rules/rcon-protocol.md | `manager-server/src/modules/rcon/**` | RCON 双协议凭证分离 + 安全门控 |
-| @.claude/rules/development.md | 全局 | 提交规范/验证门槛/PR 5 件套/完成定义 |
+| @.claude/rules/development.md | 全局 | 验证门槛/PR 5 件套/完成定义 |
 | @.claude/rules/communication.md | 全局 | 沟通规则（问/不问）+ Serena 记忆纪律 |
 
 ### 关键参考文档
