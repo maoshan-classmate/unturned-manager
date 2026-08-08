@@ -8,6 +8,7 @@
 |---|---|---|---|
 | 架构决策记录 | `docs/adr/` | `NNNN-简短标题.md`（4 位序号） | `docs/adr/0001-adopt-motion.md` |
 | 架构规格 | `docs/architecture/` | `kebab-case.md` | `docs/architecture/architecture-spec.md` |
+| 外部资源索引 | `docs/` | `external-resources.md` | `docs/external-resources.md` |
 | 调研报告 | `claudedocs/` | `research_<主题>_YYYY-MM-DD.md` | `claudedocs/research_rcon_2026-08-03.md` |
 | 活参考文档 | `claudedocs/` | `reference_<主题>.md` | `claudedocs/reference_config_files.md` |
 | Sprint 工作流 | `claudedocs/` | `workflow_sprintN_<内容>.md` | `claudedocs/workflow_sprint4_config.md` |
@@ -44,6 +45,7 @@
 | `claudedocs/reference_config_files.md` 缺失 | `test -f` | exit 2 阻断 |
 | `claudedocs/reference_console_commands.md` 缺失 | `test -f` | exit 2 阻断 |
 | `claudedocs/research_verification_tracker.md` 缺失 | `test -f` | exit 2 阻断 |
+| `docs/external-resources.md` 缺失 | `test -f` | exit 2 阻断 |
 
 ### Agent 层（语义检查，提醒级）
 

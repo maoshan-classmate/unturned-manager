@@ -68,6 +68,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | `claudedocs/reference_config_files.md` | 涉及配置文件读写 |
 | `claudedocs/reference_console_commands.md` | 涉及 RCON 命令 |
 | `claudedocs/research_verification_tracker.md` | 承诺"能跑"之前 |
+| `docs/external-resources.md` | 需要查外部官方文档链接（Steam WebAPI / Node.js / React / Tailwind 等） |
 
 ---
 
@@ -96,12 +97,12 @@ D:/unturned-manager/
 ├── .claude/rules/           ← 铁律文档（渐进式披露，9 文件）
 ├── .claude/agents/          ← 自定义 agent 定义
 ├── .claude/hooks/           ← 自动化钩子脚本
-├── docs/                    ← 架构文档（adr/ + architecture/）
+├── docs/                    ← 架构文档（adr/ + architecture/）+ external-resources.md
 ├── claudedocs/              ← 调研产出 + 活参考 + archive/
 ├── manager-server/          ← 后端（Express 4 + ws + SQLite）
 ├── manager-web/             ← 前端（React 18 + shadcn/ui + Tailwind CSS 4 + Motion）
 ├── shared/                  ← 前后端共享（types/ + contracts/ + schemas/）
-├── .research/               ← 只读参考仓（U3-SDK + GSM）——**绝对不能改**
+├── .research/               ← 只读参考仓（U3-SDK + GSM + DST）——**绝对不能改**
 └── test-servers/            ← 测试用服务端文件
 ```
 

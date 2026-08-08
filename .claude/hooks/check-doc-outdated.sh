@@ -72,7 +72,8 @@ done
 for doc in \
   "claudedocs/reference_config_files.md" \
   "claudedocs/reference_console_commands.md" \
-  "claudedocs/research_verification_tracker.md"; do
+  "claudedocs/research_verification_tracker.md" \
+  "docs/external-resources.md"; do
   if [ ! -f "$PROJECT_DIR/$doc" ]; then
     echo "  缺失活参考文档: $doc" >&2
     ERRORS=$((ERRORS + 1))
