@@ -16,6 +16,38 @@
 - 每个非平凡的决策写一份 ADR，放在 `docs/adr/NNNN-标题.md`
 - 同一个 PR 里更新对应的 Serena 记忆
 
+### ⚠️ git add 和 git commit 必须分两次 Bash 调用
+
+PreToolUse hook 在 Bash 命令执行**前**触发。`git add && git commit` 合并在一个调用里时，
+`git add` 还没执行——`git diff --cached` 为空，`check-doc-outdated.sh` 快速路径直接跳过检查。
+
+```
+❌ git add . && git commit -m "..."   # hook 看不见 staged 变更
+✅ git add <files>                     # 第一步：stage
+   git commit -m "..."                 # 第二步：commit（hook 正常拦截）
+```
+
+### git commit 前文档过时检测流程
+
+先 `git diff --cached --name-only`，**仅当 staged 含 `.md` 文件时**才执行以下三步（无 .md 则直接 commit）：
+
+```
+① git add <files>
+② git diff --cached --name-only | grep '\.md$'
+   → 有结果: 调 doc-outdated-guard subagent + 输出 🔍 提示
+   → 无结果: 直接跳到 ③
+③ git commit -m "..."
+```
+
+subagent 发现问题的处理方式：
+
+| subagent 返回 | 处理方式 |
+|---|---|
+| 无输出 | → 继续 commit |
+| 🗑️ DELETE_SUGGESTION | AskUserQuestion 确认后删除 |
+| ✏️ FIX_SUGGESTION | 直接派 subagent 修，不打断用户 |
+| ⚠️ REVIEW_NEEDED | 展示给用户等拍板 |
+
 ## 验证门槛
 
 每个 PR 必须通过：

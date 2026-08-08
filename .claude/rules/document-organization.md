@@ -1,6 +1,6 @@
 # 文档存放规范
 
-> 所有文档按类型存入固定位置。文档新鲜度守卫 hook 依赖这些约定做腐坏检测。
+> 所有文档按类型存入固定位置。文档过时检测 hook 依赖这些约定做过时检测。
 
 ## 文档类型 → 位置映射
 
@@ -13,8 +13,8 @@
 | Sprint 工作流 | `claudedocs/` | `workflow_sprintN_<内容>.md` | `claudedocs/workflow_sprint4_config.md` |
 | 已归档文档 | `claudedocs/archive/` | 保留原名 | `claudedocs/archive/research_xxx.md` |
 | 铁律规则 | `.claude/rules/` | `kebab-case.md` | `.claude/rules/prohibitions.md` |
-| Agent 定义 | `.claude/agents/` | `kebab-case.md` | `.claude/agents/doc-freshness-guard.md` |
-| Hook 脚本 | `.claude/hooks/` | `kebab-case.sh` | `.claude/hooks/check-doc-freshness.sh` |
+| Agent 定义 | `.claude/agents/` | `kebab-case.md` | `.claude/agents/doc-outdated-guard.md` |
+| Hook 脚本 | `.claude/hooks/` | `kebab-case.sh` | `.claude/hooks/check-doc-outdated.sh` |
 
 ## 生命周期
 
@@ -31,7 +31,7 @@
 
 ## 与 Hook 的对齐
 
-文档新鲜度守卫在 `git commit` 时自动运行，分为两层：
+文档过时检测在 `git commit` 时自动运行，分为两层：
 
 ### Command 层（机械检查，阻断级）
 
@@ -51,7 +51,7 @@
 
 | 检查项 | 触发器 | 输出 |
 |---|---|---|
-| Sprint 文件腐坏 | 变更文件含 "sprint"/"workflow" → 读 sprint-roadmap 记忆判断 | `🗑️ DELETE_SUGGESTION` |
+| Sprint 文件过时 | 变更文件含 "sprint"/"workflow" → 读 sprint-roadmap 记忆判断 | `🗑️ DELETE_SUGGESTION` |
 | 规则交叉矛盾 | 变更文件在 `.claude/rules/` 下且改了技术决策 → Grep 其他规则文件 | `✏️ FIX_SUGGESTION` 或 `⚠️ REVIEW_NEEDED` |
 | 归档文件被引用 | 变更文件引用了 `claudedocs/archive/` 路径 | `✏️ FIX_SUGGESTION` |
 | MEMORY.md 不同步 | 变更含 `MEMORY.md` → 对比实际记忆文件列表 | `✏️ FIX_SUGGESTION` |

@@ -1,6 +1,6 @@
 ---
-name: doc-freshness-guard
-description: 文档新鲜度守卫——在 git commit 前检测文档腐坏（过期 Sprint 文件、死引用、内容矛盾、MEMORY.md 不同步），输出结构化建议。只读 git diff 中的 .md 文件，不扫全仓。
+name: doc-outdated-guard
+description: 文档过时检测——在 git commit 前检测文档过时（过期 Sprint 文件、死引用、内容矛盾、MEMORY.md 不同步），输出结构化建议。只读 git diff 中的 .md 文件，不扫全仓。
 model: haiku
 tools:
   - Read
@@ -9,9 +9,9 @@ tools:
   - Bash
 ---
 
-# 文档新鲜度守卫
+# 文档过时检测Agent
 
-你的职责：在 `git commit` 前，检测本次变更的文档是否有腐坏问题。
+你的职责：在 `git commit` 前，检测本次变更的文档是否有过时问题。
 
 ## 工作流
 
@@ -29,7 +29,7 @@ git diff --cached --name-only | grep '\.md$'
 
 对每个变更文件，按以下规则判断：
 
-#### A. Sprint/Workflow 文件腐坏
+#### A. Sprint/Workflow 文件过时
 
 如果文件路径或内容包含 "sprint" 或 "workflow"：
 1. 用 `Glob` 搜 `~/.claude/projects/**/memory/sprint-roadmap*.md` → Read 匹配到的文件

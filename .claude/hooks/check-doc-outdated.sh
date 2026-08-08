@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 文档新鲜度守卫 —— 机械层（阻断级）
+# 文档过时检测 —— 机械层（阻断级）
 # 检查死引用、核心文档缺失。发现致命问题 → exit 2 阻断 commit。
 #
 # 输入：stdin JSON（PreToolUse 事件）
@@ -45,7 +45,7 @@ check_at_refs() {
   echo "$errs"
 }
 
-echo "📋 文档新鲜度检查..."
+echo " 文档检查..."
 
 # 检查 1: CLAUDE.md 的死引用
 ERRS=$(check_at_refs "$PROJECT_DIR/CLAUDE.md" "CLAUDE.md")
@@ -81,10 +81,12 @@ done
 
 # ── 结果 ──
 if [ "$ERRORS" -gt 0 ]; then
-  echo "❌ 文档新鲜度检查失败 ($ERRORS 项问题)" >&2
+  echo "❌ 文档检查失败 ($ERRORS 项问题)" >&2
   echo "💡 修复上述问题后再 commit" >&2
   exit 2
 fi
 
-echo "✅ 文档新鲜度检查通过"
+
+SYSTEM_MSG="文档检查通过"
+printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}\n' "$SYSTEM_MSG"
 exit 0
