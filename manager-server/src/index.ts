@@ -1,3 +1,7 @@
+// 全局绕过系统 HTTP_PROXY——所有 fetch() 直连不走代理
+import { setGlobalDispatcher, Agent } from 'undici';
+setGlobalDispatcher(new Agent());
+
 import express from 'express';
 import { createServer } from 'http';
 import helmet from 'helmet';

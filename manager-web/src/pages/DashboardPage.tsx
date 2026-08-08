@@ -14,6 +14,7 @@ import { useServer, useServerActions } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { StatCard } from '../components/stats/StatCard.js';
 import { Button } from '../components/ui/button.js';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
 
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
@@ -25,6 +26,10 @@ export function DashboardPage() {
   const { start, stop, restart, pendingId } = useServerActions();
   const [actionError, setActionError] = useState<string | null>(null);
   const [modCount, setModCount] = useState<number | null>(null);
+
+  // ConfirmDialog 状态
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'start' | 'stop' | 'restart'>('start');
 
   // 取第一个服务器作为主显示（v1 单服或首服）
   const server = servers[0];
@@ -40,15 +45,21 @@ export function DashboardPage() {
 
   useEffect(() => { fetchModCount(); }, [fetchModCount]);
 
-  const handleAction = async (
-    action: 'start' | 'stop' | 'restart',
-    serverId: string,
-  ) => {
+  /** 触发确认弹窗 */
+  const requestAction = (action: 'start' | 'stop' | 'restart') => {
+    setConfirmAction(action);
+    setConfirmOpen(true);
+  };
+
+  /** 确认执行 */
+  const handleAction = async () => {
+    if (!server) return;
+    setConfirmOpen(false);
     setActionError(null);
     try {
-      if (action === 'start') await start(serverId);
-      else if (action === 'stop') await stop(serverId);
-      else await restart(serverId);
+      if (confirmAction === 'start') await start(server.id);
+      else if (confirmAction === 'stop') await stop(server.id);
+      else await restart(server.id);
       refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失败');
@@ -164,7 +175,7 @@ export function DashboardPage() {
           )}
           {!isRunning ? (
             <Button
-              onClick={() => handleAction('start', server.id)}
+              onClick={() => requestAction('start')}
               disabled={isTransitioning || pendingId !== null}
               className="h-8 gap-1.5 text-xs"
               style={{ backgroundColor: '#22C55E', color: '#F1F5FB' }}
@@ -180,7 +191,7 @@ export function DashboardPage() {
           ) : (
             <>
               <Button
-                onClick={() => handleAction('restart', server.id)}
+                onClick={() => requestAction('restart')}
                 disabled={pendingId !== null}
                 className="h-8 gap-1.5 text-xs"
                 style={{ backgroundColor: '#1E293B', color: '#94A3B8', border: '1px solid #334155' }}
@@ -189,7 +200,7 @@ export function DashboardPage() {
                 重启
               </Button>
               <Button
-                onClick={() => handleAction('stop', server.id)}
+                onClick={() => requestAction('stop')}
                 disabled={pendingId !== null}
                 className="h-8 gap-1.5 text-xs"
                 style={{ backgroundColor: '#EF4444', color: '#F1F5FB' }}
@@ -258,6 +269,23 @@ export function DashboardPage() {
           </span>
         </div>
       </div>
+
+      {/* ConfirmDialog — Figma 12:16436 */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={confirmAction === 'start' ? '启动服务器' : confirmAction === 'stop' ? '停止服务器' : '重启服务器'}
+        message={
+          confirmAction === 'start'
+            ? `确认启动服务器 ${server.name || server.id}？`
+            : confirmAction === 'stop'
+              ? `确认停止服务器 ${server.name || server.id}？运行中的玩家将被断开连接。`
+              : `确认重启服务器 ${server.name || server.id}？服务器将短暂不可用。`
+        }
+        confirmLabel={confirmAction === 'start' ? '启动' : confirmAction === 'stop' ? '停止' : '重启'}
+        variant={confirmAction === 'stop' ? 'danger' : 'default'}
+        onConfirm={handleAction}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

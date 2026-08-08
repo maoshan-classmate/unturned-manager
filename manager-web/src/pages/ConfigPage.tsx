@@ -31,10 +31,11 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
   Gold: '仅 Gold 会员', Hide_Admins: '隐藏管理员', Sync: '跨服同步',
 };
 
-const DEFAULT_FIELDS: CommandsFields = {
-  Name: '', Port: '27015', MaxPlayers: '16', Map: 'PEI', Mode: 'Normal',
-  Owner: '', Perspective: 'Both', Chatrate: '0.25', Cycle: '3600',
-  Timeout: '750', Queue_Size: '0', GSLT: '', Password: '',
+/** 空白初始值——不预设任何游戏默认值，全部从服务端文件读取 */
+const EMPTY_FIELDS: CommandsFields = {
+  Name: '', Port: '', MaxPlayers: '', Map: '', Mode: '',
+  Owner: '', Perspective: '', Chatrate: '', Cycle: '',
+  Timeout: '', Queue_Size: '', GSLT: '', Password: '',
   Cheats: false, Filter: false, Whitelisted: false, Gold: false,
   Hide_Admins: false, Sync: false,
 };
@@ -48,9 +49,10 @@ interface ConfigTxtFields {
   肩后视角: boolean; 自由建造: boolean; 玩家伤害: boolean; 允许自杀: boolean;
 }
 
-const DEFAULT_TXT: ConfigTxtFields = {
+/** 空白初始值——全部从服务端 Config.txt 实际内容读取 */
+const EMPTY_TXT: ConfigTxtFields = {
   Login_Token: '', 完整描述: '', 列表描述: '', 图标URL: '', 缩略图URL: '',
-  VAC反作弊: false, BattlEye: false, 最大Ping: '750', 定时关机: false, 更新自动关机: false,
+  VAC反作弊: false, BattlEye: false, 最大Ping: '', 定时关机: false, 更新自动关机: false,
   生成倍率: '', 物品耐久: false, 掉落消失: '', 重生时间: '',
   肩后视角: false, 自由建造: false, 玩家伤害: false, 允许自杀: false,
 };
@@ -69,12 +71,12 @@ export function ConfigPage() {
   const server = servers[0];
 
   const [tab, setTab] = useState<ConfigTab>('commands');
-  const [fields, setFields] = useState<CommandsFields>(DEFAULT_FIELDS);
-  const [txtFields, setTxtFields] = useState<ConfigTxtFields>(DEFAULT_TXT);
+  const [fields, setFields] = useState<CommandsFields>(EMPTY_FIELDS);
+  const [txtFields, setTxtFields] = useState<ConfigTxtFields>(EMPTY_TXT);
   const [workshopRows, setWorkshopRows] = useState<WorkshopRow[]>([]);
   const [workshopSearch, setWorkshopSearch] = useState('');
   const [workshopStatusFilter, setWorkshopStatusFilter] = useState('全部状态');
-  const [workshopPage, setWorkshopPage] = useState(0);
+  const [workshopPage, setWorkshopPage] = useState(1);
 
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export function ConfigPage() {
         if (data) {
           const known = data.known ?? {};
           setFields({
-            ...DEFAULT_FIELDS,
+            ...EMPTY_FIELDS,
             ...Object.fromEntries(Object.entries(known).map(([k, v]) => [k, String(v)])),
             Cheats: known.Cheats !== undefined, Filter: known.Filter !== undefined,
             Whitelisted: known.Whitelisted !== undefined, Gold: known.Gold !== undefined,
@@ -106,10 +108,10 @@ export function ConfigPage() {
           const b = raw.sections['浏览器'] ?? {}, s = raw.sections['服务器'] ?? {};
           const i = raw.sections['物品'] ?? {}, g = raw.sections['玩法开关'] ?? {};
           setTxtFields({
-            ...DEFAULT_TXT,
+            ...EMPTY_TXT,
             Login_Token: b.Login_Token ?? '', 完整描述: b['完整描述'] ?? '', 列表描述: b['列表描述'] ?? '',
             图标URL: b['图标URL'] ?? '', 缩略图URL: b['缩略图URL'] ?? '',
-            VAC反作弊: s['VAC反作弊'] !== undefined, BattlEye: s.BattlEye !== undefined, 最大Ping: s['最大Ping(ms)'] ?? '750',
+            VAC反作弊: s['VAC反作弊'] !== undefined, BattlEye: s.BattlEye !== undefined, 最大Ping: s['最大Ping(ms)'] ?? '',
             定时关机: s['定时关机'] !== undefined, 更新自动关机: s['更新自动关机'] !== undefined,
             生成倍率: i['生成倍率'] ?? '', 物品耐久: i['物品耐久'] !== undefined, 掉落消失: i['掉落消失(s)'] ?? '', 重生时间: i['重生时间(s)'] ?? '',
             肩后视角: g['肩后视角'] !== undefined, 自由建造: g['自由建造'] !== undefined, 玩家伤害: g['玩家伤害'] !== undefined, 允许自杀: g['允许自杀'] !== undefined,
@@ -170,8 +172,7 @@ export function ConfigPage() {
     const s = workshopStatusFilter === '全部状态' || (workshopStatusFilter === '已启用' && r.status === 'enabled') || (workshopStatusFilter === '未启用' && r.status === 'disabled') || (workshopStatusFilter === '下载中' && r.status === 'downloading');
     return m && s;
   });
-  const wsTotalPages = Math.max(1, Math.ceil(filteredWorkshop.length / PAGE_SIZE));
-  const wsPaged = filteredWorkshop.slice(workshopPage * PAGE_SIZE, (workshopPage + 1) * PAGE_SIZE);
+  const wsPaged = filteredWorkshop.slice((workshopPage - 1) * PAGE_SIZE, workshopPage * PAGE_SIZE);
 
   // ── Loading / Error ──
   if (serverLoading || configLoading) return <Centered><Loader2 className="h-8 w-8 animate-spin text-emerald-500" /><span className="text-sm text-slate-400">加载中...</span></Centered>;
@@ -209,8 +210,7 @@ export function ConfigPage() {
               rows={filteredWorkshop} paged={wsPaged}
               search={workshopSearch} onSearch={setWorkshopSearch}
               statusFilter={workshopStatusFilter}
-              page={workshopPage} totalPages={wsTotalPages}
-              onPage={setWorkshopPage}
+              page={workshopPage} onPage={setWorkshopPage}
               onToggleSelect={toggleWsSelect} onToggleStatus={toggleWsStatus} onRemove={removeWs}
             />
           )}
@@ -311,9 +311,9 @@ const WS_COLUMNS: DataTableColumn[] = [
   { key: 'actions', label: '操作' },
 ];
 
-function WorkshopTab({ rows, paged, search, onSearch, statusFilter, page, totalPages, onPage, onToggleSelect, onToggleStatus, onRemove }: {
+function WorkshopTab({ rows, paged, search, onSearch, statusFilter, page, onPage, onToggleSelect, onToggleStatus, onRemove }: {
   rows: WorkshopRow[]; paged: WorkshopRow[]; search: string; onSearch: (v: string) => void;
-  statusFilter: string; page: number; totalPages: number; onPage: (p: number) => void;
+  statusFilter: string; page: number; onPage: (p: number) => void;
   onToggleSelect: (id: string) => void; onToggleStatus: (id: string) => void; onRemove: (id: string) => void;
 }) {
   const rowData = paged.map((r) => ({
@@ -349,7 +349,7 @@ function WorkshopTab({ rows, paged, search, onSearch, statusFilter, page, totalP
       <div className="shrink-0 mx-4 border-t border-slate-800" />
       <div className="flex flex-col flex-1 px-4">
         <DataTable columns={WS_COLUMNS} data={rowData} keyField="_key" emptyText="暂无 Workshop Mod"
-          pagination={{ page, totalPages, total: rows.length, label: '条', onPageChange: onPage }} />
+          pagination={{ page, pageSize: PAGE_SIZE, total: rows.length, onPageChange: onPage }} />
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export function PlayersPage() {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const [confirmAction, setConfirmAction] = useState<{ type: 'kick' | 'ban'; target: PlayerInfo } | null>(null);
   const [actionPending, setActionPending] = useState(false);
 
@@ -75,8 +75,7 @@ export function PlayersPage() {
   const filtered = searchQuery
     ? displayPlayers.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.steamId.includes(searchQuery))
     : displayPlayers;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Convert player rows to DataTable format
   const rowData = paged.map((p) => ({
@@ -122,7 +121,7 @@ export function PlayersPage() {
         </div>
         <div className="flex flex-col flex-1 mx-4 md:mx-6 mt-4">
           <DataTable columns={COLUMNS} data={rowData} keyField="_key" emptyText="暂无在线玩家"
-            pagination={{ page, totalPages, total: filtered.length, label: '名玩家', onPageChange: setPage }} />
+            pagination={{ page, pageSize: PAGE_SIZE, total: filtered.length, onPageChange: setPage }} />
         </div>
       </div>
       <ConfirmDialog open={!!confirmAction}

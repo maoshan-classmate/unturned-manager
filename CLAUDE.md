@@ -43,6 +43,12 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | **API 契约** | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0，前后端共用 |
 | **部署** | Docker Compose（panel + U3DS 同主机、共享卷、同 bridge 网络）；Caddy/nginx 反向代理 TLS 终结 |
 
+### Vite 代理端口——禁止随意修改
+
+`manager-web/vite.config.ts` 中 proxy target 端口**必须**与 `manager-server/.env` 的 `SERVER_PORT` 一致。  
+当前为 `3001`。修改后端端口时同步改 proxy，**绝不允许**只改一端导致前端 500。  
+此规则不受"直接做别问"豁免——改 proxy 端口前必须先确认 `.env` 中的 `SERVER_PORT`。
+
 ---
 
 ## 3. 铁律文档索引
@@ -114,4 +120,4 @@ D:/unturned-manager/
 
 ---
 
-*最近修订：2026-08-08——合并 tech-stack 信息、新增 3 个规范文件、rules 增至 9 个、新增 §6 git commit 文档过时检测、移除 agent hook、hook exit 0 改为 JSON 输出。*
+*最近修订：2026-08-08——合并 tech-stack 信息、新增 3 个规范文件、rules 增至 9 个、新增 §6 git commit 文档过时检测、移除 agent hook、hook exit 0 改为 JSON 输出、新增 Vite proxy 端口约束。*

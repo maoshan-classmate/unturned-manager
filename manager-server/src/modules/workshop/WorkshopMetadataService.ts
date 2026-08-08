@@ -3,6 +3,7 @@ import type {
   WorkshopFileId,
   IWorkshopMetadataService,
   WorkshopModMeta,
+  BrowseResult,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
 import { getSteamWebApiKey } from '../settings/settingsStorage.js';
@@ -21,6 +22,8 @@ const CACHE_STALE_MS = 3_600_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 const U3DS_APPID = '1110390';
+/** Unturned 客户端 AppID——创意工坊 API 用此 ID 而非服务端 AppID */
+const UNTURNED_CLIENT_APPID = '304930';
 
 // ─── 实现 ────────────────────────────────────────────────
 
@@ -58,6 +61,117 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       )
       .all('%' + query + '%', '%' + query + '%') as CachedMod[];
     return rows.map((r) => this.toModMeta(r));
+  }
+
+  /**
+   * 浏览 Steam 创意工坊。
+   * 空 query = 热门 Mod（按订阅数排序）；传 query = 关键词搜索。
+   *
+   * @param query - 搜索关键词，空字符串返回热门
+   * @param page - 页码，从 1 开始
+   * @returns 分页浏览结果
+   */
+  /**
+   * 浏览 Steam 创意工坊——两阶段查询：
+   * 1. QueryFiles：获取 ID 列表 + 总数（QueryFiles 不返回 title/creator 等元数据）
+   * 2. GetDetails：批量拉取完整元数据
+   */
+  async browseMods(query: string, page: number): Promise<BrowseResult> {
+    const apiKey = getSteamWebApiKey(this.db);
+    if (!apiKey) {
+      logger.warn('WebAPI Key 未配置，browseMods 降级到 DB 缓存');
+      const cached = this.searchMods(query);
+      return { mods: await cached, total: (await cached).length, page: 1, pageSize: 20 };
+    }
+
+    const pageSize = 12;
+    try {
+      // ── 阶段 1: QueryFiles 获取 ID ──
+      const qfParams = new URLSearchParams({
+        key: apiKey,
+        appid: UNTURNED_CLIENT_APPID,
+        numperpage: String(pageSize),
+        page: String(page),
+        return_vote_data: 'true',
+        return_tags: 'false',
+        return_children: 'false',
+      });
+
+      if (query) {
+        qfParams.set('query_type', '0');
+        qfParams.set('search_text', query);
+      } else {
+        qfParams.set('query_type', '9'); // 按终身平均游玩时长排序（反映 Mod 实际使用量）
+      }
+
+      const qfUrl = `${API_QUERY_FILES}?${qfParams.toString()}`;
+      const qfRes = await fetch(qfUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+
+      if (!qfRes.ok) {
+        logger.warn({ status: qfRes.status }, 'QueryFiles 失败');
+        const cached = await this.searchMods(query);
+        return { mods: cached, total: cached.length, page: 1, pageSize };
+      }
+
+      const qfJson = (await qfRes.json()) as {
+        response: { total?: number; publishedfiledetails: Array<{ publishedfileid: string }> };
+      };
+
+      const fileIds = (qfJson.response.publishedfiledetails ?? [])
+        .map((d) => d.publishedfileid)
+        .filter(Boolean);
+      const total = qfJson.response.total ?? 0;
+
+      if (fileIds.length === 0) {
+        return { mods: [], total, page, pageSize };
+      }
+
+      // ── 阶段 2: GetDetails 批量获取元数据 ──
+      const gdParams = new URLSearchParams({ key: apiKey });
+      fileIds.forEach((id, i) => gdParams.append(`publishedfileids[${i}]`, id));
+
+      const gdUrl = `${API_GET_DETAILS}?${gdParams.toString()}`;
+      const gdRes = await fetch(gdUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+
+      if (!gdRes.ok) {
+        logger.warn({ status: gdRes.status }, 'GetDetails 批量查询失败');
+        const cached = await this.searchMods(query);
+        return { mods: cached, total: cached.length, page: 1, pageSize };
+      }
+
+      const gdJson = (await gdRes.json()) as {
+        response: {
+          publishedfiledetails: Array<{
+            publishedfileid: string; result: number;
+            title?: string; creator?: string; file_description?: string;
+            preview_url?: string; file_size?: number; time_updated?: number;
+            subscriptions?: number;
+          }>;
+        };
+      };
+
+      const mods: WorkshopModMeta[] = (gdJson.response.publishedfiledetails ?? [])
+        .filter((d) => d.result === 1 && d.title) // result=1 表示成功
+        .map((d) => {
+          const meta: WorkshopModMeta = {
+            fileId: d.publishedfileid as WorkshopFileId,
+            title: d.title!,
+            author: d.creator ?? 'Unknown',
+            description: d.file_description ?? '',
+            previewUrl: d.preview_url,
+            fileSize: d.file_size,
+            updatedAt: d.time_updated ? new Date(d.time_updated * 1000).toISOString() : undefined,
+          };
+          this.dbUpsert(meta);
+          return meta;
+        });
+
+      return { mods, total, page, pageSize };
+    } catch (err) {
+      logger.warn({ query, page, err }, 'Steam API 浏览失败，降级 DB');
+      const cached = await this.searchMods(query);
+      return { mods: cached, total: cached.length, page: 1, pageSize };
+    }
   }
 
   async refreshCache(modId: WorkshopFileId): Promise<void> {
