@@ -36,16 +36,25 @@
 
 ### Command 层（机械检查，阻断级）
 
+> **权威定义在 hook 脚本**：必检文件清单见 `.claude/hooks/check-doc-outdated.sh` 的 `REQUIRED_DOCS` 数组。  
+> 该数组按文档类型分类，支持**通配模式**（如 `reference_*.md`）——同一分类下新增文件自动纳入检查，无需修改脚本。  
+> 新增必检分类时，在 `REQUIRED_DOCS` 数组中追加一行即可，同步更新下方表格。
+
+**死引用检查**（提取 `@path` → `test -f` 验证）：
+
 | 检查项 | 方法 | 失败后果 |
 |---|---|---|
-| `CLAUDE.md` 中的 `@path` 引用指向不存在文件 | 正则提取 `@path` → `test -f` 逐一验证 | exit 2 阻断 commit |
+| `CLAUDE.md` 中的 `@path` 引用指向不存在文件 | 正则提取 → `test -f` 逐一验证 | exit 2 阻断 |
 | `.claude/rules/*.md` 中的 `@path` 引用指向不存在文件 | 同上 | exit 2 阻断 |
-| `docs/architecture/architecture-spec.md` 缺失 | `test -f` | exit 2 阻断 |
-| `docs/architecture/design-system-mapping.md` 缺失 | `test -f` | exit 2 阻断 |
-| `claudedocs/reference_config_files.md` 缺失 | `test -f` | exit 2 阻断 |
-| `claudedocs/reference_console_commands.md` 缺失 | `test -f` | exit 2 阻断 |
-| `claudedocs/research_verification_tracker.md` 缺失 | `test -f` | exit 2 阻断 |
-| `docs/external-resources.md` 缺失 | `test -f` | exit 2 阻断 |
+
+**必检文件清单**（由 `REQUIRED_DOCS` 数组驱动）：
+
+| 分类 | 目录 | 匹配模式 | 新增文件时 |
+|---|---|---|---|
+| 架构规格 | `docs/architecture/` | 精确文件名列表 | 列表追加 |
+| 外部资源索引 | `docs/` | `external-resources.md` | —（固定文件名） |
+| 活参考文档 | `claudedocs/` | `reference_*.md` 通配 | **无需修改脚本** |
+| 核心调研报告 | `claudedocs/` | `research_verification_tracker.md` | 列表追加 |
 
 ### Agent 层（语义检查，提醒级）
 

@@ -47,37 +47,52 @@ check_at_refs() {
 
 echo " 文档检查..."
 
-# 检查 1: CLAUDE.md 的死引用
+# ── 必检文件：与 .claude/rules/document-organization.md §Command 层 严格对齐 ──
+# 每个条目格式："目录|通配模式或文件名|分类标签"
+# 通配模式（如 reference_*.md）→ 该分类下所有匹配文件自动纳入检查，新增文件无需修改脚本
+# 精确文件名 → 仅检查该文件
+
+REQUIRED_DOCS=(
+  "docs/architecture|architecture-spec.md design-system-mapping.md|架构规格"
+  "docs|external-resources.md|外部资源索引"
+  "claudedocs|reference_*.md|活参考文档"
+  "claudedocs|research_verification_tracker.md|核心调研报告"
+)
+
+# 检查 1: CLAUDE.md 的 @path 死引用
 ERRS=$(check_at_refs "$PROJECT_DIR/CLAUDE.md" "CLAUDE.md")
 ERRORS=$((ERRORS + ERRS))
 
-# 检查 2: .claude/rules/*.md 的死引用
+# 检查 2: .claude/rules/*.md 的 @path 死引用
 for rule in "$PROJECT_DIR"/.claude/rules/*.md; do
   [ -f "$rule" ] || continue
   ERRS=$(check_at_refs "$rule" ".claude/rules/$(basename "$rule")")
   ERRORS=$((ERRORS + ERRS))
 done
 
-# 检查 3: 核心架构文档
-for doc in \
-  "docs/architecture/architecture-spec.md" \
-  "docs/architecture/design-system-mapping.md"; do
-  if [ ! -f "$PROJECT_DIR/$doc" ]; then
-    echo "  缺失核心文档: $doc" >&2
-    ERRORS=$((ERRORS + 1))
-  fi
-done
-
-# 检查 4: 活参考文档
-for doc in \
-  "claudedocs/reference_config_files.md" \
-  "claudedocs/reference_console_commands.md" \
-  "claudedocs/research_verification_tracker.md" \
-  "docs/external-resources.md"; do
-  if [ ! -f "$PROJECT_DIR/$doc" ]; then
-    echo "  缺失活参考文档: $doc" >&2
-    ERRORS=$((ERRORS + 1))
-  fi
+# 检查 3: 必检文件（按上述 REQUIRED_DOCS 定义，逐分类检查）
+for entry in "${REQUIRED_DOCS[@]}"; do
+  IFS='|' read -r dir pattern label <<< "$entry"
+  # 通配模式：展开后逐一检查；精确文件名：直接检查
+  for pat in $pattern; do
+    if [[ "$pat" == *"*"* ]]; then
+      # 通配模式——该分类下所有匹配文件都必须存在
+      found_any=false
+      for f in "$PROJECT_DIR/$dir"/$pat; do
+        [ -f "$f" ] && found_any=true
+      done
+      if [ "$found_any" = false ]; then
+        echo "  缺失${label}: $dir/$pat (无匹配文件)" >&2
+        ERRORS=$((ERRORS + 1))
+      fi
+    else
+      # 精确文件名
+      if [ ! -f "$PROJECT_DIR/$dir/$pat" ]; then
+        echo "  缺失${label}: $dir/$pat" >&2
+        ERRORS=$((ERRORS + 1))
+      fi
+    fi
+  done
 done
 
 # ── 结果 ──
