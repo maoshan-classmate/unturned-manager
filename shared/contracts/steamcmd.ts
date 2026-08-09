@@ -20,12 +20,21 @@ export interface ISteamCmdManager {
    * 下载 Workshop Mod 到 staging 目录（异步启动，BUG-5/6 修复）。
    * spawn 后立即返回 jobId（不等待 SteamCMD 退出），进度/完成/失败经 WS `steamcmd_progress` 广播。
    *
-   * @param installDir - U3DS 安装根目录（staging = <installDir>/Workshop/staging）
+   * ⚠️ BUG-5/6（第四版）：staging 路径**必须**落在 `<installDir>/Servers/<serverId>/Workshop/staging`
+   * （U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描/apply 流水线也读这），
+   * 不是 `<installDir>/Workshop/staging`（顶层）——否则下载成功但列表扫不到、Mod 永不生效。
+   *
+   * @param installDir - U3DS 安装根目录（全局，非 per-server）
    * @param itemIds - Workshop File ID 列表
+   * @param serverId - 目标 ServerID（决定 staging 落在哪个实例目录；不传则回落旧路径，仅兼容旧调用）
    * @returns jobId（`steamcmd-download-<installDir>`），前端用它关联 WS 进度事件
    * @throws {Error} SteamCMD 未安装 或 同 installDir 已有下载任务在跑（spawn 前同步抛）
    */
-  downloadWorkshopItem(installDir: string, itemIds: string[]): Promise<string>;
+  downloadWorkshopItem(
+    installDir: string,
+    itemIds: string[],
+    serverId?: string,
+  ): Promise<string>;
   /** 检测 SteamCMD 自身版本（不涉及 U3DS）；B-1 路径：app_info_print 1110390 解析 */
   checkUpdate(installDir?: string): Promise<SteamCmdUpdateInfo>;
   /** 重装 SteamCMD：删旧 + 拉新 + +quit 初始化（GSM3 installOnline 模式） */

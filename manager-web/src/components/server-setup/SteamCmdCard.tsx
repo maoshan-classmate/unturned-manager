@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Download, RefreshCw, Pencil, AlertCircle } from 'lucide-react';
+import { Download, Pencil, AlertCircle } from 'lucide-react';
 import { Card } from '../shared/Card.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../shared/ConfirmDialog.js';
@@ -20,14 +20,14 @@ interface SteamCmdCardProps {
 }
 
 /**
- * Card - SteamCMD:Figma 9:15562 — 版本/状态/路径/上次检查 + 重装/检查更新按钮。
+ * Card - SteamCMD:Figma 9:15562 — 版本/状态/路径/上次检查 + 重装按钮。
  * 路径旁 pencil icon 触发路径编辑 Dialog。
+ * 「检查 U3DS 更新」按钮在 U3dsCard（Unturned 专用服务器）那边——它查的是 U3DS 版本，不是 SteamCMD。
  */
 export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [reinstallConfirmOpen, setReinstallConfirmOpen] = useState(false);
   const [reinstalling, setReinstalling] = useState(false);
-  const [checking, setChecking] = useState(false);
 
   const handleReinstall = async () => {
     setReinstalling(true);
@@ -40,19 +40,6 @@ export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
       toast.error(msg ?? '重装失败');
     } finally {
       setReinstalling(false);
-    }
-  };
-
-  const handleCheckUpdate = async () => {
-    setChecking(true);
-    try {
-      const res = await apiClient.post<{ data: { latestVersion?: string } }>('/steamcmd/check-update');
-      toast.success(res.data.data?.latestVersion ? `已是最新版本:${res.data.data.latestVersion}` : '已是最新版本');
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      toast.error(msg ?? '检查更新失败');
-    } finally {
-      setChecking(false);
     }
   };
 
@@ -106,11 +93,6 @@ export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
               <Button variant="secondary" size="sm" onClick={() => setReinstallConfirmOpen(true)} className="h-8 text-sm gap-1">
                 <Download size={12} /> {status.isInstalled ? '重装 SteamCMD' : '安装 SteamCMD'}
               </Button>
-              {status.isInstalled && (
-                <Button variant="secondary" size="sm" onClick={handleCheckUpdate} disabled={checking} className="h-8 text-sm gap-1">
-                  <RefreshCw size={12} className={checking ? 'animate-spin' : ''} /> 检查更新
-                </Button>
-              )}
             </div>
           </>
         )}

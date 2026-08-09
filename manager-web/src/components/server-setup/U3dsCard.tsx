@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Server, Download, ShieldCheck, AlertCircle } from "lucide-react";
+import { Server, Download, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
 import { Card } from "../shared/Card.js";
 import { Button } from "../ui/button.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
@@ -30,6 +30,7 @@ export function U3dsCard({ status }: U3dsCardProps) {
   const [updating, setUpdating] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   // fallback 数据：后端 /u3ds/status 不存在时，默认占位
   const data: U3dsStatus = status ?? {
@@ -125,6 +126,30 @@ export function U3dsCard({ status }: U3dsCardProps) {
     }
   };
 
+  // BUG-1（第四版）：check-update 查的是 U3DS（AppID 1110390）buildid，不是 SteamCMD 自身版本。
+  // 按钮放 U3DS 卡片（Unturned 专用服务器）而非 SteamCMD 卡片——语义对齐。
+  const handleCheckUpdate = async () => {
+    setChecking(true);
+    try {
+      const res = await apiClient.post<{ data: { latestVersion?: string } }>(
+        "/steamcmd/check-update",
+        { installDir: data.installPath },
+      );
+      toast.success(
+        res.data.data?.latestVersion
+          ? `U3DS 最新版本:${res.data.data.latestVersion}`
+          : "U3DS 已是最新版本",
+      );
+    } catch (err: unknown) {
+      const msg = (
+        err as { response?: { data?: { error?: { message?: string } } } }
+      )?.response?.data?.error?.message;
+      toast.error(msg ?? "检查 U3DS 更新失败");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const handleValidate = async () => {
     setValidating(true);
     try {
@@ -203,6 +228,18 @@ export function U3dsCard({ status }: U3dsCardProps) {
               className="h-8 text-sm gap-1"
             >
               <Download size={12} /> {installing ? "安装中..." : "安装 U3DS"}
+            </Button>
+          )}
+          {data.isInstalled && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleCheckUpdate}
+              disabled={checking}
+              className="h-8 text-sm gap-1"
+            >
+              <RefreshCw size={12} className={checking ? "animate-spin" : ""} />{" "}
+              检查更新
             </Button>
           )}
           {data.isInstalled && (

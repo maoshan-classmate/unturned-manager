@@ -320,8 +320,24 @@ export class ServerManager implements IServerManager {
       }
     } catch (err) {
       logger.error({ serverId, err }, "启动失败");
+      // BUG-3/7（第四版）：A2S 就绪超时等失败时，spawn 的 ServerHelper.sh 可能还挂在后台
+      // （比如 Mono 慢启动），若不清理，processes map 残留 → 下次启动被「已有进程在运行」拦截。
+      // 启动失败即清理，保证可重试。
+      try {
+        this.processSupervisor.forceKill(serverId);
+      } catch {
+        /* 进程可能已退出，forceKill 幂等 */
+      }
       this.transition(serverId, ServerState.STOPPED);
-      throw err;
+      // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失 / A2S 超时）原样上抛
+      // 会被全局错误处理兜底成「服务器内部错误」——用户和面板都看不到真实原因。
+      // 包装成带 err.message 的 AppError，前端 toast 直接显示具体错因，便于定位。
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        "u3ds-start-failed",
+        `U3DS 启动失败: ${err instanceof Error ? err.message : String(err)}`,
+        500,
+      );
     } finally {
       entry.activeOperation = { type: "none" };
     }

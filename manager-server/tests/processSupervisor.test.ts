@@ -132,4 +132,23 @@ describe("ProcessSupervisor — T6 进程生命周期（GSM 对齐）", () => {
     ).rejects.toThrow(/已有进程/);
     await sup.gracefulShutdown("S9" as ServerId);
   });
+
+  it("spawn: 已退出的残留 entry → 清理后放行（BUG-3/7 僵尸进程不再卡死启动）", async () => {
+    const sup = new ProcessSupervisor(FAST);
+    // 第一次 spawn 立即退出的进程
+    await sup.spawn("Z1" as ServerId, process.execPath, [
+      "-e",
+      "process.exit(0)",
+    ]);
+    // 确保进程已退出 + exit 事件已清理 map（或残留被 hasProcessExited 判定为僵尸）
+    await sup.waitForExit("Z1" as ServerId, 2_000);
+    // 同一 serverId 重新 spawn 必须放行，不抛「已有进程在运行」
+    const pid = await sup.spawn("Z1" as ServerId, process.execPath, [
+      "-e",
+      LONG_RUNNING_SCRIPT,
+    ]);
+    expect(pid).toBeGreaterThan(0);
+    expect(sup.isRunning("Z1" as ServerId)).toBe(true);
+    await sup.gracefulShutdown("Z1" as ServerId);
+  });
 });

@@ -11,11 +11,22 @@ interface WsSubscription {
 
 const SUBSCRIBE_TIMEOUT_MS = 5_000;
 
+// ★ BUG-FIX（2026-08-10）：WS 心跳保活。gateway 原先无 ping/pong——空闲连接在
+//   反向代理 idle 超时 / 中间链路静默下被切断，用户反馈「WS 客户端经常断」→
+//   steamcmd_progress 进度事件全部丢失（BUG-2/5 无进度提示的伴随根因）。
+//   标准 ws 库保活：服务端每 HEARTBEAT_INTERVAL_MS 发 ping，浏览器自动回 pong；
+//   间隔内未回 pong（isAlive 仍 false）视为死连接 terminate 清理。
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 // 每个 ws 连接订阅的 serverId 集合（Phase 0 升级：含事件类型过滤）
 const wsSubscriptions = new Map<WebSocket, WsSubscription>();
 
+/** WebSocket + 心跳存活标记 */
+type HeartbeatWebSocket = WebSocket & { isAlive?: boolean };
+
 class WsBroadcaster implements IBroadcaster {
   private wss: WebSocketServer | null = null;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   init(server: Server, authService: AuthService): void {
     this.wss = new WebSocketServer({
@@ -41,8 +52,31 @@ class WsBroadcaster implements IBroadcaster {
       },
     });
 
+    // 心跳定时器：每 30s 遍历所有连接 ping；上次 ping 未回 pong（isAlive=false）→ terminate。
+    // 浏览器 WebSocket 协议层自动回 pong，无需前端配合。
+    this.heartbeatTimer = setInterval(() => {
+      const clients = this.wss?.clients ?? [];
+      for (const client of clients) {
+        const ws = client as HeartbeatWebSocket;
+        if (ws.isAlive === false) {
+          logger.warn('WS 心跳超时，terminate 死连接');
+          ws.terminate();
+          continue;
+        }
+        ws.isAlive = false;
+        ws.ping();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
     this.wss.on('connection', (ws, req) => {
       logger.info('WebSocket 客户端已连接');
+
+      // 心跳存活标记：pong 恢复
+      const heartbeatWs = ws as HeartbeatWebSocket;
+      heartbeatWs.isAlive = true;
+      ws.on('pong', () => {
+        heartbeatWs.isAlive = true;
+      });
 
       // 初始空订阅，必须 5s 内发 subscribe 消息（修复 C8）
       wsSubscriptions.set(ws, { serverIds: new Set(), eventTypes: null });
@@ -139,6 +173,10 @@ class WsBroadcaster implements IBroadcaster {
   }
 
   async destroy(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     for (const ws of wsSubscriptions.keys()) {
       ws.close();
     }

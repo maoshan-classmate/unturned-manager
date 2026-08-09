@@ -133,7 +133,13 @@ export function createModsRouter(
       // 原实现同步 await 下载进程 → HTTP 挂起 → 前端 axios 10s 超时（timeout of 10000ms exceeded）。
       let jobId: string;
       try {
-        jobId = await steamCmd.downloadWorkshopItem(installDir, [fileId]);
+        // BUG-5/6（第四版根因）：传 serverId 让 staging 落在 Servers/<id>/Workshop/staging，
+        // 与 acf 扫描 / apply 流水线路径一致——否则下载成功但列表扫不到、Mod 永不生效。
+        jobId = await steamCmd.downloadWorkshopItem(
+          installDir,
+          [fileId],
+          serverId,
+        );
       } catch (err) {
         res.status(502).json({
           error: {

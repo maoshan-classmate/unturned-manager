@@ -66,8 +66,21 @@ export class ProcessSupervisor implements IProcessSupervisor {
     args: string[],
     cwd?: string,
   ): Promise<number> {
-    if (this.processes.has(serverId)) {
-      throw new Error(`Server ${serverId} 已有进程在运行`);
+    // BUG-3/7（第四版）：残留进程导致误判「已有进程在运行」。
+    // 若 entry 存在但进程实际已退出（exitCode/signalCode 已置，或 kill(pid,0) 已 ESRCH），
+    // 视为僵尸 entry 清理后放行——否则失败启动留下的残留会让用户永远无法再次启动。
+    const existing = this.processes.get(serverId);
+    if (existing) {
+      if (this.hasProcessExited(existing)) {
+        logger.warn(
+          { serverId },
+          "检测到已退出的残留进程 entry，清理后继续 spawn",
+        );
+        this.processes.delete(serverId);
+        this.stdoutCallbacks.delete(serverId);
+      } else {
+        throw new Error(`Server ${serverId} 已有进程在运行`);
+      }
     }
 
     logger.info({ serverId, command, args, cwd }, "启动 U3DS 进程");

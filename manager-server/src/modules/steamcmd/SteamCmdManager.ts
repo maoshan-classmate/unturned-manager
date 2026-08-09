@@ -86,11 +86,19 @@ export class SteamCmdManager implements ISteamCmdManager {
           ["+version", "+quit"],
           { timeout: 10_000 },
         );
-        // SteamCMD v2 输出形如："Steam Console Client (Linux) Version 1719583862 ..."
-        // 注意真实输出是小写 "version"，/i 大小写不敏感匹配（BUG-9 次生问题）
+        // SteamCMD v2 输出形如："Steam Console Client (Linux) Version 1719583862 - 2024-06-27 ... "
+        // 注意真实输出是小写 "version"，/i 大小写不敏感匹配（BUG-9 次生问题）。
+        // BUG-9（第四版）：steamcmd 输出末尾带交互提示 " - type 'quit' to exit --"，
+        // 若直接取 group 2 会把该尾巴吞进版本串。故 group 2 取 build date 时截断到第一个
+        // " - " 分隔或直接丢弃非日期片段（只保留 YYYY-MM-DD 之类）。
         const match = stdout.match(/Version\s+(\d+)(?:\s*-\s*([^\n]+))?/i);
         if (match) {
-          version = match[2] ? `${match[1]} (${match[2].trim()})` : match[1];
+          const datePart = match[2]
+            ?.split(" - ")[0]
+            ?.trim()
+            ?.replace(/type 'quit' to exit/i, "")
+            ?.trim();
+          version = datePart ? `${match[1]} (${datePart})` : match[1];
         }
       } catch (err) {
         logger.warn({ err, exePath }, "SteamCMD 版本解析失败");
@@ -407,6 +415,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   async downloadWorkshopItem(
     installDir: string,
     itemIds: string[],
+    serverId?: string,
   ): Promise<string> {
     if (!itemIds.length) return "";
     if (this.activeJobs.has(installDir)) {
@@ -417,7 +426,13 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw new Error("SteamCMD 未安装");
     }
 
-    const stagingDir = path.join(installDir, "Workshop", "staging");
+    // ★ BUG-5/6（第四版根因）：staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
+    //   U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描（workshopAcfService.ts:24）与
+    //   apply 流水线（WorkshopApplyService.ts:141）都读这个路径。传 serverId 拼对目录；
+    //   不传则回落旧顶层路径（兼容 /steamcmd/download-workshop 老端点）。
+    const stagingDir = serverId
+      ? path.join(installDir, "Servers", serverId, "Workshop", "staging")
+      : path.join(installDir, "Workshop", "staging");
 
     const scriptContent = [
       "@ShutdownOnFailedCommand 1",
@@ -758,9 +773,27 @@ export class SteamCmdManager implements ISteamCmdManager {
     const match = PROGRESS_RE.exec(line);
     if (!match) return { stage: "downloading" }; // 默认视为进行中
     const stage = match[1]!.toLowerCase().replace(/\s+/g, "_");
+    return { stage, percent: this.parsePercent(line) };
+  }
+
+  /**
+   * 从 SteamCMD 进度行提取百分比。
+   * 优先 % 直出；无 % 时退化为行尾 "已下载字节 / 总字节" 字节比（BUG-2 第四版修复——
+   * steamcmd 下载/校验行是 "downloading, 78.36 MB, 3597137 / 4589923"，无百分号，
+   * 不改的话前端永远只显示 stage 看不到进度）。
+   *
+   * @param line - steamcmd stdout 单行
+   * @returns 0-100 的整数百分比；无法解析返回 undefined
+   */
+  private parsePercent(line: string): number | undefined {
     const pctMatch = PERCENT_RE.exec(line);
-    const percent = pctMatch ? parseInt(pctMatch[1]!, 10) : undefined;
-    return { stage, percent };
+    if (pctMatch) return parseInt(pctMatch[1]!, 10);
+    const ratioMatch = line.match(/(\d+)\s*\/\s*(\d+)\s*$/);
+    if (!ratioMatch) return undefined;
+    const done = parseInt(ratioMatch[1]!, 10);
+    const total = parseInt(ratioMatch[2]!, 10);
+    if (!Number.isFinite(total) || total <= 0) return undefined;
+    return Math.min(100, Math.round((done / total) * 100));
   }
 
   private broadcastProgress(

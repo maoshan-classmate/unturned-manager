@@ -333,4 +333,48 @@ describe('ServerManager — T6 启动脚本 + 崩溃 5s 重启', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(proc.spawn).toHaveBeenCalledTimes(1);
   });
+
+  it('start 失败（A2S 超时）→ forceKill 清理残留进程，状态回 STOPPED（BUG-3/7）', async () => {
+    vi.useFakeTimers();
+    const db = makeDb();
+    const proc = makeMockProcess();
+    const rcon = makeMockRcon();
+    const a2s = makeMockA2S();
+    // A2S 一直不可达 → pollA2S 30s 后超时抛 AppError(504)
+    a2s.query = vi.fn(async () => {
+      throw new Error('A2S 不可达');
+    });
+    const cfg = makeMockConfig();
+    const bcast = makeMockBroadcaster();
+    const discovery = makeMockDiscovery();
+    const mgr = new ServerManager(
+      db as never,
+      discovery,
+      proc,
+      rcon,
+      a2s,
+      cfg,
+      bcast,
+    );
+    await mgr.createServer({
+      id: 'F1' as ServerId,
+      name: 'F1',
+      gamePort: 27015,
+      ownerSteamId: '76561198000000001',
+      installDir: '/opt/unturned',
+    });
+
+    const promise = mgr.start('F1' as ServerId);
+    // 先 attach rejects 断言（避免 fake timers 推进期间 promise reject 成为 unhandled rejection）
+    const assertion = expect(promise).rejects.toMatchObject({
+      code: 'a2s-poll-timeout',
+      status: 504,
+    });
+    // 推过 30s A2S 轮询超时
+    await vi.advanceTimersByTimeAsync(31_000);
+    await assertion;
+    // 启动失败必须 forceKill 残留的 ServerHelper.sh 进程，否则下次启动报「已有进程在运行」
+    expect(proc.forceKill).toHaveBeenCalledWith('F1' as ServerId);
+    expect(mgr.getState('F1' as ServerId)).toBe(ServerState.STOPPED);
+  });
 });
