@@ -1,5 +1,16 @@
 // 全局绕过系统 HTTP_PROXY——所有 fetch() 直连不走代理。
-// connectTimeout 默认 10s 对 Steam 直连偏短（首连易超时），放大到 30s。
+// undici fetch 默认会读 HTTP_PROXY/HTTPS_PROXY 环境变量走代理，
+// 代理访问 Steam 会超时（实测：走代理 504，直连 0.7s）。
+// 强制删除代理环境变量，确保 node fetch 直连 Steam。
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+delete process.env.ALL_PROXY;
+delete process.env.all_proxy;
+process.env.NO_PROXY = '*';
+process.env.no_proxy = '*';
+
 import { setGlobalDispatcher, Agent } from 'undici';
 setGlobalDispatcher(new Agent({ connectTimeout: 30_000, headersTimeout: 30_000, bodyTimeout: 30_000 }));
 

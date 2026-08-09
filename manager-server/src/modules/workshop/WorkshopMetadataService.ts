@@ -20,8 +20,11 @@ const API_GET_DETAILS = `${STEAM_API_BASE}/IPublishedFileService/GetDetails/v1/`
 const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`;
 const API_GET_PLAYER_SUMMARIES = `${STEAM_API_BASE}/ISteamUser/GetPlayerSummaries/v2/`;
 
-/** 所有 Steam API 调用的客户端 timeout（8s = 给 Steam 抖动留余量） */
-const FETCH_TIMEOUT_MS = 8_000;
+/** 所有 Steam API 调用的客户端 timeout（20s = Steam 冷启动 QueryFiles 实测需 10-20s） */
+const FETCH_TIMEOUT_MS = 20_000;
+
+/** GetPlayerSummaries 作者名查询短超时——辅助信息，失败快速降级，不拖垮主流程 */
+const AUTHOR_TIMEOUT_MS = 3_000;
 
 /** U3DS AppID = 1110390（服务端） */
 const U3DS_APPID = '1110390';
@@ -224,7 +227,8 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       uniqueIds.forEach((id) => url.searchParams.append('steamids', id));
 
       const res = await fetch(url.toString(), {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        // 作者名是辅助信息——短超时(3s)，失败立即降级返回 SteamID，绝不让主流程(browse/detail)超时
+        signal: AbortSignal.timeout(AUTHOR_TIMEOUT_MS),
       });
       if (!res.ok) {
         logger.warn({ status: res.status }, 'GetPlayerSummaries 失败，返回 SteamID 作为回退');

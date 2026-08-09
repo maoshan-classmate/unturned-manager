@@ -4,7 +4,18 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { Agent } from 'node:http';
 
-// 绕过系统 HTTP_PROXY——localhost 请求直连不走代理
+// 绕过系统 HTTP_PROXY——localhost 请求直连不走代理。
+// http-proxy 会读 HTTP_PROXY/HTTPS_PROXY 环境变量走代理，代理访问后端会超时。
+// 强制删除代理环境变量，确保 Vite 代理直连后端 3001。
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+delete process.env.ALL_PROXY;
+delete process.env.all_proxy;
+process.env.NO_PROXY = '*';
+process.env.no_proxy = '*';
+
 const localAgent = new Agent();
 
 export default defineConfig({
