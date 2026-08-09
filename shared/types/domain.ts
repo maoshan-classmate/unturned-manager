@@ -60,15 +60,31 @@ export interface A2SInfo {
 }
 
 // Workshop Mod 元数据
+// v2.2: 加 authorName 字段（GetPlayerSummaries 实时补全）
 export interface WorkshopModMeta {
   fileId: WorkshopFileId;
   title: string;
-  author: string;
+  author: string;          // SteamID64 数字串
+  authorName?: string;     // 实时补全的作者昵称
   description: string;
   previewUrl?: string;
   fileSize?: number;
   updatedAt?: string;
   tags?: string[];
+}
+
+// acf 真源条目（VDF 解析结果）
+export interface WorkshopAcfItem {
+  fileId: WorkshopFileId;
+  timeupdated: number;     // Unix 时间戳（秒）
+  size: number;            // 字节
+  manifest?: string;
+}
+
+// acf 文件整体结构
+export interface WorkshopAcf {
+  appid: string;
+  items: Map<WorkshopFileId, WorkshopAcfItem>;
 }
 
 // 文件条目

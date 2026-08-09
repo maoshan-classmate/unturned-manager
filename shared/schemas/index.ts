@@ -6,3 +6,4 @@
 export * from './config.schema.js';
 export * from './server.schema.js';
 export * from './files.schema.js';
+export * from './mod.schema.js';

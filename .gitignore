@@ -27,6 +27,11 @@ Thumbs.db
 
 # Playwright (test artifacts)
 .playwright-mcp/
+manager-server/test-results/
+manager-web/test-results/
+
+# Backups (server-side auto-backups, never tracked)
+manager-server/backups/
 
 # Debug
 *.stackdump
