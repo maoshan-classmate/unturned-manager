@@ -162,7 +162,9 @@ RUN mkdir -p /data /opt/unturned
 
 # ★ BUG-4：入口初始化脚本——SteamCMD bind mount 空目录时从 /opt/steamcmd-bootstrap 补缺
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# BUG-4 防御：强制去 CRLF——Windows 工作区拷贝的 .sh 可能是 \r\n，shebang `#!/bin/sh\r`
+# 让 Linux exec 报 "no such file or directory"（镜像里永远 LF，不依赖 build context 换行）
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # 面板 HTTP
