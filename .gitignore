@@ -36,6 +36,10 @@ manager-web/playwright-report/
 # Test fixtures (B2 目录真源测试）
 .test-install/
 
+# 用户本地输入（BUG 汇总等，不入库）
+*BUG汇总*.txt
+
+
 # Backups (server-side auto-backups, never tracked)
 manager-server/backups/
 
