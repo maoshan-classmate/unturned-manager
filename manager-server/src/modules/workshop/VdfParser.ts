@@ -2,7 +2,7 @@
  * VDF (Valve Data Format) 解析器 + 序列化器
  *
  * 用于解析 SteamCMD 生成的 `appworkshop_<AppID>.acf` 文件。
- * 零依赖自写，参考 DST `utils/acf.go` 实现。
+ * 零依赖自写。
  *
  * VDF 语法（简化版）：
  *   "key" "value"

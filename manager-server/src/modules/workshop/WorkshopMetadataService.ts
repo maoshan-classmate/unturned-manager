@@ -18,13 +18,9 @@ import { getSteamWebApiKey } from '../settings/settingsStorage.js';
 const STEAM_API_BASE = 'https://api.steampowered.com';
 const API_GET_DETAILS = `${STEAM_API_BASE}/IPublishedFileService/GetDetails/v1/`;
 const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`;
-const API_GET_PLAYER_SUMMARIES = `${STEAM_API_BASE}/ISteamUser/GetPlayerSummaries/v2/`;
 
-/** 所有 Steam API 调用的客户端 timeout（30s = 冷启动 QueryFiles + 作者名 15s 叠加需 ~20s，留足余量） */
+/** 所有 Steam API 调用的客户端 timeout（30s = 冷启动 QueryFiles 留足余量） */
 const FETCH_TIMEOUT_MS = 30_000;
-
-/** GetPlayerSummaries 作者名查询超时——实测批量(10个)在服务环境需 8-15s，8s 仍误降级；15s 保证拿全（辅助信息，慢但值得） */
-const AUTHOR_TIMEOUT_MS = 15_000;
 
 /** U3DS AppID = 1110390（服务端） */
 const U3DS_APPID = '1110390';
@@ -73,19 +69,15 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       if (!detail || detail.result !== 1 || !detail.title) {
         return null;
       }
-      // 单 mod 详情——单独查一次作者名
-      const nameMap = await this.getAuthorNames(detail.creator ? [detail.creator] : []);
-      return this.toModMeta(detail, nameMap);
+      return this.toModMeta(detail, new Map());
     } catch (err) {
       throw mapFetchError(err);
     }
   }
 
   /**
-   * 浏览/搜索 Steam 工坊——两阶段实时调用，0 缓存
-   * 1. QueryFiles：获取 ID 列表 + 总数
-   * 2. GetDetails：批量拉取元数据
-   * 3. GetPlayerSummaries：补全作者昵称
+   * 浏览/搜索 Steam 工坊——单次 QueryFiles 实时调用，0 缓存
+   * QueryFiles 一次返回全字段（title/creator/description/preview/vote_data），无需二次调用
    *
    * @param query - 搜索关键词或 fileId
    * @param sort - 排序方式（映射 Steam query_type）
@@ -146,37 +138,34 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       const qfJson = (await qfRes.json()) as {
         response: {
           total?: number;
-          publishedfiledetails: Array<{ publishedfileid: string; vote_data?: { score?: number; votes_up?: number; votes_down?: number } }>;
+          publishedfiledetails: Array<QueryFileDetail>;
         };
       };
       const qfDetails = qfJson.response.publishedfiledetails ?? [];
-      const fileIds = qfDetails.map((d) => d.publishedfileid).filter(Boolean);
       const total = qfJson.response.total ?? 0;
 
-      if (fileIds.length === 0) {
+      if (qfDetails.length === 0) {
         return { mods: [], total, page, pageSize };
       }
 
-      // QueryFiles 返回 vote_data（GetDetails 不返回评分），保存下来合并进结果
-      const voteMap = new Map<string, { score?: number; votes_up?: number; votes_down?: number }>();
-      for (const d of qfDetails) {
-        if (d.publishedfileid && d.vote_data) {
-          voteMap.set(d.publishedfileid, d.vote_data);
-        }
-      }
+      // QueryFiles 单次返回全字段（title/creator/description/preview/vote_data），
+      // 不二次调 GetDetails——避免两阶段叠加超时。
+      const mods: WorkshopModMeta[] = qfDetails.map((d) => {
+        const v = d.vote_data;
+        return {
+          fileId: d.publishedfileid as WorkshopFileId,
+          title: d.title ?? '',
+          author: d.creator ?? '',
+          description: d.file_description ?? '',
+          previewUrl: d.preview_url,
+          fileSize: d.file_size,
+          updatedAt: d.time_updated ? new Date(d.time_updated * 1000).toISOString() : undefined,
+          // 评分：Steam score 是 0-1，转 0-5
+          voteScore: v?.score != null ? v.score * 5 : undefined,
+        };
+      });
 
-      // ── 阶段 2 + 3: 批量 GetDetails + GetPlayerSummaries 补作者 ──
-      const mods = await this.batchGetDetails(fileIds as WorkshopFileId[]);
-      // 合并 QueryFiles 的评分数据（问题 5）
-      return {
-        mods: mods.map((m) => {
-          const v = voteMap.get(m.fileId);
-          return v?.score != null ? { ...m, voteScore: v.score * 5 } : m;
-        }),
-        total,
-        page,
-        pageSize,
-      };
+      return { mods, total, page, pageSize };
     } catch (err) {
       throw mapFetchError(err);
     }
@@ -214,65 +203,10 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       const valid = (json.response.publishedfiledetails ?? []).filter(
         (d) => d.result === 1 && d.title,
       );
-      // 优化：一次批量查所有 creator 的昵称（避免每个 mod 单独调 GetPlayerSummaries → 冷启动 N 次超时）
-      const creators = [...new Set(valid.map((d) => d.creator).filter((c): c is string => Boolean(c)))];
-      const nameMap = await this.getAuthorNames(creators);
-      return valid.map((d) => this.toModMeta(d, nameMap));
+      // 批量场景只返回主数据，不查作者名（避免额外调用叠加耗时）
+      return valid.map((d) => this.toModMeta(d, new Map()));
     } catch (err) {
       throw mapFetchError(err);
-    }
-  }
-
-  /**
-   * 批量查作者昵称（GetPlayerSummaries/v2）
-   * 单次最多 100 个 steamids
-   *
-   * @param steamIds - SteamID64 列表
-   * @returns Map<SteamID64, personaName>，查不到时不包含
-   */
-  async getAuthorNames(steamIds: string[]): Promise<Map<string, string>> {
-    const uniqueIds = [...new Set(steamIds.filter(Boolean))];
-    if (uniqueIds.length === 0) return new Map();
-
-    const apiKey = getSteamWebApiKey(this.db);
-    if (!apiKey) {
-      // 无 Key 时降级：所有作者回退到 SteamID64 本身
-      return new Map(uniqueIds.map((id) => [id, id]));
-    }
-
-    try {
-      const url = new URL(API_GET_PLAYER_SUMMARIES);
-      url.searchParams.set('key', apiKey);
-      uniqueIds.forEach((id) => url.searchParams.append('steamids', id));
-
-      const res = await fetch(url.toString(), {
-        // 作者名是辅助信息——失败立即降级返回 SteamID，绝不让主流程(browse/detail)超时
-        signal: AbortSignal.timeout(AUTHOR_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        logger.warn({ status: res.status }, 'GetPlayerSummaries 失败，返回 SteamID 作为回退');
-        return new Map(uniqueIds.map((id) => [id, id]));
-      }
-
-      const json = (await res.json()) as {
-        response: { players: Array<{ steamid: string; personaname: string }> };
-      };
-      const nameMap = new Map<string, string>();
-      for (const p of json.response.players ?? []) {
-        if (p.steamid && p.personaname) {
-          nameMap.set(p.steamid, p.personaname);
-        }
-      }
-      // 缺漏的 id 用 SteamID 本身兜底
-      for (const id of uniqueIds) {
-        if (!nameMap.has(id)) {
-          nameMap.set(id, id);
-        }
-      }
-      return nameMap;
-    } catch (err) {
-      logger.warn({ err }, 'GetPlayerSummaries 网络错误，返回 SteamID 作为回退');
-      return new Map(uniqueIds.map((id) => [id, id]));
     }
   }
 
@@ -313,6 +247,18 @@ interface RawModDetail {
   subscriptions?: number;
   vote_data?: { score?: number; votes_up?: number; votes_down?: number };
   tags?: Array<{ tag: string; display_name: string }>;
+}
+
+/** QueryFiles 返回的单条（QueryFiles 一次返回全字段，无需二次 GetDetails） */
+interface QueryFileDetail {
+  publishedfileid: string;
+  title?: string;
+  creator?: string;
+  file_description?: string;
+  preview_url?: string;
+  file_size?: number;
+  time_updated?: number;
+  vote_data?: { score?: number; votes_up?: number; votes_down?: number };
 }
 
 // ─── 错误映射 ────────────────────────────────────────────

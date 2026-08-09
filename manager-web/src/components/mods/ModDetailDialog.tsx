@@ -84,14 +84,18 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
               {mod.subscriptions != null && <span>{mod.subscriptions.toLocaleString()} 订阅</span>}
               {mod.voteScore != null && (
                 <span className="flex items-center gap-1">
-                  {/* 评分星星——按 voteScore(0-5) 填充 */}
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star
-                      key={i}
-                      size={12}
-                      className={i < Math.round(mod.voteScore!) ? 'text-amber-500' : 'text-slate-700'}
-                    />
-                  ))}
+                  {/* 评分星星——精确填充（问题 5：2.7 分 = 2 满星 + 0.7 部分填充） */}
+                  {Array.from({ length: 5 }).map((_, i) => {
+                    const fill = Math.min(Math.max(mod.voteScore! - i, 0), 1);
+                    return (
+                      <span key={i} className="relative inline-block" style={{ width: 12, height: 12 }}>
+                        <Star size={12} className="text-slate-700 absolute inset-0" />
+                        <span className="absolute inset-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+                          <Star size={12} className="text-amber-500" />
+                        </span>
+                      </span>
+                    );
+                  })}
                   <span className="ml-1">{mod.voteScore.toFixed(1)}</span>
                 </span>
               )}

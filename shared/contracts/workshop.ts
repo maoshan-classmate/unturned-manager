@@ -64,7 +64,7 @@ export interface ModDeleteResult {
 
 /**
  * Mod 元数据服务——对齐 Steam WebAPI（IPublishedFileService）
- * v2.2 决策：0 缓存（单用户系统 + DST 哲学：真源唯一）
+ * v2.2 决策：0 缓存（单用户系统 + 真源唯一）
  */
 export interface IWorkshopMetadataService {
   /** 单个 Mod 详情——实时调 GetDetails/v1，0 缓存 */
@@ -82,13 +82,10 @@ export interface IWorkshopMetadataService {
 
   /** 批量 GetDetails——已下载列表显示用 */
   batchGetDetails(fileIds: WorkshopFileId[]): Promise<WorkshopModMeta[]>;
-
-  /** 批量查作者昵称（GetPlayerSummaries/v2） */
-  getAuthorNames(steamIds: string[]): Promise<Map<string, string>>;
 }
 
 /**
- * acf 真源维护服务——对齐 DST utils/acf.go
+ * acf 真源维护服务
  * v2.2 决策：每次实时读盘解析，0 缓存
  */
 export interface IWorkshopAcfService {

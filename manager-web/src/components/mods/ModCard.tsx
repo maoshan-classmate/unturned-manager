@@ -84,15 +84,24 @@ export function ModCard({
         {/* Name + star rating（问题 5：按 voteScore 填充星级） */}
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-medium text-slate-100 truncate flex-1">{title}</h3>
-          <div className="flex items-center gap-0.5 shrink-0">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Star
-                key={i}
-                size={12}
-                className={voteScore != null && i < Math.round(voteScore) ? 'text-amber-500' : 'text-slate-700'}
-              />
-            ))}
-          </div>
+          {/* 评分星星——精确填充（问题 5：2.7 分 = 2 满星 + 0.7 部分填充，不整渲染） */}
+          {voteScore != null && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              {Array.from({ length: 5 }).map((_, i) => {
+                const fill = Math.min(Math.max(voteScore - i, 0), 1);
+                return (
+                  <div key={i} className="relative" style={{ width: 12, height: 12 }}>
+                    {/* 底星（空） */}
+                    <Star size={12} className="text-slate-700 absolute inset-0" />
+                    {/* 覆盖星（按填充比例裁剪） */}
+                    <div className="absolute inset-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+                      <Star size={12} className="text-amber-500" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Author · subscriptions · ID — 视觉分层（formatModMeta 返回带图标前缀的展示项） */}

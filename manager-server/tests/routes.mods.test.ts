@@ -106,13 +106,32 @@ beforeAll(async () => {
   global.fetch = vi.fn(async (url: string | URL | Request) => {
     const u = String(url);
     if (u.includes('/QueryFiles/v1/')) {
+      // QueryFiles 一次返回全字段（browse 只调 QueryFiles，不再二次 GetDetails）
       return new Response(
         JSON.stringify({
           response: {
             total: 2,
             publishedfiledetails: [
-              { publishedfileid: '111' },
-              { publishedfileid: '222' },
+              {
+                publishedfileid: '111',
+                title: 'Hawaii',
+                creator: '76561198000000001',
+                file_description: '[h1]Tropical map[/h1]',
+                preview_url: 'https://example.com/111.jpg',
+                file_size: 12345678,
+                time_updated: 1722612345,
+                vote_data: { score: 0.537, votes_up: 8, votes_down: 0 },
+              },
+              {
+                publishedfileid: '222',
+                title: 'Zombie Survival',
+                creator: '76561198000000002',
+                file_description: 'Survive the horde',
+                preview_url: 'https://example.com/222.jpg',
+                file_size: 8765432,
+                time_updated: 1722612789,
+                vote_data: { score: 0.82, votes_up: 20, votes_down: 2 },
+              },
             ],
           },
         }),
@@ -190,20 +209,17 @@ beforeAll(async () => {
 // ─── 8 端点集成测试 ─────────────────────────────────────
 
 describe('routes/mods · 8 端点', () => {
-  it('GET /mods/search → 200 + Steam 元数据（含 authorName）', async () => {
+  it('GET /mods/search → 200 + Steam 元数据（QueryFiles 全字段 + 评分）', async () => {
     const res = await request(app)
       .get('/api/mods/search?q=tropical&page=1&pageSize=10&sort=popular&range=week&type=text')
       .set('Authorization', `Bearer ${accessToken}`);
-    // 调试：先看实际状态码
-    if (res.status !== 200) {
-      console.log('DEBUG search res:', res.status, JSON.stringify(res.body));
-    }
     expect(res.status).toBe(200);
     expect(res.body.data.total).toBe(2);
     expect(res.body.data.rows).toHaveLength(2);
     expect(res.body.data.rows[0].fileId).toBe('111');
     expect(res.body.data.rows[0].title).toBe('Hawaii');
-    expect(res.body.data.rows[0].authorName).toBe('Renaxon');
+    expect(res.body.data.rows[0].author).toBe('76561198000000001');  // 作者显示 SteamID
+    expect(res.body.data.rows[0].voteScore).toBeCloseTo(0.537 * 5, 1);  // 评分 0-1 → 0-5
     expect(res.body.data.rows[0].description).toContain('Tropical map');  // BBCode 由前端 stripBbcode() 兜底
   });
 
@@ -236,8 +252,9 @@ describe('routes/mods · 8 端点', () => {
       .send({ fileIds: ['111', '222'] })
       .expect(200);
     expect(res.body.data).toHaveLength(2);
-    expect(res.body.data[0].authorName).toBe('Renaxon');
-    expect(res.body.data[1].authorName).toBe('TestAuthor');
+    expect(res.body.data[0].fileId).toBe('111');
+    expect(res.body.data[0].title).toBe('Hawaii');
+    expect(res.body.data[0].author).toBe('76561198000000001');  // 批量场景不查作者名，显示 SteamID
   });
 
   it('POST /mods/batch-details → 400 空数组', async () => {

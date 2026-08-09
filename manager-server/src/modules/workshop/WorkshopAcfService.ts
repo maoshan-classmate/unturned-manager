@@ -31,7 +31,7 @@ const ACF_ROOT_KEY = 'AppWorkshop';
 /**
  * Workshop acf 真源维护服务
  *
- * 职责（对齐 DST utils/acf.go）：
+ * 职责：
  * - 读盘 + 解析 acf 文件（每次实时，无缓存）
  * - 添加/删除 mod 项
  * - 原子写 + 自动备份
