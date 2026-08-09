@@ -53,6 +53,9 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     // 必须带索引（publishedfileids[0]=）——[] 无索引格式 Steam 连接异常（实测 10.7s 超时 vs [0] 1.6s）
     url.searchParams.append('publishedfileids[0]', modId);
     url.searchParams.set('strip_description_bbcode', 'true');
+    // 投票数据必须显式请求——GetDetails 的参数名是 includevotes（不同于 QueryFiles 的 return_vote_data），
+    // 不加则响应无 vote_data → 前端评分星丢失（实测 bug：详情弹窗星星闪一下就消失）
+    url.searchParams.set('includevotes', 'true');
 
     try {
       const res = await fetch(url.toString(), {

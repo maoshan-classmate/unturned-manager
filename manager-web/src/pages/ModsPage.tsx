@@ -99,9 +99,11 @@ export function ModsPage() {
   } = useQuery({
     queryKey: ['mods', 'browse', serverId, searchQuery, sort, timeRange, page, pageSize],
     queryFn: async () => {
-      // 全局浏览——不带 serverId（Steam 创意工坊是全局操作）
+      // 全局浏览——不带 serverId（Steam 创意工坊是全局操作）。
+      // timeout 60s：后端调 Steam 冷启动 20-40s，全局默认 10s 会 axios abort（实测 ERR_ABORTED）
       const res = await apiClient.get<{ data: { total: number; rows: BrowseMod[] } }>('/mods/search', {
         params: { q: searchQuery, sort, range: timeRange, page, pageSize, type: 'text' },
+        timeout: 60_000,
       });
       return res.data.data;
     },
@@ -116,8 +118,9 @@ export function ModsPage() {
   } = useQuery({
     queryKey: ['mods', 'detail', detailFileId],
     queryFn: async () => {
-      // 全局详情——不带 serverId
-      const res = await apiClient.get<{ data: BrowseMod }>(`/mods/${detailFileId}`);
+      // 全局详情——不带 serverId。
+      // timeout 60s：后端 GetDetails 冷启动 20-40s，全局默认 10s 必超时（ERR_ABORTED 根因）
+      const res = await apiClient.get<{ data: BrowseMod }>(`/mods/${detailFileId}`, { timeout: 60_000 });
       return res.data.data;
     },
     enabled: !!detailFileId,
@@ -126,6 +129,12 @@ export function ModsPage() {
   });
 
   const total = browse?.total ?? 0;
+
+  // ── 详情弹窗数据（问题 1 修复——合并而非整体覆盖）──
+  // 列表源（QueryFiles 带 return_vote_data）有 voteScore，detail 源（GetDetails 带 includevotes）补充 fileSize/updatedAt。
+  // 用 detail 覆盖同名字段、保留列表独有字段，防止星星/订阅数在 detail 返回后被 undefined 顶掉。
+  const dialogRow = browse?.rows.find((m) => m.fileId === detailFileId);
+  const dialogMod = detailData ? { ...(dialogRow ?? {}), ...detailData } : (dialogRow ?? null);
 
   // ── 操作 handler ────────────────────────────────────
 
@@ -284,11 +293,11 @@ export function ModsPage() {
       </div>
 
       {/* 详情弹窗（问题 6——弹窗而非跳转）
-          mod 优先用浏览列表已有数据（title/description/preview 立即显示），detail 接口补充评分/大小等 */}
+          dialogMod = 列表数据兜底 + detail 覆盖（问题 1：评分/订阅数稳定不闪） */}
       <ModDetailDialog
         open={!!detailFileId}
-        mod={detailData ?? browse?.rows.find((m) => m.fileId === detailFileId) ?? null}
-        loading={detailLoading && !browse?.rows.some((m) => m.fileId === detailFileId)}
+        mod={dialogMod}
+        loading={detailLoading && !dialogRow}
         onClose={() => setDetailFileId(null)}
         onDownload={handleDownload}
       />

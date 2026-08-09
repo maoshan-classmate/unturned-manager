@@ -97,3 +97,26 @@ input:-webkit-autofill:active {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* 暗色主题滚动条——替代浏览器默认亮色滚动条，thumb 对齐 Figma 边框 #334059 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334059 transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334059;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748B;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

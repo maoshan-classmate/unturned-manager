@@ -9,13 +9,22 @@ interface DialogProps {
  * 通用对话框——统一的暗色 overlay + 卡片容器。
  * 替代各页面内联的 fixed inset-0 bg-black/50 弹窗。
  */
-export function Dialog({ open, onClose, width, children }: DialogProps) {
+export function Dialog({ open, onClose, width = 480, children }: DialogProps) {
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="rounded-lg" style={{ width, backgroundColor: '#1E293B', border: '1px solid #334059' }}
-        onClick={(e) => e.stopPropagation()}>
+      <div
+        className="rounded-lg overflow-y-auto"
+        style={{
+          // 自适应：宽 = min(期望宽, 视口宽 - 2rem)，小屏自动缩窄；高 = 85vh 封顶，超高内部滚动
+          width: `min(${width}px, calc(100vw - 2rem))`,
+          maxHeight: '85vh',
+          backgroundColor: '#1E293B',
+          border: '1px solid #334059',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>

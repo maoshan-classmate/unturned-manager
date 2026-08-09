@@ -46,20 +46,25 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
   if (!open) return null;
 
   return (
-    <Dialog open={open} onClose={onClose} width={560}>
+    <Dialog open={open} onClose={onClose} width={680}>
       {loading || !mod ? (
         <div className="p-6 flex items-center justify-center h-48 text-slate-400 text-sm">
           加载详情中...
         </div>
       ) : (
         <div className="p-5">
-          {/* 大封面 */}
+          {/* 大封面——与列表页 ModCard 对齐（问题 2）：object-contain 完整显示 + 暗底 + 底部渐变；
+              aspect-[16/9] 随弹窗宽度等比缩放（问题 3：自适应，不钉死 px 高） */}
           {mod.previewUrl ? (
-            <div className="relative w-full h-[200px] rounded-md overflow-hidden mb-4">
-              <img src={mod.previewUrl} alt={mod.title} className="w-full h-full object-cover" />
+            <div className="relative w-full aspect-[16/9] rounded-md overflow-hidden mb-4">
+              <img src={mod.previewUrl} alt={mod.title} loading="lazy"
+                className="absolute inset-0 w-full h-full object-contain"
+                style={{ backgroundColor: '#0F172A' }} />
+              <div className="absolute inset-0 pointer-events-none"
+                style={{ background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 100%)' }} />
             </div>
           ) : (
-            <div className="relative w-full h-[200px] rounded-md overflow-hidden mb-4 flex items-center justify-center"
+            <div className="relative w-full aspect-[16/9] rounded-md overflow-hidden mb-4 flex items-center justify-center"
               style={{ backgroundColor: '#0F172A' }}>
               <span className="text-slate-600 text-sm">No Preview</span>
             </div>
@@ -101,7 +106,7 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
           {/* 完整介绍（BBCode 已 strip） */}
           <div className="mb-5">
             <div className="text-xs font-medium text-slate-300 mb-1.5">介绍</div>
-            <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+            <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
               {stripBbcode(mod.description) || '暂无描述'}
             </p>
           </div>

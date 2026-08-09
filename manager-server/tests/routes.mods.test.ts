@@ -43,6 +43,8 @@ const DETAILS_FIXTURES: Record<string, Record<string, unknown>> = {
     title: 'Hawaii', creator: '76561198000000001',
     file_description: '[h1]Tropical map[/h1]',
     preview_url: 'https://example.com/111.jpg', file_size: 12345678, time_updated: 1722612345,
+    // GetDetails 带 includevotes 时返回投票数据（回归保护：详情评分不丢）
+    vote_data: { score: 0.6, votes_up: 10, votes_down: 2 },
   },
   '222': {
     publishedfileid: '222', result: 1,
@@ -236,13 +238,15 @@ describe('routes/mods · 8 端点', () => {
       .expect(401);
   });
 
-  it('GET /mods/:fileId → 200 + 详情', async () => {
+  it('GET /mods/:fileId → 200 + 详情（含评分 voteScore，回归保护）', async () => {
     const res = await request(app)
       .get('/api/mods/111')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     expect(res.body.data.fileId).toBe('111');
     expect(res.body.data.title).toBe('Hawaii');
+    // score 0.6 → voteScore 3.0（GetDetails 必须带 includevotes 才有此字段）
+    expect(res.body.data.voteScore).toBeCloseTo(3, 5);
   });
 
   it('POST /mods/batch-details → 200 + 批量元数据', async () => {
