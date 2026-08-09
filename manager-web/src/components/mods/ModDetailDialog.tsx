@@ -84,8 +84,15 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
               {mod.subscriptions != null && <span>{mod.subscriptions.toLocaleString()} 订阅</span>}
               {mod.voteScore != null && (
                 <span className="flex items-center gap-1">
-                  <Star size={12} className="text-amber-500" />
-                  {mod.voteScore.toFixed(1)}
+                  {/* 评分星星——按 voteScore(0-5) 填充 */}
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star
+                      key={i}
+                      size={12}
+                      className={i < Math.round(mod.voteScore!) ? 'text-amber-500' : 'text-slate-700'}
+                    />
+                  ))}
+                  <span className="ml-1">{mod.voteScore.toFixed(1)}</span>
                 </span>
               )}
             </div>

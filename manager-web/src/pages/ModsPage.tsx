@@ -50,12 +50,12 @@ const RANGE_OPTIONS: ReadonlyArray<DropdownOption<'day' | 'week' | 'month' | 'mo
   { value: 'all', label: '发布至今' },
 ];
 
-/** 每页条数选项 */
+/** 每页条数选项（问题 2：10→12、50→48） */
 const PAGE_SIZE_OPTIONS: ReadonlyArray<DropdownOption<number>> = [
-  { value: 10, label: '10 条/页' },
+  { value: 12, label: '12 条/页' },
   { value: 15, label: '15 条/页' },
   { value: 30, label: '30 条/页' },
-  { value: 50, label: '50 条/页' },
+  { value: 48, label: '48 条/页' },
 ];
 
 /** 从 axios 错误提取后端中文 message */
@@ -82,7 +82,7 @@ export function ModsPage() {
   const [sort, setSort] = useState<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>('popular');
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>('week');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(12); // 问题 2：默认每页 12 条（原 10）
 
   // 下载操作状态 { fileId: true }
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
@@ -270,6 +270,7 @@ export function ModsPage() {
                 description={mod.description}
                 previewUrl={mod.previewUrl}
                 subscriptions={mod.subscriptions}
+                voteScore={mod.voteScore}
                 loading={!!downloading[mod.fileId]}
                 onDownload={handleDownload}
                 onDetails={(id) => setDetailFileId(id)}

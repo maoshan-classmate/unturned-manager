@@ -70,6 +70,7 @@ export interface WorkshopModMeta {
   previewUrl?: string;
   fileSize?: number;
   updatedAt?: string;
+  voteScore?: number;      // 0-5 星级（Steam vote_data.score * 5）
   tags?: string[];
 }
 

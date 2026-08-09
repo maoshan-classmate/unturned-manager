@@ -18,6 +18,8 @@ interface ModCardProps {
   previewUrl?: string;
   /** 订阅数（可选） */
   subscriptions?: number;
+  /** 评分（0-5 星级，可选） */
+  voteScore?: number;
   /** 是否正在操作中 */
   loading?: boolean;
   /** 下载回调 */
@@ -43,7 +45,7 @@ interface ModCardProps {
  */
 export function ModCard({
   fileId, title, author, authorName, description, previewUrl,
-  subscriptions, loading, onDownload, onDetails,
+  subscriptions, voteScore, loading, onDownload, onDetails,
 }: ModCardProps) {
   const metaItems = formatModMeta({ author, authorName, subscriptions, fileId });
   const cleanDescription = stripBbcode(description);
@@ -58,8 +60,9 @@ export function ModCard({
     >
       {/* Cover image */}
       {previewUrl ? (
-        <div className="relative w-full h-[140px] overflow-hidden">
-          <img src={previewUrl} alt={title} loading="lazy" className="w-full h-full object-cover" />
+        <div className="relative w-full h-[180px] overflow-hidden">
+          {/* 问题 3：object-contain 完整显示图片（不裁剪），暗色背景填充留白 */}
+          <img src={previewUrl} alt={title} loading="lazy" className="w-full h-full object-contain" style={{ backgroundColor: '#0F172A' }} />
           {/* Gradient overlay from Figma */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -78,12 +81,16 @@ export function ModCard({
       )}
 
       <div className="p-4 pt-3">
-        {/* Name + star rating */}
+        {/* Name + star rating（问题 5：按 voteScore 填充星级） */}
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-medium text-slate-100 truncate flex-1">{title}</h3>
           <div className="flex items-center gap-0.5 shrink-0">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} size={12} className="text-slate-700" />
+              <Star
+                key={i}
+                size={12}
+                className={voteScore != null && i < Math.round(voteScore) ? 'text-amber-500' : 'text-slate-700'}
+              />
             ))}
           </div>
         </div>
@@ -119,7 +126,7 @@ export function ModCard({
           </Button>
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             onClick={() => onDetails?.(fileId)}
             className="h-7 text-[11px] gap-1 px-3"
           >
