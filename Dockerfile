@@ -92,7 +92,11 @@ COPY manager-server/package.json manager-server/
 COPY manager-web/package.json manager-web/
 
 # npm workspaces 根安装全部依赖（含 dev——运行时用 tsx 直接跑 TS 源码，无编译产物）
-RUN npm ci --prefer-offline --no-audit --omit=optional
+# ⚠️ 用 npm install 而非 npm ci：npm ci 严格按 lockfile 重现 node_modules 树，但 lockfile
+#    在 Windows 生成时跳过了 Linux 平台原生二进制（@rollup/rollup-linux-x64-gnu 等 optionalDeps）。
+#    Docker 在 Linux 上 ci 会照搬跳过 → vite build 找不到 loader（npm/cli#4828 bug）。
+#    npm install 在目标平台实时解析 optional deps，不受 lockfile 跨平台限制。版本仍由 lockfile 锁定。
+RUN npm install --prefer-offline --no-audit
 
 # 再拷源码
 COPY shared/ shared/
