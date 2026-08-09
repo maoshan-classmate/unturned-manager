@@ -22,6 +22,7 @@
 - [session-checkpoint-2026-08-08-b](.serena/memories/session-checkpoint-2026-08-08-b.md) — Phase 0–3 全 4 卡实施：20+ 新文件、34 单测全绿
 - [session-checkpoint-2026-08-09-workshop](.serena/memories/session-checkpoint-2026-08-09-workshop.md) — Mods 页 Workshop 筛选；移除降级缓存改 AppError
 - [session-checkpoint-2026-08-09-mod-v24](.serena/memories/session-checkpoint-2026-08-09-mod-v24.md) — Mod 管理 v2.4：504 根因=系统 HTTP_PROXY 拦截；单次 QueryFiles
-- [session-checkpoint-2026-08-09-server-setup-frontend](.serena/memories/session-checkpoint-2026-08-09-server-setup-frontend.md) — useServer 去轮询；创建/删除纯前端本地；实例来源=目录扫描认知
+- [session-checkpoint-2026-08-09-server-setup-frontend](.serena/memories/session-checkpoint-2026-08-09-server-setup-frontend.md) — useServer 去轮询；创建/删除从纯前端本地演进到后端目录真源（commit 0738065）；e2e T7 10/10 绿
+- [session-checkpoint-2026-08-09-docker-deploy](.serena/memories/session-checkpoint-2026-08-09-docker-deploy.md) — Docker 部署闭环：Dockerfile 重写+静态托管+compose env 映射+steamcmd 卷持久化（commit 67bc10c）
 - [sessions/2026-08-07-login-redesign](.serena/memories/sessions/2026-08-07-login-redesign.md) — 登录页改造（shadcn/ui + Motion）
 - [sessions/2026-08-07-sprint2-implementation](.serena/memories/sessions/2026-08-07-sprint2-implementation.md) — Sprint 2 实施（13 文件新增、8 项偏差修正）
