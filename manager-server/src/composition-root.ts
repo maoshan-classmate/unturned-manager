@@ -17,6 +17,7 @@ import {
   type IAuthService,
 } from '@unturned-manager/shared';
 
+import { config } from './config.js';
 import { AuthService } from './modules/auth/AuthService.js';
 import { FileLockProvider } from './modules/filelock/FileLockProvider.js';
 import { ProcessSupervisor } from './modules/process/ProcessSupervisor.js';
@@ -74,7 +75,7 @@ export function buildContainer(db: Database.Database): AppContainer {
   const steamCmdManager = new SteamCmdManager(
     processSupervisor,
     broadcaster,
-    undefined,
+    config.steamCmdDir, // STEAMCMD_DIR env 显式声明；未设回落 DEFAULT_PATHS 探测
     () => serverManager?.listActiveServerIds() ?? [],
   );
   const workshopMeta = new WorkshopMetadataService(db);

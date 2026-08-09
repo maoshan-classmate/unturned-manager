@@ -1,0 +1,57 @@
+# unturned-manager Docker Compose
+# 单服务：panel（后端 + 前端静态托管 + SteamCMD + U3DS 运行环境一体镜像）
+#
+# 环境变量映射：compose 自动读取【同目录】的 .env 宿主文件，用 ${VAR:-默认值} 语法映射进容器。
+# 用法：
+#   1. cp .env.example .env      # 填 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD
+#   2. docker compose up -d --build
+#
+# 三个密钥/密码带默认值（快速启动）——生产必须用宿主 .env 覆盖，见下方 ⚠️ 警告。
+#   JWT_SECRET      JWT 签名密钥（config.ts requireEnv，缺失即崩溃）
+#   ENCRYPTION_KEY  RCON 凭证 AES-GCM 加密密钥（requireEnv）
+#   ADMIN_PASSWORD  首启种子管理员密码（db/seed.ts 读取，用户名固定 'admin'）
+services:
+  panel:
+    build: .
+    container_name: unturned-manager
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVER_PORT: ${SERVER_PORT:-3001}
+      HOST: ${HOST:-0.0.0.0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      # ⚠️ 安全警告：以下默认值仅供快速启动/开发。生产必须用宿主 .env 覆盖，
+      # 否则所有未覆盖的部署共享同一 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD——
+      # JWT 可被伪造、落库的 RCON 凭证（AES-GCM 加密）可被解密。默认值沿用 manager-server/.env 开发值。
+      JWT_SECRET: ${JWT_SECRET:-7f3a9b2e4d1c8f6a0e5b3d9c2a7f4e1b8d6c0a3f5e9b2d7c4a1f8e6b0d3c9a5f}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-c2VjdXJlLXJhbmRvbS1rZXktZm9yLWVuYw==}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
+      # 容器内固定路径（对应下方 volumes 挂载点），勿改
+      DB_PATH: /data/unturned-manager.db
+      DATA_DIR: /data
+      INSTALL_DIR: /opt/unturned
+      # SteamCMD 安装路径（镜像烘焙到 /opt/steamcmd；如需挂 volume 持久自更新，改这里 + volumes）
+      STEAMCMD_DIR: ${STEAMCMD_DIR:-/opt/steamcmd}
+    ports:
+      # 面板 HTTP
+      - "3001:3001"
+      # U3DS 默认端口（实际以各实例 Commands.dat 的 Port 为准；多实例再追加端口映射）
+      - "27015:27015/udp"
+      - "27016:27016/udp"
+      # OpenMod Valve Source RCON
+      - "25545:25545"
+    volumes:
+      # 面板数据（SQLite + 日志）
+      - panel-data:/data
+      # U3DS 安装根目录（多 ServerID 共装，省 10GB×N）
+      - unturned-data:/opt/unturned
+      # SteamCMD 自更新持久化（steamclient.so + 二进制）——容器重建不重下。
+      # 命名卷首次挂载会把镜像烘焙的 /opt/steamcmd 灌入卷（copy-on-first-use）；
+      # 镜像 rebuild 新版会被旧卷内容遮蔽，但 SteamCMD 每次运行自动更新追平，影响可忽略。
+      - steamcmd-data:/opt/steamcmd
+
+volumes:
+  panel-data:
+  unturned-data:
+  steamcmd-data:

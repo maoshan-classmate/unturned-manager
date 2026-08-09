@@ -23,5 +23,11 @@ export const config = {
    * - 现在：单一全局值，多 ServerID 共装决策（CLAUDE.md §2）
    */
   installDir: process.env.INSTALL_DIR || '/opt/unturned',
+  /**
+   * SteamCMD 安装目录（env 显式声明）。
+   * 设置后作为唯一路径使用（不静默回落探测，显式声明优先）；未设则回落
+   * SteamCmdManager 的 DEFAULT_PATHS 候选探测。Docker 镜像烘焙到 /opt/steamcmd。
+   */
+  steamCmdDir: process.env.STEAMCMD_DIR,
   nodeEnv: process.env.NODE_ENV || 'development',
 };

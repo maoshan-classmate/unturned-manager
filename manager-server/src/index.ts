@@ -14,6 +14,8 @@ process.env.no_proxy = '*';
 import { setGlobalDispatcher, Agent } from 'undici';
 setGlobalDispatcher(new Agent({ connectTimeout: 30_000, headersTimeout: 30_000, bodyTimeout: 30_000 }));
 
+import path from 'node:path';
+import fs from 'node:fs';
 import express from 'express';
 import { createServer } from 'http';
 import helmet from 'helmet';
@@ -104,6 +106,32 @@ app.use('/api/settings', createSettingsRouter(db));
 
 // WebSocket
 wsBroadcaster.init(server, container.authService as import('./modules/auth/AuthService.js').AuthService);
+
+// ─── 前端静态托管（生产构建 + BrowserRouter SPA fallback）───
+// 开发模式（vite dev server 走 5173 端口）此路径不存在 index.html，自动跳过。
+// noCache 中间件已全局设 no-store，此处经 setHeaders 对哈希资源重设长期缓存。
+const publicDir = path.resolve(process.cwd(), 'public');
+if (fs.existsSync(path.join(publicDir, 'index.html'))) {
+  // 静态资源：/assets/ 下 Vite 内容哈希文件名可长期缓存；其余 no-cache。
+  app.use(
+    express.static(publicDir, {
+      index: false,
+      setHeaders(res, filePath) {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }),
+  );
+  // SPA fallback：非 /api、/ws 的 GET 全部回 index.html（BrowserRouter 前端路由）。
+  app.get(/^\/(?!api(?:\/|$)|ws(?:\/|$)).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(publicDir, 'index.html'));
+  });
+  logger.info({ publicDir }, '前端静态资源已挂载（生产模式）');
+}
 
 // 全局错误处理（必须注册在所有路由之后）
 app.use(errorHandler);

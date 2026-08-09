@@ -1,0 +1,23 @@
+# ── 依赖 / 构建产物 ──
+**/node_modules
+**/dist
+**/build
+
+# ── 环境 / 密钥（禁止进镜像构建上下文）──
+.env
+.env.*
+!.env.example
+
+# ── 只读参考仓 + 测试数据（不参与构建）──
+.research
+test-servers
+.test-install
+
+# ── VCS ──
+.git
+.gitignore
+
+# ── 日志 / 测试报告 ──
+*.log
+**/test-results
+**/playwright-report
