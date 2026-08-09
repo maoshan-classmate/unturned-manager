@@ -170,6 +170,7 @@ beforeAll(async () => {
     container.workshopAcf,
     container.workshopDelete,
     container.steamCmdManager,
+    container.configService,
   ));
   app.use(errorHandler);
 

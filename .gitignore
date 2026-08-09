@@ -31,6 +31,10 @@ manager-server/test-results/
 manager-web/test-results/
 manager-server/playwright-report/
 manager-web/playwright-report/
+*.log
+
+# Test fixtures (B2 目录真源测试）
+.test-install/
 
 # Backups (server-side auto-backups, never tracked)
 manager-server/backups/

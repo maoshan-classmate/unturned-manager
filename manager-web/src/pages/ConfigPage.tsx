@@ -62,7 +62,17 @@ const EMPTY_TXT: ConfigTxtFields = {
 // ─── Workshop row ──────────────────────────────────────
 
 interface WorkshopRow {
-  fileId: string; name: string; status: 'enabled' | 'disabled' | 'downloading' | 'error'; selected: boolean;
+  fileId: string; name: string; status: 'enabled' | 'disabled' | 'pending_apply'; selected: boolean; applied: boolean;
+}
+
+/** 后端 GET /mods/downloaded 响应项（BUG-6 修复后含 applied 字段） */
+interface DownloadedMod {
+  fileId: string;
+  title?: string;
+  authorName?: string;
+  applied?: boolean;
+  timeupdated?: number;
+  size?: number;
 }
 
 const PAGE_SIZE = 10;
@@ -123,13 +133,15 @@ export function ConfigPage() {
           });
         }
       } else {
-        // v2.2：已下载 Mod 列表改走 /mods/downloaded（acf 扫描 + WebAPI 元数据合并）
+        // v2.2 + BUG-6 修复：已下载 Mod 列表改走 /mods/downloaded（acf + File_IDs + WebAPI 元数据合并）
         const res = await apiClient.get(`/servers/${server.id}/mods/downloaded`);
-        const items: Array<{ fileId: string; title?: string; authorName?: string }> = res.data.data ?? [];
+        const items: DownloadedMod[] = res.data.data ?? [];
         setWorkshopRows(items.map((item) => ({
           fileId: item.fileId,
           name: item.title || item.fileId,
-          status: 'enabled' as const,
+          // ★ BUG-6 修复：3 态——applied=true(已应用) | applied=false(待应用)
+          status: item.applied ? 'enabled' : 'pending_apply',
+          applied: item.applied ?? false,
           selected: false,
         })));
       }
@@ -210,13 +222,13 @@ export function ConfigPage() {
 
   const toggleWsSelect = (fileId: string) => setWorkshopRows((prev) => prev.map((r) => (r.fileId === fileId ? { ...r, selected: !r.selected } : r)));
   const toggleWsStatus = (fileId: string) => {
-    setWorkshopRows((prev) => { setDirty(true); return prev.map((r) => (r.fileId === fileId ? { ...r, status: r.status === 'enabled' ? 'disabled' as const : 'enabled' as const } : r)); });
+    setWorkshopRows((prev) => { setDirty(true); return prev.map((r) => (r.fileId === fileId ? { ...r, status: r.status === 'enabled' ? 'disabled' : 'enabled', applied: r.status === 'enabled' ? false : true } : r)); });
   };
   const removeWs = (fileId: string) => { setDeleteConfirm(fileId); };
 
   const filteredWorkshop = workshopRows.filter((r) => {
     const m = r.name.toLowerCase().includes(workshopSearch.toLowerCase()) || r.fileId.includes(workshopSearch);
-    const s = workshopStatusFilter === '全部状态' || (workshopStatusFilter === '已启用' && r.status === 'enabled') || (workshopStatusFilter === '未启用' && r.status === 'disabled') || (workshopStatusFilter === '下载中' && r.status === 'downloading');
+    const s = workshopStatusFilter === '全部状态' || (workshopStatusFilter === '已应用' && r.status === 'enabled') || (workshopStatusFilter === '待应用' && r.status === 'pending_apply') || (workshopStatusFilter === '未启用' && r.status === 'disabled');
     return m && s;
   });
   const wsPaged = filteredWorkshop.slice((workshopPage - 1) * PAGE_SIZE, workshopPage * PAGE_SIZE);
@@ -428,7 +440,15 @@ function WorkshopTab({ rows, paged, search, onSearch, statusFilter, page, onPage
 }
 
 function StatusBadge({ status }: { status: WorkshopRow['status'] }) {
-  const map: Record<WorkshopRow['status'], string> = { enabled: 'bg-emerald-500', disabled: 'bg-slate-500', downloading: 'bg-amber-500', error: 'bg-slate-500' };
-  const text: Record<WorkshopRow['status'], string> = { enabled: '已启用', disabled: '未启用', downloading: '下载中', error: '未启用' };
+  const map: Record<WorkshopRow['status'], string> = {
+    enabled: 'bg-emerald-500',
+    disabled: 'bg-slate-500',
+    pending_apply: 'bg-amber-500',  // ★ BUG-6 修复：待应用状态
+  };
+  const text: Record<WorkshopRow['status'], string> = {
+    enabled: '已应用',
+    disabled: '未启用',
+    pending_apply: '待应用',
+  };
   return <span className={`inline-flex px-2.5 py-0.5 rounded text-[10px] font-medium text-white ${map[status]}`}>{text[status]}</span>;
 }

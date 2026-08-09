@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Search, Package, AlertCircle } from 'lucide-react';
@@ -89,6 +89,30 @@ export function ModsPage() {
 
   // 详情弹窗
   const [detailFileId, setDetailFileId] = useState<string | null>(null);
+
+  // ★ BUG-5 修复：已下载 Mod 集合（acf 扫描真源，每次刷新）
+  const {
+    data: downloaded,
+    refetch: refetchDownloaded,
+  } = useQuery({
+    queryKey: ['mods', 'downloaded', serverId],
+    queryFn: async () => {
+      if (!serverId) return [];
+      const res = await apiClient.get<{ data: Array<{ fileId: string; applied?: boolean }> }>(
+        `/servers/${serverId}/mods/downloaded`,
+      );
+      return res.data.data;
+    },
+    enabled: !!serverId,
+    refetchOnMount: 'always',
+    staleTime: 0,
+  });
+
+  // ★ BUG-5 修复：已下载 fileId 集合（含 applied——下载到 staging 即可标记已下载）
+  const downloadedSet = useMemo(
+    () => new Set((downloaded ?? []).map((d) => d.fileId)),
+    [downloaded],
+  );
 
   // ── 浏览数据（React Query，60s staleTime 前端防抖）──
   const {
@@ -190,6 +214,8 @@ export function ModsPage() {
       const { success, modTitle, error } = res.data.data;
       if (success) {
         toast.success(`${modTitle ?? 'Mod'} 下载成功`);
+        // ★ BUG-5 修复：刷新已下载列表 → 按钮变「已下载」
+        void refetchDownloaded();
         // 关闭详情弹窗（若打开）
         setDetailFileId(null);
       } else {
@@ -279,6 +305,7 @@ export function ModsPage() {
                 subscriptions={mod.subscriptions}
                 voteScore={mod.voteScore}
                 loading={!!downloading[mod.fileId]}
+                downloaded={downloadedSet.has(mod.fileId)}   // ★ BUG-5 修复
                 onDownload={handleDownload}
                 onDetails={(id) => setDetailFileId(id)}
               />

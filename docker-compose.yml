@@ -6,6 +6,15 @@
 #   1. cp .env.example .env      # 填 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD
 #   2. docker compose up -d --build
 #
+# ★ BUG-4 说明（2026-08-10）：
+#   volumes 使用**命名卷**（panel-data/unturned-data/steamcmd-data），Docker 自动创建，
+#   **不会**以宿主机文件夹形式出现在项目目录下。查看实际挂载位置：
+#       docker volume inspect unturned-manager_panel-data
+#       docker volume inspect unturned-manager_unturned-data
+#       docker volume inspect unturned-manager_steamcmd-data
+#   首次 `compose up` 后 /opt/unturned 目录为空是**预期**——需在面板 Server Setup
+#   页点击「安装 U3DS」按钮（引导式，不会自动装）。SteamCMD 已烘焙进镜像（/opt/steamcmd）。
+#
 # 三个密钥/密码带默认值（快速启动）——生产必须用宿主 .env 覆盖，见下方 ⚠️ 警告。
 #   JWT_SECRET      JWT 签名密钥（config.ts requireEnv，缺失即崩溃）
 #   ENCRYPTION_KEY  RCON 凭证 AES-GCM 加密密钥（requireEnv）

@@ -6,6 +6,7 @@ import {
   type IWorkshopMetadataService,
   type IWorkshopAcfService,
   type IWorkshopDeleteService,
+  type IConfigService,
   type ISteamCmdManager,
   type ServerId,
   type WorkshopFileId,
@@ -19,11 +20,14 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
  * 模组服务器操作路由（v2.3 — 浏览端点已拆到 mod-browse.ts）
  *
  * 路径：/api/servers/:id/mods
- * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全）
+ * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全 + applied 合并）
  * - POST   /download        下载到 staging（同步等待 SteamCMD 退出）
  * - POST   /apply           应用 Mod 变更 + 重启流水线
  * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
  * - GET    /acf             读 acf 列表（真源）
+ *
+ * BUG-6 修复：GET /downloaded 增 `applied` 字段（是否在 File_IDs 中）
+ * BUG-5 修复：前端可用 `applied` 区分「已下载」vs「已应用」
  *
  * 全局浏览（搜索/详情/批量）：见 mod-browse.ts → /api/mods
  */
@@ -33,6 +37,7 @@ export function createModsRouter(
   acfService: IWorkshopAcfService,
   deleteService: IWorkshopDeleteService,
   steamCmd: ISteamCmdManager,
+  configService: IConfigService,
 ): Router {
   const router = Router({ mergeParams: true });
   router.use(authenticateToken);
@@ -42,15 +47,14 @@ export function createModsRouter(
     const servers = await serverManager.listServers();
     const cfg = servers.find((s) => s.id === serverId);
     if (!cfg) {
-      res_status_404(serverId);
+      throw new AppError('server-not-found', `服务端 ${serverId} 不存在`, 404);
     }
-    return cfg!.installDir;
+    return cfg.installDir;
   };
-  function res_status_404(_serverId: string): never {
-    throw new AppError('server-not-found', `服务端 ${_serverId} 不存在`, 404);
-  }
 
   // ── 1. GET /downloaded ──────────────────────────────
+  // BUG-6 修复：合并 File_IDs（applied 状态）+ acf 元数据（timeupdated/size）
+  // BUG-5 修复：applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
   router.get(
     '/mods/downloaded',
     asyncHandler(async (req, res) => {
@@ -58,6 +62,11 @@ export function createModsRouter(
       await resolveInstallDir(serverId);
       const items = await acfService.listItems(serverId);
       const fileIds = items.map((i) => i.fileId);
+
+      // 读 File_IDs（WorkshopDownloadConfig.json）—— 决定 applied
+      const config = await configService.readWorkshopConfig(serverId);
+      const fileIdsSet = new Set<string>(config.File_IDs as string[]);
+
       const metas = fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
       const metaMap = new Map(metas.map((m) => [m.fileId, m]));
       const merged = items.map((item) => ({
@@ -69,6 +78,7 @@ export function createModsRouter(
         author: metaMap.get(item.fileId)?.author,
         authorName: metaMap.get(item.fileId)?.authorName,
         previewUrl: metaMap.get(item.fileId)?.previewUrl,
+        applied: fileIdsSet.has(item.fileId as string),  // ★ BUG-6 修复
       }));
       res.json({ data: merged });
     }),
@@ -127,7 +137,6 @@ export function createModsRouter(
       const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
       const serverId = req.params.id as ServerId;
       // 委托 ServerManager.applyModChanges 走完整 SOP 流水线
-      // （含 RCON Save + Shutdown 30 + 等待退出 + 调 WorkshopApplyService.applyStaged + 重启 + A2S 轮询）
       const promise = serverManager.applyModChanges(serverId, fileIds);
       const operationId = `apply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       res.status(202).json({ data: { operationId, status: 'running' } });

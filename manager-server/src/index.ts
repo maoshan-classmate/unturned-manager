@@ -95,6 +95,7 @@ app.use('/api/servers/:id', createModsRouter(
   container.workshopAcf,
   container.workshopDelete,
   container.steamCmdManager,
+  container.configService,
 ));
 app.use('/api/servers', createRconRouter(container.rconManager));
 app.use('/api/servers', createConfigRouter(container.configService));

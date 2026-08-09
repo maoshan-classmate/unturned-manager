@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Server, Download, ShieldCheck, AlertCircle } from 'lucide-react';
 import { Card } from '../shared/Card.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../shared/ConfirmDialog.js';
 import { apiClient } from '@/api/client';
+import { useSteamCmdProgress } from '@/hooks/useSteamCmdProgress';
 
 interface U3dsStatus {
   appId: string;
@@ -25,19 +26,78 @@ interface U3dsCardProps {
  */
 export function U3dsCard({ status }: U3dsCardProps) {
   const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [installConfirmOpen, setInstallConfirmOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [validating, setValidating] = useState(false);
+
+  // fallback 数据：后端 /u3ds/status 不存在时，默认占位
+  const data: U3dsStatus = status ?? {
+    appId: '1110390',
+    version: '—',
+    isInstalled: false,
+    installPath: '/opt/unturned',
+  };
+
+  // BUG-2 修复：订阅 SteamCMD 进度（按 installDir 隔离）
+  const installProgress = useSteamCmdProgress({
+    jobId: `steamcmd-install-${data.installPath}`,
+  });
+  const updateProgress = useSteamCmdProgress({
+    jobId: `steamcmd-update-${data.installPath}`,
+  });
+
+  // BUG-2 修复：进度条 toast 提示
+  useEffect(() => {
+    if (!installProgress) return;
+    if (installProgress.stage === 'completed') {
+      toast.success(`U3DS 安装完成${installProgress.percent != null ? `（${installProgress.percent}%）` : ''}`);
+      setInstalling(false);
+    } else if (installProgress.stage === 'failed') {
+      toast.error('U3DS 安装失败');
+      setInstalling(false);
+    } else if (installing) {
+      const pct = installProgress.percent != null ? ` ${installProgress.percent}%` : '';
+      toast.loading(`U3DS 安装中… ${installProgress.stage}${pct}`, { id: 'u3ds-install' });
+    }
+  }, [installProgress, installing]);
+
+  useEffect(() => {
+    if (!updateProgress) return;
+    if (updateProgress.stage === 'completed') {
+      toast.success(`U3DS 更新完成${updateProgress.percent != null ? `（${updateProgress.percent}%）` : ''}`);
+      setUpdating(false);
+    } else if (updateProgress.stage === 'failed') {
+      toast.error('U3DS 更新失败');
+      setUpdating(false);
+    } else if (updating) {
+      const pct = updateProgress.percent != null ? ` ${updateProgress.percent}%` : '';
+      toast.loading(`U3DS 更新中… ${updateProgress.stage}${pct}`, { id: 'u3ds-update' });
+    }
+  }, [updateProgress, updating]);
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    setInstallConfirmOpen(false);
+    try {
+      await apiClient.post('/steamcmd/install-u3ds', { installDir: data.installPath });
+      toast.loading('U3DS 安装已启动...', { id: 'u3ds-install' });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      toast.error(msg ?? 'U3DS 安装失败');
+      setInstalling(false);
+    }
+  };
 
   const handleUpdate = async () => {
     setUpdating(true);
+    setUpdateConfirmOpen(false);
     try {
-      await apiClient.post('/steamcmd/update', { appId: '1110390' });
+      await apiClient.post('/steamcmd/update', { installDir: data.installPath });
       toast.success('U3DS 更新已提交');
-      setUpdateConfirmOpen(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       toast.error(msg ?? '更新失败');
-    } finally {
       setUpdating(false);
     }
   };
@@ -45,7 +105,7 @@ export function U3dsCard({ status }: U3dsCardProps) {
   const handleValidate = async () => {
     setValidating(true);
     try {
-      await apiClient.post('/steamcmd/validate', { appId: '1110390' });
+      await apiClient.post('/steamcmd/validate', { installDir: data.installPath });
       toast.success('文件校验通过');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
@@ -53,14 +113,6 @@ export function U3dsCard({ status }: U3dsCardProps) {
     } finally {
       setValidating(false);
     }
-  };
-
-  // fallback 数据:后端 /u3ds/status 不存在时,默认占位
-  const data: U3dsStatus = status ?? {
-    appId: '1110390',
-    version: '—',
-    isInstalled: false,
-    installPath: '—',
   };
 
   return (
@@ -99,9 +151,15 @@ export function U3dsCard({ status }: U3dsCardProps) {
         </div>
 
         <div className="flex items-center gap-2 mt-4">
-          <Button variant="secondary" size="sm" onClick={() => setUpdateConfirmOpen(true)} className="h-8 text-sm gap-1">
-            <Download size={12} /> {data.isInstalled ? '更新 U3DS' : '安装 U3DS'}
-          </Button>
+          {data.isInstalled ? (
+            <Button variant="secondary" size="sm" onClick={() => setUpdateConfirmOpen(true)} disabled={updating} className="h-8 text-sm gap-1">
+              <Download size={12} /> {updating ? '更新中...' : '更新 U3DS'}
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setInstallConfirmOpen(true)} disabled={installing} className="h-8 text-sm gap-1">
+              <Download size={12} /> {installing ? '安装中...' : '安装 U3DS'}
+            </Button>
+          )}
           {data.isInstalled && (
             <Button variant="secondary" size="sm" onClick={handleValidate} disabled={validating} className="h-8 text-sm gap-1">
               <ShieldCheck size={12} className={validating ? 'animate-pulse' : ''} /> 验证文件
@@ -113,13 +171,25 @@ export function U3dsCard({ status }: U3dsCardProps) {
       <ConfirmDialog
         open={updateConfirmOpen}
         title="更新 U3DS"
-        message="将通过 SteamCMD 重新下载 U3DS 二进制。期间需停服,确定继续?"
+        message="将通过 SteamCMD 重新下载 U3DS 二进制（约 10GB）。期间需停服,确定继续?"
         confirmLabel="更新"
         variant="danger"
         icon={AlertCircle}
         loading={updating}
         onConfirm={handleUpdate}
         onCancel={() => setUpdateConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={installConfirmOpen}
+        title="安装 U3DS"
+        message="将通过 SteamCMD 下载 U3DS 二进制（约 10GB）到当前安装路径。安装期间需停服,确定继续?"
+        confirmLabel="安装"
+        variant="danger"
+        icon={AlertCircle}
+        loading={installing}
+        onConfirm={handleInstall}
+        onCancel={() => setInstallConfirmOpen(false)}
       />
     </>
   );

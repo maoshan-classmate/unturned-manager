@@ -1,4 +1,4 @@
-import { Star, Plus, Eye, Users } from 'lucide-react';
+import { Star, Plus, Eye, Users, Check } from 'lucide-react';
 import { Button } from '../ui/button.js';
 import { cn, stripBbcode } from '@/lib/utils';
 
@@ -18,6 +18,8 @@ interface ModCardProps {
   voteScore?: number;
   /** 是否正在操作中 */
   loading?: boolean;
+  /** ★ BUG-5 修复：是否已下载（来自 /mods/downloaded） */
+  downloaded?: boolean;
   /** 下载回调 */
   onDownload?: (fileId: string) => void;
   /** 详情回调 */
@@ -41,7 +43,7 @@ interface ModCardProps {
  */
 export function ModCard({
   fileId, title, description, previewUrl,
-  subscriptions, voteScore, loading, onDownload, onDetails,
+  subscriptions, voteScore, loading, downloaded, onDownload, onDetails,
 }: ModCardProps) {
   const cleanDescription = stripBbcode(description);
 
@@ -117,12 +119,13 @@ export function ModCard({
         <div className="flex items-center gap-2 mt-3">
           <Button
             size="sm"
-            variant="default"
-            onClick={() => onDownload?.(fileId)}
-            disabled={loading}
+            variant={downloaded ? 'outline' : 'default'}
+            onClick={() => !downloaded && onDownload?.(fileId)}
+            disabled={loading || downloaded}
             className="h-7 text-[11px] gap-1 px-3"
           >
-            <Plus size={12} /> 下载
+            {downloaded ? <Check size={12} /> : <Plus size={12} />}
+            {downloaded ? '已下载' : '下载'}
           </Button>
           <Button
             size="sm"
