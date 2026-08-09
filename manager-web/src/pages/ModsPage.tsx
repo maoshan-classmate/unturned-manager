@@ -265,8 +265,6 @@ export function ModsPage() {
                 key={mod.fileId}
                 fileId={mod.fileId}
                 title={mod.title}
-                author={mod.author}
-                authorName={mod.authorName}
                 description={mod.description}
                 previewUrl={mod.previewUrl}
                 subscriptions={mod.subscriptions}
@@ -285,11 +283,12 @@ export function ModsPage() {
         <PaginationBar page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
       </div>
 
-      {/* 详情弹窗（问题 6——弹窗而非跳转） */}
+      {/* 详情弹窗（问题 6——弹窗而非跳转）
+          mod 优先用浏览列表已有数据（title/description/preview 立即显示），detail 接口补充评分/大小等 */}
       <ModDetailDialog
         open={!!detailFileId}
-        mod={detailData ?? null}
-        loading={detailLoading}
+        mod={detailData ?? browse?.rows.find((m) => m.fileId === detailFileId) ?? null}
+        loading={detailLoading && !browse?.rows.some((m) => m.fileId === detailFileId)}
         onClose={() => setDetailFileId(null)}
         onDownload={handleDownload}
       />

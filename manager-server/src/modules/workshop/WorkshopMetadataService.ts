@@ -19,8 +19,8 @@ const STEAM_API_BASE = 'https://api.steampowered.com';
 const API_GET_DETAILS = `${STEAM_API_BASE}/IPublishedFileService/GetDetails/v1/`;
 const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`;
 
-/** 所有 Steam API 调用的客户端 timeout（30s = 冷启动 QueryFiles 留足余量） */
-const FETCH_TIMEOUT_MS = 30_000;
+/** 所有 Steam API 调用的客户端 timeout（45s = 国内网络访问 Steam 冷启动实测需 20-40s） */
+const FETCH_TIMEOUT_MS = 45_000;
 
 /** U3DS AppID = 1110390（服务端） */
 const U3DS_APPID = '1110390';

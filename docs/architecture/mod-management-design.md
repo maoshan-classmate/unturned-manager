@@ -1,12 +1,13 @@
-# Unturned Mod 管理系统 — 完整设计规格（v2.2 · 生产质量版）
+# Unturned Mod 管理系统 — 完整设计规格（v2.4 · 生产质量版）
 
-> **版本**：v2.3（2026-08-09，实现完成）
+> **版本**：v2.4（2026-08-09，实现完成）
 > **v1 → v2 变更**：砍掉所有后端缓存 / 补 DST 三源合一哲学 / 加 acf 维护模块 / 接入 React Query
 > **v2 → v2.1 变更**（老板拍板）：ModsPage = 单 Tab（Steam 创意工坊浏览）+ 下载入口；已下载 Mod 的启用/禁用/删除/配置复用 Config > Workshop Tab（已有 `WorkshopTab` 组件，不新建）
 > **v2.1 → v2.2 变更**（老板拍板）：下载成功只弹 Toast（如 `Hawaii 下载成功`），**不调 `router.push`、不引导跳转、不弹第二条 toast.info**。Toast 即全部反馈，用户自主决定下一步。
 > **v2.2 → v2.3 变更**：全部 Phase A-F 实现完成并通过验证——后端 73 单测 + 16 API e2e；前端 29 单测 + 5 浏览器 UI e2e；typecheck 前后端 0 错误。
-> **设计原则**：DST 三源合一状态模型（WebAPI 元数据 + acf 真源 + File_IDs 启用列表）；零后端缓存；前端 React Query 防抖；acf 同步维护；**最小化用户打扰**
-> **状态**：✅ **已实现**（2026-08-09，commit 6a51b44 完成）
+> **v2.3 → v2.4 变更**：浏览链路改为**单次 QueryFiles**（不再调 GetDetails/GetPlayerSummaries，避免叠加超时）；评分星精确填充（2.7 分=2满+0.7部分）；列表/详情**不展示作者与 ID**；每页默认 12 条。
+> **设计原则**：DST 三源合一状态模型（WebAPI 元数据 + acf 真源 + File_IDs 启用列表）；零后端缓存；前端 React Query 防抖；acf 同步维护；**最小化用户打扰**；浏览单次调用避免超时
+> **状态**：✅ **已实现**（2026-08-09）
 > **核心参考**：DST 全链路分析 `claudedocs/research_dst_mod_reference_2026-08-08.md`
 
 ---
@@ -18,7 +19,7 @@
 | **后端缓存 `browseMods`** | 60s LRU + stale-while-revalidate | **0 缓存** | DST 哲学：真源唯一，缓存会引入一致性风险；单用户命中率 < 5% |
 | **后端缓存 `getModDetails`** | 600s fresh + 1h stale | **0 缓存** | 同上；用户切详情弹窗 < 1s 间隔，无需缓存 |
 | **`workshop_mods` 表** | 缓存元数据 | **删除** | 派生数据 = 一致性问题源；WebAPI 是真源 |
-| **`workshop_creators` 表** | 缓存作者名 | **删除** | 同上；作者名实时查 GetPlayerSummaries |
+| **`workshop_creators` 表** | 缓存作者名 | **删除** | 同上；v2.4 起**不查作者名**（对齐 DST：作者字段仅内部持有 SteamID，不展示） |
 | **acf 处理** | "只读" | **同步维护** | Mod 管理的核心闭环，U3DS 启动读 acf |
 | **前端防抖** | 手动 useState | **React Query** | 自动 staleTime + 同 queryKey 复用 |
 | **8 个用户报告问题** | 散点修复 | **ModsPage 单 Tab 改造 + Config > Workshop Tab 复用** | ModsPage 只负责"浏览 + 下载入口"；已下载 Mod 的启用/禁用/删除/配置复用 Config > Workshop Tab（已有组件，不新建） |
@@ -33,13 +34,13 @@
 
 | 资产 | 位置 | 用途 |
 |---|---|---|
-| `WorkshopMetadataService` | `manager-server/src/modules/workshop/WorkshopMetadataService.ts` | 已有 `browseMods`（两阶段 QueryFiles→GetDetails），**需重写**（去缓存 + 补 author + 8s timeout） |
+| `WorkshopMetadataService` | `manager-server/src/modules/workshop/WorkshopMetadataService.ts` | 已有 `browseMods`，**已重写**（v2.4：单次 QueryFiles + 45s timeout） |
 | `SteamCmdManager.downloadWorkshopItem()` | `manager-server/src/modules/steamcmd/SteamCmdManager.ts:155-213` | **已实现**下载到 staging（带脚本生成 + 进度广播） |
-| `IWorkshopMetadataService` 契约 | `shared/contracts/workshop.ts` | **需扩展**（加 `authorName` 字段） |
+| `IWorkshopMetadataService` 契约 | `shared/contracts/workshop.ts` | **已定稿**（v2.4 无 authorName） |
 | `apiClient` | `manager-web/src/api/client.ts` | 复用 |
-| `sonner` 依赖 | `manager-web/package.json:43` | **已装**但未挂 `<Toaster />` |
-| `ModsPage` | `manager-web/src/pages/ModsPage.tsx` | 229 行，**需重写** |
-| `ModCard` | `manager-web/src/components/mods/ModCard.tsx` | 149 行，**需改**（走 shadcn variant + formatModMeta） |
+| `sonner` 依赖 | `manager-web/package.json:43` | **已装**并已挂 `<Toaster />` |
+| `ModsPage` | `manager-web/src/pages/ModsPage.tsx` | **已重写**（v2.4：单 Tab + 单次 QueryFiles + 评分精确星） |
+| `ModCard` | `manager-web/src/components/mods/ModCard.tsx` | **已改**（shadcn variant + 订阅数展示 + 精确评分星，不展示作者/ID） |
 | `shadcn Button` | `manager-web/src/components/ui/button.tsx` | **已存在**，5 variant × 6 size |
 | `Dialog` | `manager-web/src/components/shared/Dialog.tsx` | **已存在**（22 行） |
 | `PageState` | `manager-web/src/components/shared/PageState.tsx` | **已存在**（四态容器） |
@@ -61,13 +62,13 @@
 
 | # | 问题 | v2 方案 |
 |---|---|---|
-| 1 | 作者字段取值错误（SteamID64） | 后端 `browseMods` 阶段 2 后批量调 `GetPlayerSummaries/v2` 补 `authorName` |
-| 2 | 作者/ID 样式无差异 | `formatModMeta()` 工具函数（不抽组件，三行原则）+ `flex items-center gap-3` + lucide 图标前缀 |
-| 3 | 介绍里有 `[h1] [EN]` 残留 | 双保险：① GetDetails 请求加 `strip_description_bbcode=true`（官方参数）；② 前端 `stripBbcode()` 兜底工具函数 |
-| 4 | 详情按钮样式错误 | 删 `style={{}}` 内联 + 走 shadcn `Button variant="ghost"` |
+| 1 | 作者字段取值错误（SteamID64） | v2.4：**列表/详情不展示作者字段**（对齐 DST，避免 GetPlayerSummaries 叠加超时） |
+| 2 | 作者/ID 样式无差异 | v2.4：**列表/详情不展示作者与 ID**（只显示订阅数 + 评分星） |
+| 3 | 介绍里有 `[h1] [EN]` 残留 | 前端 `stripBbcode()` 兜底工具函数（browse 单次 QueryFiles 返回 description） |
+| 4 | 详情按钮样式错误 | 删 `style={{}}` 内联 + 走 shadcn `Button variant="outline"`（有边框） |
 | 5 | "订阅"逻辑错误 | 重命名 + 改逻辑：调 `POST /api/servers/:id/workshop/download` → 9 步流水线 → Toast `Hawaii 下载成功` |
 | 6 | 详情按钮跳转外链 | 改弹窗：shadcn Dialog 包装 + `ModDetailDialog` 组件 + "在 Steam 中打开" 兜底链接 |
-| 7 | 首次加载超时 | 8s timeout（前端 `AbortSignal.timeout(8_000)`）+ React Query staleTime 防抖 + **0 后端缓存**（实时性） |
+| 7 | 首次加载超时 | 单次 QueryFiles + 45s timeout（国内网络冷启动 20-40s）+ React Query staleTime 防抖 + **0 后端缓存** |
 | 8 | Loading 范围错误 | 拆三态：服务器 loading（Header） + 浏览 loading（卡片网格 6 个 skeleton） + 已安装 loading（无感）；**页面壳始终渲染** |
 
 ---
@@ -149,17 +150,17 @@ ModsPage（单 Tab：Steam 创意工坊浏览）
 │   ├── SearchInput[复用]（按 Mod 名称搜索）
 │   ├── Dropdown<ModSort>[复用]（popular/rated/published/updated/subscribed/relevance）
 │   ├── Dropdown<ModTimeRange>[复用]（day/week/month/months3/months6/year/all）
-│   ├── Dropdown<pageSize>[复用]（10/15/30/50）
+│   ├── Dropdown<pageSize>[复用]（12/15/30/48，默认 12）
 │   └── [搜索] Button[shadcn default variant]
 ├── ModGrid（grid-cols-3）
 │   └── ModCard[重写] ← 单 variant：browse
-│       ├── 预览图 + 标题 + formatModMeta（作者/订阅/ID）
-│       ├── 操作：[下载] Button[shadcn default]  [详情] Button[shadcn ghost]
+│       ├── 预览图 + 标题 + 订阅数（不展示作者/ID）+ 精确评分星
+│       ├── 操作：[下载] Button[shadcn default]  [详情] Button[shadcn outline]
 │       └── 或 ModCardSkeleton[新建] × 6（loading 时）
 ├── PaginationBar[复用]
 └── ModDetailDialog[新建]（shadcn Dialog 包装）
     ├── 大封面图（previewUrl）
-    ├── 标题 / 作者名（authorName）/ ID / 大小 / 更新时间
+    ├── 标题 / 大小 / 更新时间（不展示作者/ID）
     ├── 完整描述（BBCode 已 strip）
     ├── Tags（chips）
     ├── 操作区：[下载] [在 Steam 中打开]
@@ -304,8 +305,7 @@ export const ModSearchTypeSchema = z.enum(['text', 'id']);
 export const ModInfoSchema = z.object({
   fileId: z.string().regex(/^\d{1,19}$/, 'Workshop File ID 必须为 1-19 位数字'),
   title: z.string().min(1).max(200),
-  author: z.string().describe('SteamID64 数字串'),
-  authorName: z.string().optional().describe('作者昵称（GetPlayerSummaries 补全）'),
+  author: z.string().describe('SteamID64 数字串（列表/详情不展示，仅内部使用）'),
   description: z.string().default('').describe('已 strip BBCode 的纯文本'),
   previewUrl: z.string().url().optional(),
   fileSize: z.number().int().nonnegative().optional(),
@@ -347,7 +347,7 @@ export const UnifiedModSchema = ModInfoSchema.extend({
 export const ModSearchQuerySchema = z.object({
   q: z.string().default(''),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  pageSize: z.coerce.number().int().min(1).max(100).default(12),
   sort: ModSortSchema.default('popular'),
   range: ModTimeRangeSchema.default('week'),
   type: ModSearchTypeSchema.default('text'),
@@ -460,7 +460,7 @@ export interface IWorkshopMetadataService {
   /** 单个 Mod 详情——实时调 Steam API，0 缓存 */
   getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null>;
 
-  /** 浏览/搜索 Steam 工坊——实时两阶段调用，0 缓存 */
+  /** 浏览/搜索 Steam 工坊——单次 QueryFiles 调用，0 缓存 */
   browseMods(
     query: string,
     sort: ModSort,
@@ -472,9 +472,6 @@ export interface IWorkshopMetadataService {
 
   /** 批量补元数据——已下载列表显示用 */
   batchGetDetails(fileIds: WorkshopFileId[]): Promise<WorkshopModMeta[]>;
-
-  /** 通过 SteamID64 批量查作者昵称（GetPlayerSummaries/v2） */
-  getAuthorNames(steamIds: string[]): Promise<Map<string, string>>;
 }
 
 export interface IWorkshopAcfService {
@@ -691,29 +688,22 @@ async moveDir(src: string, dst: string): Promise<void> {
 - `refreshCache` 公开方法
 
 **保留 + 改写**：
-- `browseMods` — 8s timeout + 实时调两阶段 + 实时调 `getAuthorNames` 补 author
-- `getModDetails` — 8s timeout + 实时调 WebAPI，**0 缓存**
+- `browseMods` — 45s timeout + **单次 QueryFiles**（全字段，不二次 GetDetails）
+- `getModDetails` — 45s timeout + 实时调 GetDetails，**0 缓存**
 - `getSteamWebApiKey` 内部辅助保留
 
-**新增**：
-- `getAuthorNames(steamIds: string[]): Promise<Map<string, string>>` — 批量调 `GetPlayerSummaries/v2`
-- `batchGetDetails(fileIds: WorkshopFileId[]): Promise<WorkshopModMeta[]>` — 批量 GetDetails（用 batch URL）
+**浏览链路（v2.4 — 单次 QueryFiles）**：
+- `browseMods` 只调一次 `QueryFiles`（返回 title/creator/description/preview/vote_data 全字段），**不二次调 GetDetails**——避免两阶段叠加超时
+- **不查作者名**（GetPlayerSummaries）——作者字段显示 SteamID，列表/详情不展示
+- 评分：`vote_data.score`（0-1）×5 → `voteScore`（0-5），前端精确星填充
 
 **WebAPI 调用规范**：
-- 所有 fetch 加 `signal: AbortSignal.timeout(8_000)`（8s = 给 Steam 抖动留余量，但不阻塞 UI）
-- `GetDetails` 请求加 `strip_description_bbcode=true`（官方参数）
+- 所有 fetch 加 `signal: AbortSignal.timeout(45_000)`（国内网络访问 Steam 冷启动实测需 20-40s）
+- `QueryFiles` 请求加 `return_vote_data=true`（拿评分）
 - 错误统一抛 `AppError('workshop-upstream-error' | 'workshop-key-missing' | 'workshop-timeout', ...)`
 - Key 缺失时明确抛 `workshop-key-missing` 503，前端提示去 Settings 配
 
-**作者名实时补全流程**（`browseMods` 内）：
-```typescript
-const ids = (await batchGetDetails(fileIds));
-const creatorIds = ids.map(m => m.author).filter(Boolean);
-const nameMap = await this.getAuthorNames(creatorIds);
-return ids.map(m => ({ ...m, authorName: nameMap.get(m.author) ?? m.author }));
-```
-
-**作者名 batch 限制**：`GetPlayerSummaries/v2` 一次最多 100 个 steamids，本项目单次 browse ≤ 50 个 mod，**永远够用**。
+**`batchGetDetails`**：仅已下载列表用，批量 GetDetails 补元数据（不查作者名）。
 
 ### 4.4 `WorkshopDeleteService` — 删除 Mod（核心新增）
 
@@ -802,13 +792,11 @@ router.post('/:id/mods/download', async (req, res) => {
 
 > **v2.1 修正**：ModCard 只服务 ModsPage（单 Tab 浏览），**只有 `browse` 一种 variant**。已下载 Mod 的启用/禁用/删除在 Config > Workshop Tab 走 DataTable 行内操作（已有），不抽 ModCard 多 variant——三行原则。
 
-**Props 改造**（单 variant）：
+**Props 改造**（单 variant，v2.4 不展示作者/ID）：
 ```typescript
 interface ModCardProps {
   fileId: string;
   title: string;
-  author: string;          // SteamID64
-  authorName?: string;     // 优先显示
   description: string;
   previewUrl?: string;
   fileSize?: number;
@@ -827,40 +815,42 @@ interface ModCardProps {
 <Button style={{ backgroundColor: '#22C55E', color: 'white' }}>下载</Button>
 <Button className="border-slate-500 text-slate-400">详情</Button>
 
-// ✅ 正确（v2）
+// ✅ 正确（v2.4）
 <Button variant="default" size="sm"><Plus size={12}/> 下载</Button>
-<Button variant="ghost" size="sm"><Eye size={12}/> 详情</Button>
-<Button variant="destructive" size="sm"><Trash2 size={12}/> 删除</Button>
+<Button variant="outline" size="sm"><Eye size={12}/> 详情</Button>
 ```
 
-**作者/订阅数/ID 三段式**（用 `formatModMeta()` 工具函数，**不抽组件**）：
+**v2.4：列表不展示作者/ID，只显示订阅数**：
 
 ```typescript
-// lib/utils.ts 新增
-export function formatModMeta(meta: {
-  author: string;
-  authorName?: string;
-  subscriptions?: number;
-  fileId: string;
-}): Array<{ icon: LucideIcon; text: string; className: string }> {
-  return [
-    { icon: User, text: meta.authorName || meta.author, className: 'text-slate-400 text-xs' },
-    ...(meta.subscriptions != null
-      ? [{ icon: Users, text: `${formatCompactNumber(meta.subscriptions)} 订阅`, className: 'text-slate-500 text-xs' }]
-      : []),
-    { icon: Hash, text: meta.fileId, className: 'text-slate-500 text-[11px] font-mono' },
-  ];
-}
+// ModCard.tsx 渲染（只显示订阅数，不展示作者/ID）
+{subscriptions != null && subscriptions > 0 && (
+  <div className="flex items-center gap-1 mt-1.5 text-xs text-slate-500">
+    <Users size={11} />
+    {subscriptions.toLocaleString()} 订阅
+  </div>
+)}
+```
 
-// ModCard.tsx 渲染
-<div className="flex items-center gap-3 mt-1.5">
-  {formatModMeta({ author, authorName, subscriptions, fileId }).map(({ icon: Icon, text, className }) => (
-    <span key={text} className={cn('flex items-center gap-1', className)}>
-      <Icon size={11} />
-      {text}
-    </span>
-  ))}
-</div>
+**评分精确星填充**（问题 5：2.7 分 = 2 满星 + 0.7 部分填充）：
+
+```typescript
+// ModCard.tsx 评分星——精确填充，不整渲染
+{voteScore != null && (
+  <div className="flex items-center gap-0.5 shrink-0">
+    {Array.from({ length: 5 }).map((_, i) => {
+      const fill = Math.min(Math.max(voteScore - i, 0), 1);
+      return (
+        <div key={i} className="relative" style={{ width: 12, height: 12 }}>
+          <Star size={12} className="text-slate-700 absolute inset-0" />
+          <div className="absolute inset-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+            <Star size={12} className="text-amber-500" />
+          </div>
+        </div>
+      );
+    })}
+  </div>
+)}
 ```
 
 **BBCode strip 工具函数**：
@@ -914,11 +904,10 @@ interface ModDetailDialogProps {
 │ │      previewUrl (16:9 大图)          │ │
 │ └────────────────────────────────────┘ │
 │ title (大号)                            │
-│ authorName (次级) · fileId (mono)       │
 │ ──────────────────────────────────────  │
 │ 文件大小: 12.3 MB                       │
 │ 订阅数: 12,345                          │
-│ 评分: ★★★★☆ 4.2 (3,210 票)            │
+│ 评分: ★★★☆☆ 3.2 (精确填充星)          │
 │ 更新时间: 2026-08-05                    │
 │ ──────────────────────────────────────  │
 │ Tags:                                  │
@@ -995,7 +984,7 @@ const [searchQuery, setSearchQuery] = useState('');
 const [sort, setSort] = useState<ModSort>('popular');
 const [timeRange, setTimeRange] = useState<ModTimeRange>('week');
 const [page, setPage] = useState(1);
-const [pageSize, setPageSize] = useState(10);
+const [pageSize, setPageSize] = useState(12);
 
 // 下载操作
 const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -1080,12 +1069,13 @@ return (
 );
 ```
 
-**下载按钮逻辑**（**v2.2 简化**：Toast 即全部反馈，不调 router.push、不引导跳转）：
+**下载按钮逻辑**（Toast 即全部反馈，不调 router.push、不引导跳转）：
 ```typescript
+// serverId 从 useServer 拿第一个真实服务器（浏览用全局 /api/mods，下载才需要 serverId）
 const handleDownload = async (fileId: string) => {
   setActionLoading((prev) => ({ ...prev, [fileId]: true }));
   try {
-    const res = await apiClient.post(`/mods/${fileId}/download`);
+    const res = await apiClient.post(`/servers/${serverId}/mods/download`, { fileId });
     const { modTitle, success } = res.data.data;
     if (success) {
       toast.success(`${modTitle ?? 'Mod'} 下载成功`);  // 全部反馈，结束
@@ -1147,7 +1137,7 @@ DROP TABLE IF EXISTS workshop_creators;
 | A1 | `shared/schemas/mod.schema.ts` Zod schema | 9 个端点的入参/响应 schema |
 | A2 | `shared/contracts/workshop.ts` 扩展 | `IWorkshopAcfService` / `IWorkshopApplyService` / `IWorkshopDeleteService` 三个新接口 |
 | A3 | `migrations/004-drop-mod-cache-tables.sql` | 删 2 表 |
-| A4 | `WorkshopMetadataService` 砍缓存 + 加 8s timeout + 补 author | 9 个老测试更新 |
+| A4 | `WorkshopMetadataService` 砍缓存 + 单次 QueryFiles + 45s timeout | 9 个老测试更新 |
 | A5 | `VdfParser.ts` 200 行自写 | 解析/序列化 + 8 个单测 |
 
 ### Phase B：核心模块
@@ -1171,14 +1161,14 @@ DROP TABLE IF EXISTS workshop_creators;
 | # | 任务 | 产出 |
 |---|---|---|
 | D1 | `components/ui/sonner.tsx` + 挂 `<Toaster />` | 全局 toast 可用 |
-| D2 | `lib/utils.ts` 加 `formatModMeta` + `stripBbcode` | 工具函数 + 8+ 个单测 |
+| D2 | `lib/utils.ts` 加 `stripBbcode` | 工具函数 + 8+ 个单测 |
 | D3 | 安装/配置 `@tanstack/react-query`（如未装）| QueryClient Provider |
 
 ### Phase E：前端 UI
 
 | # | 任务 | 产出 |
 |---|---|---|
-| E1 | `ModCard` 改造（shadcn variant + formatModMeta）| 单一 browse variant：下载/详情两个按钮 |
+| E1 | `ModCard` 改造（shadcn variant + 订阅数展示 + 精确评分星）| 单一 browse variant：下载/详情两个按钮 |
 | E2 | `ModDetailDialog.tsx` 新建 | 详情弹窗 |
 | E3 | `ModCardSkeleton.tsx` 新建 | 骨架屏 |
 | E4 | `ModsPage.tsx` 重写 | 单 Tab（Steam 浏览）+ React Query + Loading 拆态 + Toast 反馈（**不调 router.push**）|
@@ -1189,7 +1179,7 @@ DROP TABLE IF EXISTS workshop_creators;
 | # | 任务 |
 |---|---|
 | F1 | typecheck 零错误（前端 + 后端 + shared） |
-| F2 | 单元测试全绿：VDF 解析器 / acf 服务 / apply 流水线 / BBCode strip / formatModMeta |
+| F2 | 单元测试全绿：VDF 解析器 / acf 服务 / apply 流水线 / BBCode strip |
 | F3 | 集成测试：browse → download → apply → delete 完整链路 |
 | F4 | 手动冒烟：装/启动前后端、点 8 个原问题点逐个验证 |
 | F5 | 文档更新：`claudedocs/reference_console_commands.md` 加 Mod 命令；`docs/architecture/mod-management-design.md` 本文档 |
@@ -1203,13 +1193,13 @@ DROP TABLE IF EXISTS workshop_creators;
 
 | # | 问题 | 验证步骤 | 预期结果 |
 |---|---|---|---|
-| 1 | 作者显示昵称 | 打开 Mods 页 → 任意 mod 卡片 | 作者字段显示 "Renaxon" 而非 "76561198..." |
-| 2 | 作者/订阅数/ID 视觉分层 | 同上 | 三个字段不同颜色 + 不同图标 + 不同字号 |
+| 1 | 作者字段不展示 | 打开 Mods 页 → 任意 mod 卡片 | 卡片不显示作者 SteamID64，也不显示昵称 |
+| 2 | 元数据展示 | 同上 | 仅显示订阅数一项 + 精确评分星，不展示作者/ID |
 | 3 | 介绍无 BBCode 残留 | 同上 | 卡片介绍是纯文本，无 `[h1]` `[EN]` |
-| 4 | 详情按钮样式 | 同上 | 按钮走 shadcn ghost variant，hover 有反馈 |
+| 4 | 详情按钮样式 | 同上 | 按钮走 shadcn outline variant（有边框），hover 有反馈 |
 | 5 | 下载按钮 + Toast | 点 [下载] 按钮 | 弹 `Hawaii 下载成功` 1.5s 后消失；staging 目录有新文件 |
-| 6 | 详情弹窗 | 点 [详情] 按钮 | 弹窗显示完整 mod 信息（缩略图/作者/大小/完整介绍） |
-| 7 | 首次加载 8s 内响应 | 冷启动 + 立即进 Mods 页 | 8s 内卡片区显示（不管成功失败），不再等 30s |
+| 6 | 详情弹窗 | 点 [详情] 按钮 | 弹窗显示完整 mod 信息（缩略图/大小/评分/完整介绍，不展示作者/ID） |
+| 7 | 首次加载响应 | 冷启动 + 立即进 Mods 页 | 单次 QueryFiles 快速返回；页面壳立即可见，卡片区不长时间死等 |
 | 8 | Loading 范围 | 冷启动进 Mods 页 | 标题/筛选栏立即可见；卡片区显示 6 个 skeleton |
 
 ### 8.2 质量门槛（CLAUDE.md §6 + development.md）
@@ -1227,8 +1217,9 @@ DROP TABLE IF EXISTS workshop_creators;
 
 | 指标 | 目标 | 验证方法 |
 |---|---|---|
-| browse 首次响应 | < 2s（含两次 Steam API 调用） | curl 计时 |
-| browse 二次响应（同 query，60s 内） | < 200ms（React Query 缓存命中） | `console.time()` |
+| browse 首次响应（冷启动） | < 45s（单次 QueryFiles，国内网络 20-40s） | curl 计时 |
+| browse 二次响应（warm） | < 2s（单次 QueryFiles） | curl 计时 |
+| browse 三次响应（60s 内同 query） | < 200ms（React Query 缓存命中） | `console.time()` |
 | getModDetails 响应 | < 1.5s | curl 计时 |
 | download 响应 | < 60s（取决于 SteamCMD 下载速度） | curl 计时 |
 | delete 响应 | < 500ms | curl 计时 |
@@ -1239,8 +1230,7 @@ DROP TABLE IF EXISTS workshop_creators;
 
 | 风险 | 缓解 | 验证方法 |
 |---|---|---|
-| `strip_description_bbcode=true` Steam 是否真支持 | 双保险：前端 `stripBbcode()` 兜底 | 手动测试：检查返回的 `file_description` 字段 |
-| `GetPlayerSummaries/v2` 实际响应字段 | schema 留 `authorName?: string` 可选 | 单元测试 + 手动测试 |
+| QueryFiles 冷启动慢（国内网络访问 Steam 20-40s） | 45s 超时 + 前端 React Query 60s staleTime | 实机多次浏览测耗时 |
 | 跨设备 `fs.rename` 失败 | 检测 `EXDEV` → 降级 `cp -r + rm` | 在 Docker 容器 + 主机挂载卷场景测试 |
 | SteamCMD 进程崩溃留下脏 staging | 启动时清理 staging 目录 | 实机测试 |
 | acf 备份失败 → 写入失败回滚无备份 | 写入前 acf 必须存在且备份成功 | 单元测试覆盖 |
@@ -1258,4 +1248,4 @@ DROP TABLE IF EXISTS workshop_creators;
 
 ---
 
-*版本：v2.2（生产质量 · 简化交互修正版） · 创建 2026-08-09 · 等待评审*
+*版本：v2.4（生产质量 · 已实现） · 创建 2026-08-09*

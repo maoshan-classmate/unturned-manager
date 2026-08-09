@@ -5,28 +5,19 @@ import { ModCard } from './ModCard.js';
 const BASE_PROPS = {
   fileId: '1753134636',
   title: 'Hawaii',
-  author: '76561198000000001',
   description: '',
 };
 
 describe('ModCard', () => {
-  // 问题 1：作者显示昵称而非 SteamID64
-  it('authorName 存在时显示昵称', () => {
-    render(<ModCard {...BASE_PROPS} authorName="Renaxon" />);
-    expect(screen.getByText('Renaxon')).toBeTruthy();
-  });
-
-  it('authorName 缺失时回退 SteamID64', () => {
+  // 不展示作者/ID 信息（对齐设计：只显示订阅数）
+  it('不显示作者 SteamID', () => {
     render(<ModCard {...BASE_PROPS} />);
-    expect(screen.getByText('76561198000000001')).toBeTruthy();
+    expect(screen.queryByText(/7656119\d{10}/)).toBeNull();
   });
 
-  // 问题 2：ID 用 font-mono 弱化显示（样式分层）
-  it('ID 用 font-mono class', () => {
-    const { container } = render(<ModCard {...BASE_PROPS} />);
-    const idEl = container.querySelector('.font-mono');
-    expect(idEl).toBeTruthy();
-    expect(idEl?.textContent).toContain('1753134636');
+  it('不显示 Workshop File ID', () => {
+    render(<ModCard {...BASE_PROPS} />);
+    expect(screen.queryByText('1753134636')).toBeNull();
   });
 
   // 问题 3：BBCode 已 strip（不显示 [h1] 残留）
@@ -42,7 +33,7 @@ describe('ModCard', () => {
     expect(screen.getByText('暂无描述')).toBeTruthy();
   });
 
-  // 问题 4：详情按钮走 shadcn ghost variant
+  // 详情按钮触发回调
   it('详情按钮触发 onDetails 回调', () => {
     const onDetails = vi.fn();
     render(<ModCard {...BASE_PROPS} onDetails={onDetails} />);
@@ -50,7 +41,7 @@ describe('ModCard', () => {
     expect(onDetails).toHaveBeenCalledWith('1753134636');
   });
 
-  // 问题 5：按钮文案是「下载」而非「订阅」
+  // 按钮文案是「下载」而非「订阅」
   it('按钮显示「下载」而非「订阅」', () => {
     render(<ModCard {...BASE_PROPS} />);
     expect(screen.getByRole('button', { name: /下载/ })).toBeTruthy();
@@ -65,8 +56,13 @@ describe('ModCard', () => {
   });
 
   // 订阅数显示
-  it('订阅数存在时显示紧凑格式', () => {
+  it('订阅数存在时显示', () => {
     render(<ModCard {...BASE_PROPS} subscriptions={12345} />);
-    expect(screen.getByText(/1\.2万 订阅/)).toBeTruthy();
+    expect(screen.getByText(/12,345 订阅/)).toBeTruthy();
+  });
+
+  it('订阅数为空时不显示', () => {
+    render(<ModCard {...BASE_PROPS} />);
+    expect(screen.queryByText(/订阅/)).toBeNull();
   });
 });

@@ -1,14 +1,12 @@
-import { Star, Download, ExternalLink, User, Hash, Calendar, HardDrive } from 'lucide-react';
+import { Star, Download, ExternalLink, Calendar, HardDrive } from 'lucide-react';
 import { Dialog } from '../shared/Dialog.js';
 import { Button } from '../ui/button.js';
 import { formatSize, formatDate, stripBbcode } from '@/lib/utils';
 
-/** Mod 详情数据类型（来自 GET /mods/:fileId） */
+/** Mod 详情数据类型（来自 GET /mods/:fileId）——不展示作者/ID */
 interface ModDetail {
   fileId: string;
   title: string;
-  author: string;
-  authorName?: string;
   description: string;
   previewUrl?: string;
   fileSize?: number;
@@ -70,10 +68,8 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
           {/* 标题 */}
           <Dialog.Title>{mod.title}</Dialog.Title>
 
-          {/* 元数据行：作者 / ID / 大小 / 更新时间 */}
+          {/* 元数据行：大小 / 更新时间（不展示作者/ID） */}
           <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
-            <MetaItem icon={User} label="作者" value={mod.authorName || mod.author} />
-            <MetaItem icon={Hash} label="ID" value={mod.fileId} mono />
             <MetaItem icon={HardDrive} label="大小" value={mod.fileSize != null ? formatSize(mod.fileSize) : '—'} />
             <MetaItem icon={Calendar} label="更新时间" value={mod.updatedAt ? formatDate(mod.updatedAt) : '—'} />
           </div>
@@ -132,7 +128,7 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
 
 /** 元数据单项 */
 function MetaItem({ icon: Icon, label, value, mono }: {
-  icon: typeof User;
+  icon: typeof Calendar;
   label: string;
   value: string;
   mono?: boolean;

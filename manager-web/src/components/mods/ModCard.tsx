@@ -1,17 +1,13 @@
-import { Star, Plus, Eye, User, Users, Hash } from 'lucide-react';
+import { Star, Plus, Eye, Users } from 'lucide-react';
 import { Button } from '../ui/button.js';
-import { cn, formatModMeta, stripBbcode } from '@/lib/utils';
+import { cn, stripBbcode } from '@/lib/utils';
 
-/** ModCard Props（v2.2 单 variant——只服务 ModsPage Steam 浏览） */
+/** ModCard Props（单 variant——只服务 ModsPage Steam 浏览） */
 interface ModCardProps {
   /** Workshop File ID */
   fileId: string;
   /** Mod 名称 */
   title: string;
-  /** 作者 SteamID64 */
-  author: string;
-  /** 作者昵称（GetPlayerSummaries 补全，优先显示） */
-  authorName?: string;
   /** Mod 简介描述（原始 BBCode，内部 strip） */
   description: string;
   /** 预览图 URL */
@@ -30,24 +26,23 @@ interface ModCardProps {
 
 /**
  * 创意工坊 Mod 卡片——对齐 Figma 14:16695 ModCard。
- * v2.2 改造：走 shadcn Button variant（问题 4）+ formatModMeta 视觉分层（问题 2）
- * + stripBbcode 兜底（问题 3）+ "订阅"→"下载"（问题 5）。
+ * v2.4：走 shadcn Button variant + 订阅数展示 + 精确评分星；
+ * 不展示作者/ID；stripBbcode 兜底；"订阅"→"下载"。
  *
  * @param props - 组件属性
  * @returns ModCard React 元素
  *
  * @example
  * ```tsx
- * <ModCard fileId="1753134636" title="Hawaii" author="76561198..."
- *   authorName="Renaxon" description="[h1]热带群岛[/h1]" subscriptions={12345}
+ * <ModCard fileId="1753134636" title="Hawaii" description="[h1]热带群岛[/h1]"
+ *   subscriptions={12345} voteScore={3.2}
  *   onDownload={handleDownload} onDetails={handleDetails} />
  * ```
  */
 export function ModCard({
-  fileId, title, author, authorName, description, previewUrl,
+  fileId, title, description, previewUrl,
   subscriptions, voteScore, loading, onDownload, onDetails,
 }: ModCardProps) {
-  const metaItems = formatModMeta({ author, authorName, subscriptions, fileId });
   const cleanDescription = stripBbcode(description);
 
   return (
@@ -104,18 +99,13 @@ export function ModCard({
           )}
         </div>
 
-        {/* Author · subscriptions · ID — 视觉分层（formatModMeta 返回带图标前缀的展示项） */}
-        <div className="flex items-center gap-3 mt-1.5 truncate">
-          {metaItems.map((item) => {
-            const Icon = item.icon === 'User' ? User : item.icon === 'Users' ? Users : Hash;
-            return (
-              <span key={item.text} className={cn('flex items-center gap-1 shrink-0', item.className)}>
-                <Icon size={11} />
-                {item.text}
-              </span>
-            );
-          })}
-        </div>
+        {/* 订阅数（不展示作者/ID 信息） */}
+        {subscriptions != null && subscriptions > 0 && (
+          <div className="flex items-center gap-1 mt-1.5 text-xs text-slate-500">
+            <Users size={11} />
+            {subscriptions.toLocaleString()} 订阅
+          </div>
+        )}
 
         {/* Description — BBCode 已 strip（问题 3） */}
         <p className="text-xs text-slate-500 mt-0.5 truncate">
