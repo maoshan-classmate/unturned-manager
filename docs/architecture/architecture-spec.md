@@ -792,7 +792,13 @@ interface ILogStreamer {
 | POST | `/api/servers/:id/start` | 启动 | IServerManager.start |
 | POST | `/api/servers/:id/stop` | 停止 | IServerManager.stop |
 | POST | `/api/servers/:id/restart` | 重启 | IServerManager.restart |
+| GET | `/api/mods/search` | 浏览/搜索 Steam 工坊 | IWorkshopMetadataService.browseMods |
+| GET | `/api/mods/:fileId` | 单个 Mod 详情 | IWorkshopMetadataService.getModDetails |
+| POST | `/api/mods/batch-details` | 批量补元数据 | IWorkshopMetadataService.batchGetDetails |
+| GET | `/api/servers/:id/mods/downloaded` | 已下载 Mod 列表 | IWorkshopAcfService.listItems |
+| POST | `/api/servers/:id/mods/download` | 下载到 staging | ISteamCmdManager.downloadWorkshopItem |
 | POST | `/api/servers/:id/mods/apply` | 应用 Mod 变更 | IServerManager.applyModChanges |
+| DELETE | `/api/servers/:id/mods/:fileId` | 删除 Mod | IWorkshopDeleteService.deleteMod |
 | POST | `/api/servers/:id/rcon/execute` | 执行 RCON 命令 | IRconManager.execute |
 | GET | `/api/servers/:id/config/commands` | 读 Commands.dat | IConfigService.readCommandsDat |
 | PUT | `/api/servers/:id/config/commands` | 写 Commands.dat | IConfigService.writeCommandsDat |
@@ -804,7 +810,7 @@ interface ILogStreamer {
 | POST | `/api/servers/:id/files/upload` | 文件上传 | IFilesService.createUploadStream |
 | GET | `/api/steamcmd/status` | SteamCMD 状态 | ISteamCmdManager.getStatus |
 | POST | `/api/steamcmd/update` | 更新 U3DS | ISteamCmdManager.updateU3DS |
-| GET | `/api/workshop/mods/:fileId` | Mod 详情 | IWorkshopMetadataService.getModDetails |
+| ~~GET `/api/workshop/mods/:fileId`~~ | ~~Mod 详情（v1 废弃，改 `/api/mods/:fileId`）~~ | IWorkshopMetadataService.getModDetails |
 
 ---
 

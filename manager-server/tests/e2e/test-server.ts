@@ -35,6 +35,7 @@ const { wsBroadcaster } = await import('../../src/ws/gateway.js');
 const { createAuthRouter } = await import('../../src/routes/auth.js');
 const { createServersRouter } = await import('../../src/routes/servers.js');
 const { createModsRouter } = await import('../../src/routes/mods.js');
+const { createModBrowseRouter } = await import('../../src/routes/mod-browse.js');
 const { createRconRouter } = await import('../../src/routes/rcon.js');
 const { createConfigRouter } = await import('../../src/routes/config.js');
 const { createFilesRouter } = await import('../../src/routes/files.js');
@@ -65,6 +66,7 @@ app.get('/api/health', (_req, res) => { res.json({ status: 'ok', db: ':memory:' 
 // 全部路由
 app.use('/api/auth', createAuthRouter(container.authService));
 app.use('/api/servers', createServersRouter(container.serverManager));
+app.use('/api/mods', createModBrowseRouter(container.workshopMeta));
 app.use('/api/servers/:id', createModsRouter(
   container.serverManager,
   container.workshopMeta,

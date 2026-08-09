@@ -158,8 +158,8 @@
 
 ## 3. WorkshopDownloadConfig.json — Mod 订阅
 
-**路径**：`Servers/<ServerID>/WorkshopDownloadConfig.json`  
-**来源**：U3-SDK `WorkshopDownloadConfig.cs`（权威）
+**路径**：`Servers/<ServerID>/Server/WorkshopDownloadConfig.json`  
+**来源**：U3-SDK `WorkshopDownloadConfig.cs`（权威，`ServerSavedata` 根 = `Servers/<ServerID>/Server/`）
 
 | 字段 | 类型 | 默认值 | 说明 | Web UI 控件 |
 |---|---|---|---|---|
@@ -267,11 +267,13 @@ rcon:
 ## 7. 配置文件优先级关系（面板必知）
 
 ```
-Commands.dat (启动参数/模式/权限)
-    └── Config.txt (游戏玩法/浏览器/反作弊)
-           └── WorkshopDownloadConfig.json (Mod 订阅)
-                  ├── Rocket/Plugins/<Name>/Configuration.xml (每插件配置)
-                  └── openmod/plugins/<Id>/config.yaml (每插件配置)
+Servers/<ServerID>/            (服务器实例根目录)
+    ├── Server/                (ServerSavedata 根目录)
+    │   ├── Commands.dat (启动参数/模式/权限)
+    │   └── WorkshopDownloadConfig.json (Mod 订阅)
+    ├── Config.txt (游戏玩法/浏览器/反作弊 — ServerID 根，非 Server/)
+    ├── Rocket/Plugins/<Name>/Configuration.xml (每插件配置)
+    └── openmod/plugins/<Id>/config.yaml (每插件配置)
 ```
 
 - `Commands.dat` 中的 `Mode` 决定加载 `Config_<Mode>Difficulty.txt`

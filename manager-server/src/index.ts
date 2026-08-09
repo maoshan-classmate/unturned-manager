@@ -20,6 +20,7 @@ import { wsBroadcaster } from './ws/gateway.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createServersRouter } from './routes/servers.js';
 import { createModsRouter } from './routes/mods.js';
+import { createModBrowseRouter } from './routes/mod-browse.js';
 import { createRconRouter } from './routes/rcon.js';
 import { createConfigRouter } from './routes/config.js';
 import { createFilesRouter } from './routes/files.js';
@@ -73,6 +74,9 @@ app.get('/api/health', (_req, res) => {
 // API 路由
 app.use('/api/auth', createAuthRouter(container.authService));
 app.use('/api/servers', createServersRouter(container.serverManager));
+// 全局 Mod 浏览（Steam 创意工坊搜索/详情/批量——不依赖服务器实例）
+app.use('/api/mods', createModBrowseRouter(container.workshopMeta));
+// 服务器 Mod 操作（下载/已下载/应用/删除/acf——依赖服务器实例）
 app.use('/api/servers/:id', createModsRouter(
   container.serverManager,
   container.workshopMeta,

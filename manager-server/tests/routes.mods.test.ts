@@ -12,6 +12,7 @@ import { setAuthService } from '../src/middleware/auth.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 import { createServersRouter } from '../src/routes/servers.js';
 import { createModsRouter } from '../src/routes/mods.js';
+import { createModBrowseRouter } from '../src/routes/mod-browse.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 import { setSetting } from '../src/modules/settings/settingsStorage.js';
 
@@ -154,6 +155,7 @@ beforeAll(async () => {
   app.use(express.json({ limit: '10mb' }));
   app.use('/api/auth', createAuthRouter(container.authService));
   app.use('/api/servers', createServersRouter(container.serverManager));
+  app.use('/api/mods', createModBrowseRouter(container.workshopMeta));
   app.use('/api/servers/:id', createModsRouter(
     container.serverManager,
     container.workshopMeta,
@@ -190,7 +192,7 @@ beforeAll(async () => {
 describe('routes/mods · 8 端点', () => {
   it('GET /mods/search → 200 + Steam 元数据（含 authorName）', async () => {
     const res = await request(app)
-      .get('/api/servers/MyServer/mods/search?q=tropical&page=1&pageSize=10&sort=popular&range=week&type=text')
+      .get('/api/mods/search?q=tropical&page=1&pageSize=10&sort=popular&range=week&type=text')
       .set('Authorization', `Bearer ${accessToken}`);
     // 调试：先看实际状态码
     if (res.status !== 200) {
@@ -207,20 +209,20 @@ describe('routes/mods · 8 端点', () => {
 
   it('GET /mods/search → 400 缺 sort', async () => {
     await request(app)
-      .get('/api/servers/MyServer/mods/search?sort=invalid')
+      .get('/api/mods/search?sort=invalid')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(400);
   });
 
   it('GET /mods/search → 401 无 token', async () => {
     await request(app)
-      .get('/api/servers/MyServer/mods/search')
+      .get('/api/mods/search')
       .expect(401);
   });
 
   it('GET /mods/:fileId → 200 + 详情', async () => {
     const res = await request(app)
-      .get('/api/servers/MyServer/mods/111')
+      .get('/api/mods/111')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     expect(res.body.data.fileId).toBe('111');
@@ -229,7 +231,7 @@ describe('routes/mods · 8 端点', () => {
 
   it('POST /mods/batch-details → 200 + 批量元数据', async () => {
     const res = await request(app)
-      .post('/api/servers/MyServer/mods/batch-details')
+      .post('/api/mods/batch-details')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ fileIds: ['111', '222'] })
       .expect(200);
@@ -240,7 +242,7 @@ describe('routes/mods · 8 端点', () => {
 
   it('POST /mods/batch-details → 400 空数组', async () => {
     await request(app)
-      .post('/api/servers/MyServer/mods/batch-details')
+      .post('/api/mods/batch-details')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ fileIds: [] })
       .expect(400);

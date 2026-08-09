@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Search, Package, AlertCircle } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Dropdown, type DropdownOption } from '../components/shared/Dropdown.js';
 import { ModCard } from '../components/mods/ModCard.js';
@@ -69,7 +70,11 @@ function getApiError(err: unknown, fallback: string): string {
  * 数据流：React Query 前端防抖（browse 60s staleTime），后端 0 缓存。
  */
 export function ModsPage() {
-  const { serverId = '_default' } = useParams<{ serverId: string }>();
+  // 浏览 Steam 创意工坊是全局操作——走 /api/mods（不依赖 serverId）。
+  // 仅「下载」需要 serverId（下载到哪个服务器），从 useServer 拿第一个真实服务器。
+  const { serverId: routeServerId } = useParams<{ serverId: string }>();
+  const { servers } = useServer();
+  const serverId = (routeServerId && routeServerId !== '_default' ? routeServerId : servers[0]?.id) ?? '';
 
   // 搜索 & 筛选
   const [searchInput, setSearchInput] = useState('');
@@ -94,7 +99,8 @@ export function ModsPage() {
   } = useQuery({
     queryKey: ['mods', 'browse', serverId, searchQuery, sort, timeRange, page, pageSize],
     queryFn: async () => {
-      const res = await apiClient.get<{ data: { total: number; rows: BrowseMod[] } }>(`/servers/${serverId}/mods/search`, {
+      // 全局浏览——不带 serverId（Steam 创意工坊是全局操作）
+      const res = await apiClient.get<{ data: { total: number; rows: BrowseMod[] } }>('/mods/search', {
         params: { q: searchQuery, sort, range: timeRange, page, pageSize, type: 'text' },
       });
       return res.data.data;
@@ -110,7 +116,8 @@ export function ModsPage() {
   } = useQuery({
     queryKey: ['mods', 'detail', detailFileId],
     queryFn: async () => {
-      const res = await apiClient.get<{ data: BrowseMod }>(`/servers/${serverId}/mods/${detailFileId}`);
+      // 全局详情——不带 serverId
+      const res = await apiClient.get<{ data: BrowseMod }>(`/mods/${detailFileId}`);
       return res.data.data;
     },
     enabled: !!detailFileId,
@@ -163,6 +170,10 @@ export function ModsPage() {
   const handleDownload = async (fileId: string) => {
     setDownloading((prev) => ({ ...prev, [fileId]: true }));
     try {
+      if (!serverId) {
+        toast.error('没有可用的服务器实例');
+        return;
+      }
       const res = await apiClient.post<{ data: { success: boolean; modTitle?: string; error?: string } }>(
         `/servers/${serverId}/mods/download`,
         { fileId },

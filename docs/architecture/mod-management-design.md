@@ -1,11 +1,12 @@
 # Unturned Mod 管理系统 — 完整设计规格（v2.2 · 生产质量版）
 
-> **版本**：v2.2（2026-08-09）
+> **版本**：v2.3（2026-08-09，实现完成）
 > **v1 → v2 变更**：砍掉所有后端缓存 / 补 DST 三源合一哲学 / 加 acf 维护模块 / 接入 React Query
 > **v2 → v2.1 变更**（老板拍板）：ModsPage = 单 Tab（Steam 创意工坊浏览）+ 下载入口；已下载 Mod 的启用/禁用/删除/配置复用 Config > Workshop Tab（已有 `WorkshopTab` 组件，不新建）
 > **v2.1 → v2.2 变更**（老板拍板）：下载成功只弹 Toast（如 `Hawaii 下载成功`），**不调 `router.push`、不引导跳转、不弹第二条 toast.info**。Toast 即全部反馈，用户自主决定下一步。
+> **v2.2 → v2.3 变更**：全部 Phase A-F 实现完成并通过验证——后端 73 单测 + 16 API e2e；前端 29 单测 + 5 浏览器 UI e2e；typecheck 前后端 0 错误。
 > **设计原则**：DST 三源合一状态模型（WebAPI 元数据 + acf 真源 + File_IDs 启用列表）；零后端缓存；前端 React Query 防抖；acf 同步维护；**最小化用户打扰**
-> **状态**：设计稿，待评审
+> **状态**：✅ **已实现**（2026-08-09，commit 6a51b44 完成）
 > **核心参考**：DST 全链路分析 `claudedocs/research_dst_mod_reference_2026-08-08.md`
 
 ---
@@ -79,15 +80,16 @@
 ┌──────────────────────────────────────────────────────────┐
 │                       API 层 (Express)                   │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │ routes/mods.ts（重写）                                │  │
-│  │  GET    /:id/mods/search                            │  │
-│  │  GET    /:id/mods/:fileId                            │  │
-│  │  POST   /:id/mods/batch-details                      │  │
+│  │ routes/mod-browse.ts（v2.3 全局浏览）                 │  │
+│  │  GET    /api/mods/search                            │  │
+│  │  GET    /api/mods/:fileId                           │  │
+│  │  POST   /api/mods/batch-details                     │  │
+│  │ routes/mods.ts（服务器操作）                          │  │
 │  │  GET    /:id/mods/downloaded                         │  │
 │  │  POST   /:id/mods/download                           │  │
 │  │  POST   /:id/mods/apply                              │  │
 │  │  DELETE /:id/mods/:fileId                            │  │
-│  │  GET    /:id/mods/acf                                │  │ ← 新
+│  │  GET    /:id/mods/acf                                │  │
 │  │  WS     steamcmd_progress / download_completed       │  │
 │  └────────────────────┬────────────────────────────────┘  │
 │                       │ 依赖 ↓                            │
@@ -181,7 +183,7 @@ ConfigPage > WorkshopTab（已有，不改组件结构；只接新端点）
   │
   ▼
 ModsPage.handleDownload(fileId)
-  │
+  │   · serverId 从 useServer 拿第一个真实服务器（浏览用全局 /api/mods，下载才需要 serverId）
   │ toast.loading('下载中...')
   │
   ▼
@@ -245,13 +247,24 @@ ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec 
 
 ## 3. API 端点契约
 
-### 3.1 端点清单（9 个，全部新规范）
+### 3.1 端点清单（v2.3 — 拆两层：全局浏览 + 服务器操作）
+
+> **v2.3 架构修正**：Steam 创意工坊浏览是**全局操作**（只需 WebAPI Key + AppID，不依赖服务器实例）。  
+> 原设计把浏览端点错误挂到 `/api/servers/:id/mods/*`（导致无 serverId 时 404）。  
+> 现拆两层——**浏览走 `/api/mods`（全局）**，**服务器操作走 `/api/servers/:id/mods`**。
+
+**全局浏览层（`/api/mods`，纯 Steam API 代理）**：
 
 | # | 方法 | 路径 | 用途 | 入参 Zod Schema | 响应 Schema |
 |---|---|---|---|---|---|
-| 1 | GET | `/api/servers/:id/mods/search` | 浏览/搜索 Steam 工坊 | `ModSearchQuerySchema` | `ModSearchResultSchema` |
-| 2 | GET | `/api/servers/:id/mods/:fileId` | 单个 Mod 详情（实时） | path: `fileId` | `ModInfoSchema` |
-| 3 | POST | `/api/servers/:id/mods/batch-details` | 批量补元数据（已下载列表用） | `ModBatchDetailsRequestSchema` | `z.array(ModInfoSchema)` |
+| 1 | GET | `/api/mods/search` | 浏览/搜索 Steam 工坊 | `ModSearchQuerySchema` | `ModSearchResultSchema` |
+| 2 | GET | `/api/mods/:fileId` | 单个 Mod 详情（实时） | path: `fileId` | `ModInfoSchema` |
+| 3 | POST | `/api/mods/batch-details` | 批量补元数据（已下载列表用） | `ModBatchDetailsRequestSchema` | `z.array(ModInfoSchema)` |
+
+**服务器操作层（`/api/servers/:id/mods`，依赖服务器实例）**：
+
+| # | 方法 | 路径 | 用途 | 入参 Zod Schema | 响应 Schema |
+|---|---|---|---|---|---|
 | 4 | GET | `/api/servers/:id/mods/downloaded` | 已下载 Mod 列表（acf 扫描） | — | `z.array(DownloadedModSchema)` |
 | 5 | POST | `/api/servers/:id/mods/download` | 下载到 staging（同步） | `ModDownloadRequestSchema` | `ModDownloadResultSchema` |
 | 6 | POST | `/api/servers/:id/mods/apply` | 应用 Mod 变更 + 重启流水线 | `ModApplyRequestSchema` | `ModOperationResponseSchema` |
@@ -261,10 +274,12 @@ ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec 
 
 ### 3.2 路径规范
 
-**所有端点挂在 `/api/servers/:id/mods` 下**——对齐 architecture-spec.md §5.10 端点约定。
+- **全局浏览**：`/api/mods`（`routes/mod-browse.ts`，`createModBrowseRouter`）
+- **服务器操作**：`/api/servers/:id/mods`（`routes/mods.ts`，`createModsRouter`）
+- 两端都需 JWT（`authenticateToken`）
 
 **废弃**：
-- `GET /workshop/mods/:fileId`（v1 端点，在 `routes/workshop.ts`）—— 由 `GET /api/servers/:id/mods/:fileId` 替代
+- `GET /workshop/mods/:fileId`（v1 端点，在 `routes/workshop.ts`）—— 由 `GET /api/mods/:fileId` 替代
 - `POST /:id/apply`（stub）—— 由 `POST /api/servers/:id/mods/apply` 替代
 
 ### 3.3 Zod Schema（`shared/schemas/mod.schema.ts`）
@@ -504,9 +519,12 @@ export interface WorkshopAcf {
 ### 3.5 端点 → 服务映射
 
 ```
-GET    /api/servers/:id/mods/search           → IWorkshopMetadataService.browseMods
-GET    /api/servers/:id/mods/:fileId           → IWorkshopMetadataService.getModDetails
-POST   /api/servers/:id/mods/batch-details     → IWorkshopMetadataService.batchGetDetails
+# 全局浏览（/api/mods）
+GET    /api/mods/search                        → IWorkshopMetadataService.browseMods
+GET    /api/mods/:fileId                       → IWorkshopMetadataService.getModDetails
+POST   /api/mods/batch-details                 → IWorkshopMetadataService.batchGetDetails
+
+# 服务器操作（/api/servers/:id/mods）
 GET    /api/servers/:id/mods/downloaded        → IWorkshopAcfService.listItems + batchGetDetails 合并
 POST   /api/servers/:id/mods/download          → SteamCmdManager.downloadWorkshopItem
                                                     + getModDetails（拿 modTitle）

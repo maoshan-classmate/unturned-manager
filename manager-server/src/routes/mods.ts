@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import {
-  ModSearchQuerySchema,
   ModDownloadRequestSchema,
-  ModBatchDetailsRequestSchema,
   ModApplyRequestSchema,
   type IServerManager,
   type IWorkshopMetadataService,
@@ -18,17 +16,16 @@ import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 /**
- * 模组管理路由（v2.2 — 8 端点）
+ * 模组服务器操作路由（v2.3 — 浏览端点已拆到 mod-browse.ts）
  *
  * 路径：/api/servers/:id/mods
- * - GET    /search          浏览/搜索 Steam 工坊
- * - GET    /:fileId         单个 Mod 详情
- * - POST   /batch-details   批量补元数据
  * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全）
  * - POST   /download        下载到 staging（同步等待 SteamCMD 退出）
  * - POST   /apply           应用 Mod 变更 + 重启流水线
  * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
  * - GET    /acf             读 acf 列表（真源）
+ *
+ * 全局浏览（搜索/详情/批量）：见 mod-browse.ts → /api/mods
  */
 export function createModsRouter(
   serverManager: IServerManager,
@@ -53,58 +50,7 @@ export function createModsRouter(
     throw new AppError('server-not-found', `服务端 ${_serverId} 不存在`, 404);
   }
 
-  // ── 1. GET /search ───────────────────────────────────
-  router.get(
-    '/mods/search',
-    validate(ModSearchQuerySchema, 'query'),
-    asyncHandler(async (req, res) => {
-      const { q, page, pageSize, sort, range, type } = req.query as unknown as {
-        q: string; page: number; pageSize: number;
-        sort: 'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance';
-        range: 'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all';
-        type: 'text' | 'id';
-      };
-      const serverId = req.params.id as ServerId;
-      // serverId 只需存在校验
-      await resolveInstallDir(serverId);
-      const result = await workshopMeta.browseMods(q, sort, range, type, page, pageSize);
-      res.json({
-        data: {
-          total: result.total,
-          page: result.page,
-          pageSize: result.pageSize,
-          rows: result.mods,
-        },
-      });
-    }),
-  );
-
-  // ── 2. GET /:fileId ──────────────────────────────────
-  router.get(
-    '/mods/:fileId(\\d+)',
-    asyncHandler(async (req, res) => {
-      const fileId = req.params.fileId as WorkshopFileId;
-      const mod = await workshopMeta.getModDetails(fileId);
-      if (!mod) {
-        res.status(404).json({ error: { code: 'not_found', message: 'Mod 未找到' } });
-        return;
-      }
-      res.json({ data: mod });
-    }),
-  );
-
-  // ── 3. POST /batch-details ───────────────────────────
-  router.post(
-    '/mods/batch-details',
-    validate(ModBatchDetailsRequestSchema),
-    asyncHandler(async (req, res) => {
-      const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
-      const mods = await workshopMeta.batchGetDetails(fileIds);
-      res.json({ data: mods });
-    }),
-  );
-
-  // ── 4. GET /downloaded ──────────────────────────────
+  // ── 1. GET /downloaded ──────────────────────────────
   router.get(
     '/mods/downloaded',
     asyncHandler(async (req, res) => {

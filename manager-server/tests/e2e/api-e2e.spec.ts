@@ -143,7 +143,7 @@ test.describe('Mods 管理链路 (Phase C)', () => {
   });
 
   test('GET /mods/search → 200 或 502（Steam 可达性容忍）', async ({ request }) => {
-    const res = await request.get('/api/servers/MyServer/mods/search?page=1&pageSize=3&sort=popular&range=week', {
+    const res = await request.get('/api/mods/search?page=1&pageSize=3&sort=popular&range=week', {
       headers: { Authorization: `Bearer ${modsToken}` },
     });
     // 允许：200（Steam 通）或 502/504（Steam 不通）—— 只要不是 500 就说明路由接线正确
@@ -174,7 +174,7 @@ test.describe('Mods 管理链路 (Phase C)', () => {
   });
 
   test('POST /mods/batch-details → 200 或 502（Steam 可达性容忍）', async ({ request }) => {
-    const res = await request.post('/api/servers/MyServer/mods/batch-details', {
+    const res = await request.post('/api/mods/batch-details', {
       headers: { Authorization: `Bearer ${modsToken}` },
       data: { fileIds: ['1753134636'] },
     });

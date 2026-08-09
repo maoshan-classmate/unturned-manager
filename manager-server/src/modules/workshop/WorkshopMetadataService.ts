@@ -51,7 +51,8 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
 
     const url = new URL(API_GET_DETAILS);
     url.searchParams.set('key', apiKey);
-    url.searchParams.append('publishedfileids[]', modId);
+    // 必须带索引（publishedfileids[0]=）——[] 无索引格式 Steam 连接异常（实测 10.7s 超时 vs [0] 1.6s）
+    url.searchParams.append('publishedfileids[0]', modId);
     url.searchParams.set('strip_description_bbcode', 'true');
 
     try {
@@ -69,7 +70,9 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       if (!detail || detail.result !== 1 || !detail.title) {
         return null;
       }
-      return await this.enrichMeta(detail);
+      // 单 mod 详情——单独查一次作者名
+      const nameMap = await this.getAuthorNames(detail.creator ? [detail.creator] : []);
+      return this.toModMeta(detail, nameMap);
     } catch (err) {
       throw mapFetchError(err);
     }
@@ -189,8 +192,10 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       const valid = (json.response.publishedfiledetails ?? []).filter(
         (d) => d.result === 1 && d.title,
       );
-      const enriched = await Promise.all(valid.map((d) => this.enrichMeta(d)));
-      return enriched;
+      // 优化：一次批量查所有 creator 的昵称（避免每个 mod 单独调 GetPlayerSummaries → 冷启动 N 次超时）
+      const creators = [...new Set(valid.map((d) => d.creator).filter((c): c is string => Boolean(c)))];
+      const nameMap = await this.getAuthorNames(creators);
+      return valid.map((d) => this.toModMeta(d, nameMap));
     } catch (err) {
       throw mapFetchError(err);
     }
@@ -251,10 +256,9 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
   // ── 私有 ──────────────────────────────────────────────
 
   /**
-   * 单个 raw mod detail → WorkshopModMeta（含 authorName 补全）
+   * 单个 raw mod detail → WorkshopModMeta（作者名从预查的 nameMap 取）
    */
-  private async enrichMeta(d: RawModDetail): Promise<WorkshopModMeta> {
-    const nameMap = await this.getAuthorNames(d.creator ? [d.creator] : []);
+  private toModMeta(d: RawModDetail, nameMap: Map<string, string>): WorkshopModMeta {
     return {
       fileId: d.publishedfileid as WorkshopFileId,
       title: d.title ?? '',
