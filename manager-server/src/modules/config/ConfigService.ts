@@ -388,6 +388,17 @@ export class ConfigService implements IConfigService {
     return backupPath;
   }
 
+  /**
+   * 从备份恢复配置文件（apply 流水线失败回滚用）
+   * @param backupPath - backup() 返回的相对 backups/ 路径
+   */
+  async rollback(serverId: ServerId, filePath: string, backupPath: string): Promise<void> {
+    const absTargetPath = this.resolvePath(serverId, filePath);
+    await fs.mkdir(path.dirname(absTargetPath), { recursive: true });
+    await fs.copyFile(backupPath, absTargetPath);
+    logger.warn({ serverId, filePath, backupPath }, '配置文件已从备份回滚');
+  }
+
   // ── OpenMod YAML ──────────────────────────────────────
 
   async readOpenModConfig(

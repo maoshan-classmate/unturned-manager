@@ -14,6 +14,13 @@ export interface IConfigService {
   writeWorkshopFileIds(serverId: ServerId, fileIds: WorkshopFileId[], expectedVersion?: number): Promise<void>;
 
   backup(serverId: ServerId, filePath: string): Promise<string>;
+  /**
+   * 从备份恢复配置文件（apply 流水线失败回滚用）
+   * @param serverId - ServerID
+   * @param filePath - 相对 Servers/<ID>/ 路径
+   * @param backupPath - backup() 返回的绝对路径
+   */
+  rollback(serverId: ServerId, filePath: string, backupPath: string): Promise<void>;
 
   readOpenModConfig(serverId: ServerId, pluginId: string): Promise<Record<string, unknown>>;
   writeOpenModConfig(serverId: ServerId, pluginId: string, config: Record<string, unknown>): Promise<void>;
