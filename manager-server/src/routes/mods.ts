@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   ModDownloadRequestSchema,
   ModApplyRequestSchema,
@@ -10,19 +10,19 @@ import {
   type ISteamCmdManager,
   type ServerId,
   type WorkshopFileId,
-} from '@unturned-manager/shared';
-import { AppError } from '../utils/AppError.js';
-import { logger } from '../utils/logger.js';
-import { authenticateToken } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
-import { asyncHandler } from '../middleware/asyncHandler.js';
+} from "@unturned-manager/shared";
+import { AppError } from "../utils/AppError.js";
+import { logger } from "../utils/logger.js";
+import { authenticateToken } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 /**
  * 模组服务器操作路由（v2.3 — 浏览端点已拆到 mod-browse.ts）
  *
  * 路径：/api/servers/:id/mods
  * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全 + applied 合并）
- * - POST   /download        下载到 staging（同步等待 SteamCMD 退出）
+ * - POST   /download        下载到 staging（异步启动：202 + jobId，进度走 WS steamcmd_progress）
  * - POST   /apply           应用 Mod 变更 + 重启流水线
  * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
  * - GET    /acf             读 acf 列表（真源）
@@ -48,7 +48,7 @@ export function createModsRouter(
     const servers = await serverManager.listServers();
     const cfg = servers.find((s) => s.id === serverId);
     if (!cfg) {
-      throw new AppError('server-not-found', `服务端 ${serverId} 不存在`, 404);
+      throw new AppError("server-not-found", `服务端 ${serverId} 不存在`, 404);
     }
     return cfg.installDir;
   };
@@ -58,7 +58,7 @@ export function createModsRouter(
   // BUG-5 修复：合并主 acf + staging acf——下载到 staging 待 apply 的 mod 也可见
   //   applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
   router.get(
-    '/mods/downloaded',
+    "/mods/downloaded",
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as ServerId;
       await resolveInstallDir(serverId);
@@ -67,9 +67,11 @@ export function createModsRouter(
       const mainItems = await acfService.listItems(serverId);
       const stagingItems = await acfService.listStagingItems(serverId);
       const itemsMap = new Map<string, (typeof mainItems)[number]>();
-      for (const item of stagingItems) itemsMap.set(item.fileId as string, item);
+      for (const item of stagingItems)
+        itemsMap.set(item.fileId as string, item);
       for (const item of mainItems) {
-        if (!itemsMap.has(item.fileId as string)) itemsMap.set(item.fileId as string, item);
+        if (!itemsMap.has(item.fileId as string))
+          itemsMap.set(item.fileId as string, item);
       }
       const items = Array.from(itemsMap.values());
       const fileIds = items.map((i) => i.fileId);
@@ -80,11 +82,17 @@ export function createModsRouter(
 
       // ★ 容错：Steam WebAPI 不可达时元数据补全失败**不应**拖垮已下载列表
       //   （acf 数据真实存在，title/previewUrl 只是增强字段，缺失可接受）
-      let metas: Awaited<ReturnType<IWorkshopMetadataService['batchGetDetails']>> = [];
+      let metas: Awaited<
+        ReturnType<IWorkshopMetadataService["batchGetDetails"]>
+      > = [];
       try {
-        metas = fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
+        metas =
+          fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
       } catch (err) {
-        logger.warn({ serverId, err }, 'batchGetDetails 失败——已下载列表降级返回（无元数据）');
+        logger.warn(
+          { serverId, err },
+          "batchGetDetails 失败——已下载列表降级返回（无元数据）",
+        );
       }
       const metaMap = new Map(metas.map((m) => [m.fileId, m]));
       const merged = items.map((item) => ({
@@ -96,7 +104,7 @@ export function createModsRouter(
         author: metaMap.get(item.fileId)?.author,
         authorName: metaMap.get(item.fileId)?.authorName,
         previewUrl: metaMap.get(item.fileId)?.previewUrl,
-        applied: fileIdsSet.has(item.fileId as string),  // ★ BUG-6 修复
+        applied: fileIdsSet.has(item.fileId as string), // ★ BUG-6 修复
       }));
       res.json({ data: merged });
     }),
@@ -104,7 +112,7 @@ export function createModsRouter(
 
   // ── 5. POST /download ────────────────────────────────
   router.post(
-    '/mods/download',
+    "/mods/download",
     validate(ModDownloadRequestSchema),
     asyncHandler(async (req, res) => {
       const { fileId } = req.body as { fileId: WorkshopFileId };
@@ -120,28 +128,28 @@ export function createModsRouter(
         // 元数据查不到不影响下载流程
       }
 
-      // 调 SteamCMD 下载到 staging
+      // BUG-5/6 修复：下载**异步启动**（spawn 后即返回 jobId，不等待 SteamCMD 退出），
+      // HTTP 立即 202，进度/完成/失败经 WS steamcmd_progress（带 jobId）广播。
+      // 原实现同步 await 下载进程 → HTTP 挂起 → 前端 axios 10s 超时（timeout of 10000ms exceeded）。
+      let jobId: string;
       try {
-        await steamCmd.downloadWorkshopItem(installDir, [fileId]);
+        jobId = await steamCmd.downloadWorkshopItem(installDir, [fileId]);
       } catch (err) {
         res.status(502).json({
           error: {
-            code: 'download_failed',
-            message: err instanceof Error ? err.message : 'SteamCMD 下载失败',
+            code: "download_failed",
+            message: err instanceof Error ? err.message : "SteamCMD 下载失败",
           },
         });
         return;
       }
 
-      // 读 staging acf 拿 size/timeupdated
-      const acfItem = await acfService.parseStagingItem(serverId, fileId);
-
-      res.json({
+      res.status(202).json({
         data: {
-          success: true,
+          jobId,
           fileId,
           modTitle,
-          ...(acfItem ? { acfItem } : {}),
+          message: "Mod 下载已启动，进度由 WS steamcmd_progress 推送",
         },
       });
     }),
@@ -149,7 +157,7 @@ export function createModsRouter(
 
   // ── 6. POST /apply ───────────────────────────────────
   router.post(
-    '/mods/apply',
+    "/mods/apply",
     validate(ModApplyRequestSchema),
     asyncHandler(async (req, res) => {
       const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
@@ -157,7 +165,7 @@ export function createModsRouter(
       // 委托 ServerManager.applyModChanges 走完整 SOP 流水线
       const promise = serverManager.applyModChanges(serverId, fileIds);
       const operationId = `apply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      res.status(202).json({ data: { operationId, status: 'running' } });
+      res.status(202).json({ data: { operationId, status: "running" } });
       // 异步执行（错误通过 audit + WS 广播）
       void promise.catch(() => undefined);
     }),
@@ -165,16 +173,16 @@ export function createModsRouter(
 
   // ── 7. DELETE /:fileId ───────────────────────────────
   router.delete(
-    '/mods/:fileId',
+    "/mods/:fileId",
     asyncHandler(async (req, res) => {
       const fileId = req.params.fileId as WorkshopFileId;
       const serverId = req.params.id as ServerId;
       // 前置：U3DS 必须 STOPPED
       const op = serverManager.getActiveOperation(serverId);
-      if (op.type !== 'none') {
+      if (op.type !== "none") {
         res.status(409).json({
           error: {
-            code: 'server_busy',
+            code: "server_busy",
             message: `服务端正在执行 ${op.type} 操作，无法删除 Mod`,
           },
         });
@@ -187,7 +195,7 @@ export function createModsRouter(
 
   // ── 8. GET /acf ──────────────────────────────────────
   router.get(
-    '/mods/acf',
+    "/mods/acf",
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as ServerId;
       await resolveInstallDir(serverId);
@@ -195,7 +203,7 @@ export function createModsRouter(
       res.json({
         data: {
           items,
-          acfPath: '', // 内部路径不暴露
+          acfPath: "", // 内部路径不暴露
           parsedAt: new Date().toISOString(),
         },
       });

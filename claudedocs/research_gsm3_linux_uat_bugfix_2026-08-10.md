@@ -398,7 +398,7 @@ export function useSteamCmdProgress(jobId?: string): SteamCmdProgress | null {
 
 ---
 
-### 🟡 BUG-4：docker-compose 挂载目录不自动生成 —— **改后抄**
+### ✅ BUG-4：docker-compose 挂载目录不自动生成 —— **已解决（bind mount）**
 
 **根因**（已 verify）：现行 docker-compose.yml 用命名卷（Docker 自动创建），但用户期望 bind mount。
 
@@ -431,39 +431,28 @@ if [ -d "$DEFAULT_PLUGINS_DIR" ]; then
 fi
 ```
 
-**本项目改造**（**改后抄**）：
+**本项目改造**（**实际落地 2026-08-10**，三个挂载目录全部 bind mount）：
 ```yaml
-# docker-compose.yml
+# docker-compose.yml（当前实现）
 services:
   panel:
     volumes:
-      - ./data/panel:/data               # ★ bind mount
-      - ./data/unturned:/opt/unturned    # ★ bind mount
-      - ./data/steamcmd:/opt/steamcmd    # ★ bind mount
+      - ./data:/data                     # ★ bind mount，宿主 ./data 自动生成（SQLite + 日志）
+      - ./opt/unturned:/opt/unturned     # ★ bind mount，宿主 ./opt/unturned 自动生成（U3DS 根目录）
+      - ./steamcmd:/opt/steamcmd         # ★ bind mount，宿主 ./steamcmd 自动生成（SteamCMD 持久化）
 ```
 
-**配套启动脚本**（Dockerfile COPE `start.sh` 进镜像）：
-```bash
-#!/bin/bash
-# /app/start.sh — 抄 GSM3 start.sh:18-30
-
-# 容器启动时补缺关键目录
-mkdir -p /data /opt/unturned /opt/steamcmd
-mkdir -p /opt/unturned/Servers /opt/steamcmd
-
-# 如果是 bind mount 且空目录，自动从镜像内置资产补缺
-if [ -d "/app/builtin/init" ]; then
-  cp -an /app/builtin/init/* /opt/unturned/ 2>/dev/null || true
-fi
-
-# 启动 panel
-exec node --import tsx manager-server/src/index.ts
-```
+**配套 entrypoint（`docker-entrypoint.sh`，抄 GSM3 start.sh:18-30 的补缺思路）**：
+bind mount 空宿主目录会**遮蔽**镜像烘焙的 `/opt/steamcmd`（spawn 报 EACCES，BUG-1 复发）。
+故 Dockerfile 把烘焙好的 steamcmd 额外复制一份到 `/opt/steamcmd-bootstrap`，entrypoint 启动时
+若 `/opt/steamcmd/steamcmd.sh` 缺失则 `cp -an` 补缺。U3DS 目录初始为空是**预期**（面板引导式
+安装，见 `mem:decision-no-auto-install-steamcmd-u3ds`）。
 
 **GSM3 文件**：`docker-compose.yml:23-32` + `start.sh:18-30`
-**本项目触达**：`docker-compose.yml` + 新增 `start.sh` + `Dockerfile` COPY
+**本项目触达**：`docker-compose.yml` + 新增 `docker-entrypoint.sh` + `Dockerfile`
+（bootstrap 副本 + ENTRYPOINT）+ `.gitignore`（忽略 /opt//steamcmd/）+ `.dockerignore`（/data /opt /steamcmd）
 **工时**：0.5 天
-**决策点**：bind mount vs 命名卷（用户拍板）
+**决策点**：bind mount vs 命名卷（用户拍板）→ **bind mount**（宿主可见性优先，三个目录全挂）
 
 ---
 
@@ -610,7 +599,7 @@ const status = item.applied ? 'enabled' : 'pending_apply';
 | 1 | BUG-3 修复方案 | **B 面板引导式**（同 GSM3 self-healing） | 镜像大小、SteamCMD 凭证 |
 | 2 | BUG-10 镜像源选择 | **清华源**（GSM3 仅换 npm，我们再加 apt） | nm 国内镜像 |
 | 3 | mono 安装策略 | **A 装 mono-complete**（保守 800MB 镜像） | 镜像大小 |
-| 4 | BUG-4 bind mount vs 命名卷 | **保留命名卷**（GSM3 部分用 bind mount 但有 ACL 权限处理） | 宿主机可见性 |
+| 4 | BUG-4 bind mount vs 命名卷 | **bind mount**（宿主可见；SteamCMD 不挂卷防遮蔽） | 宿主机可见性 |
 
 ---
 
@@ -649,7 +638,6 @@ const status = item.applied ? 'enabled' : 'pending_apply';
 | `.research/GameServerManager/docker-compose.yml` | BUG-4 |
 | `.claude/rules/prohibitions.md` | GSM3 Socket.IO 抄不了的硬禁令 |
 | `docs/architecture/architecture-spec.md` | 本项目 WS 架构决策（B-2 决策依据） |
-| `claudedocs/workflow_sprintB_linux_uat_bugfix_2026-08-10.md` | 前一份 Sprint 工作流 |
 
 ---
 

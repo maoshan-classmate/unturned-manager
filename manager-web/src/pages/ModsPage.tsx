@@ -1,17 +1,21 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { Search, Package, AlertCircle } from 'lucide-react';
-import { useParams } from 'react-router-dom';
-import { useServer } from '../hooks/useServer.js';
-import { apiClient } from '../api/client.js';
-import { Dropdown, type DropdownOption } from '../components/shared/Dropdown.js';
-import { ModCard } from '../components/mods/ModCard.js';
-import { ModCardSkeleton } from '../components/mods/ModCardSkeleton.js';
-import { ModDetailDialog } from '../components/mods/ModDetailDialog.js';
-import { PaginationBar } from '../components/shared/PaginationBar.js';
-import { SearchInput } from '../components/shared/SearchInput.js';
-import { Button } from '../components/ui/button.js';
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Search, Package, AlertCircle } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { useServer } from "../hooks/useServer.js";
+import { useSteamCmdProgress } from "../hooks/useSteamCmdProgress.js";
+import { apiClient } from "../api/client.js";
+import {
+  Dropdown,
+  type DropdownOption,
+} from "../components/shared/Dropdown.js";
+import { ModCard } from "../components/mods/ModCard.js";
+import { ModCardSkeleton } from "../components/mods/ModCardSkeleton.js";
+import { ModDetailDialog } from "../components/mods/ModDetailDialog.js";
+import { PaginationBar } from "../components/shared/PaginationBar.js";
+import { SearchInput } from "../components/shared/SearchInput.js";
+import { Button } from "../components/ui/button.js";
 
 /** Mod 浏览元数据（GET /mods/search 返回） */
 interface BrowseMod {
@@ -30,37 +34,47 @@ interface BrowseMod {
 }
 
 /** 排序选项——Steam 客户端创意工坊官方 5 项 + 搜索相关度 */
-const SORT_OPTIONS: ReadonlyArray<DropdownOption<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>> = [
-  { value: 'popular', label: '最热门' },
-  { value: 'rated', label: '最受好评（发布至今）' },
-  { value: 'published', label: '最近发行' },
-  { value: 'updated', label: '最新更新' },
-  { value: 'subscribed', label: '不重复订阅者总计' },
-  { value: 'relevance', label: '搜索相关度' },
+const SORT_OPTIONS: ReadonlyArray<
+  DropdownOption<
+    "popular" | "rated" | "published" | "updated" | "subscribed" | "relevance"
+  >
+> = [
+  { value: "popular", label: "最热门" },
+  { value: "rated", label: "最受好评（发布至今）" },
+  { value: "published", label: "最近发行" },
+  { value: "updated", label: "最新更新" },
+  { value: "subscribed", label: "不重复订阅者总计" },
+  { value: "relevance", label: "搜索相关度" },
 ];
 
 /** 时间范围选项——Steam 官方 7 档（仅最热门排序生效） */
-const RANGE_OPTIONS: ReadonlyArray<DropdownOption<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>> = [
-  { value: 'day', label: '今天' },
-  { value: 'week', label: '1 周' },
-  { value: 'month', label: '30 天' },
-  { value: 'months3', label: '3 个月' },
-  { value: 'months6', label: '6 个月' },
-  { value: 'year', label: '1 年' },
-  { value: 'all', label: '发布至今' },
+const RANGE_OPTIONS: ReadonlyArray<
+  DropdownOption<
+    "day" | "week" | "month" | "months3" | "months6" | "year" | "all"
+  >
+> = [
+  { value: "day", label: "今天" },
+  { value: "week", label: "1 周" },
+  { value: "month", label: "30 天" },
+  { value: "months3", label: "3 个月" },
+  { value: "months6", label: "6 个月" },
+  { value: "year", label: "1 年" },
+  { value: "all", label: "发布至今" },
 ];
 
 /** 每页条数选项（问题 2：10→12、50→48） */
 const PAGE_SIZE_OPTIONS: ReadonlyArray<DropdownOption<number>> = [
-  { value: 12, label: '12 条/页' },
-  { value: 15, label: '15 条/页' },
-  { value: 30, label: '30 条/页' },
-  { value: 48, label: '48 条/页' },
+  { value: 12, label: "12 条/页" },
+  { value: 15, label: "15 条/页" },
+  { value: 30, label: "30 条/页" },
+  { value: 48, label: "48 条/页" },
 ];
 
 /** 从 axios 错误提取后端中文 message */
 function getApiError(err: unknown, fallback: string): string {
-  const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+  const msg = (
+    err as { response?: { data?: { error?: { message?: string } } } }
+  )?.response?.data?.error?.message;
   return msg ?? (err instanceof Error ? err.message : fallback);
 }
 
@@ -74,37 +88,41 @@ export function ModsPage() {
   // 仅「下载」需要 serverId（下载到哪个服务器），从 useServer 拿第一个真实服务器。
   const { serverId: routeServerId } = useParams<{ serverId: string }>();
   const { servers } = useServer();
-  const serverId = (routeServerId && routeServerId !== '_default' ? routeServerId : servers[0]?.id) ?? '';
+  const serverId =
+    (routeServerId && routeServerId !== "_default"
+      ? routeServerId
+      : servers[0]?.id) ?? "";
 
   // 搜索 & 筛选
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sort, setSort] = useState<'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance'>('popular');
-  const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all'>('week');
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<
+    "popular" | "rated" | "published" | "updated" | "subscribed" | "relevance"
+  >("popular");
+  const [timeRange, setTimeRange] = useState<
+    "day" | "week" | "month" | "months3" | "months6" | "year" | "all"
+  >("week");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12); // 问题 2：默认每页 12 条（原 10）
 
-  // 下载操作状态 { fileId: true }
-  const [downloading, setDownloading] = useState<Record<string, boolean>>({});
+  // 下载进行中 { fileId: jobId }——jobId 关联 WS 进度事件，completed/failed 时清（BUG-5/6）
+  const [downloading, setDownloading] = useState<Record<string, string>>({});
 
   // 详情弹窗
   const [detailFileId, setDetailFileId] = useState<string | null>(null);
 
   // ★ BUG-5 修复：已下载 Mod 集合（acf 扫描真源，每次刷新）
-  const {
-    data: downloaded,
-    refetch: refetchDownloaded,
-  } = useQuery({
-    queryKey: ['mods', 'downloaded', serverId],
+  const { data: downloaded, refetch: refetchDownloaded } = useQuery({
+    queryKey: ["mods", "downloaded", serverId],
     queryFn: async () => {
       if (!serverId) return [];
-      const res = await apiClient.get<{ data: Array<{ fileId: string; applied?: boolean }> }>(
-        `/servers/${serverId}/mods/downloaded`,
-      );
+      const res = await apiClient.get<{
+        data: Array<{ fileId: string; applied?: boolean }>;
+      }>(`/servers/${serverId}/mods/downloaded`);
       return res.data.data;
     },
     enabled: !!serverId,
-    refetchOnMount: 'always',
+    refetchOnMount: "always",
     staleTime: 0,
   });
 
@@ -121,12 +139,30 @@ export function ModsPage() {
     isError: browseError,
     refetch,
   } = useQuery({
-    queryKey: ['mods', 'browse', serverId, searchQuery, sort, timeRange, page, pageSize],
+    queryKey: [
+      "mods",
+      "browse",
+      serverId,
+      searchQuery,
+      sort,
+      timeRange,
+      page,
+      pageSize,
+    ],
     queryFn: async () => {
       // 全局浏览——不带 serverId（Steam 创意工坊是全局操作）。
       // timeout 60s：后端调 Steam 冷启动 20-40s，全局默认 10s 会 axios abort（实测 ERR_ABORTED）
-      const res = await apiClient.get<{ data: { total: number; rows: BrowseMod[] } }>('/mods/search', {
-        params: { q: searchQuery, sort, range: timeRange, page, pageSize, type: 'text' },
+      const res = await apiClient.get<{
+        data: { total: number; rows: BrowseMod[] };
+      }>("/mods/search", {
+        params: {
+          q: searchQuery,
+          sort,
+          range: timeRange,
+          page,
+          pageSize,
+          type: "text",
+        },
         timeout: 60_000,
       });
       return res.data.data;
@@ -136,15 +172,15 @@ export function ModsPage() {
   });
 
   // ── 详情数据（0 staleTime——每次进弹窗都拉新）──
-  const {
-    data: detailData,
-    isLoading: detailLoading,
-  } = useQuery({
-    queryKey: ['mods', 'detail', detailFileId],
+  const { data: detailData, isLoading: detailLoading } = useQuery({
+    queryKey: ["mods", "detail", detailFileId],
     queryFn: async () => {
       // 全局详情——不带 serverId。
       // timeout 60s：后端 GetDetails 冷启动 20-40s，全局默认 10s 必超时（ERR_ABORTED 根因）
-      const res = await apiClient.get<{ data: BrowseMod }>(`/mods/${detailFileId}`, { timeout: 60_000 });
+      const res = await apiClient.get<{ data: BrowseMod }>(
+        `/mods/${detailFileId}`,
+        { timeout: 60_000 },
+      );
       return res.data.data;
     },
     enabled: !!detailFileId,
@@ -158,7 +194,9 @@ export function ModsPage() {
   // 列表源（QueryFiles 带 return_vote_data）有 voteScore，detail 源（GetDetails 带 includevotes）补充 fileSize/updatedAt。
   // 用 detail 覆盖同名字段、保留列表独有字段，防止星星/订阅数在 detail 返回后被 undefined 顶掉。
   const dialogRow = browse?.rows.find((m) => m.fileId === detailFileId);
-  const dialogMod = detailData ? { ...(dialogRow ?? {}), ...detailData } : (dialogRow ?? null);
+  const dialogMod = detailData
+    ? { ...(dialogRow ?? {}), ...detailData }
+    : (dialogRow ?? null);
 
   // ── 操作 handler ────────────────────────────────────
 
@@ -166,7 +204,7 @@ export function ModsPage() {
   const triggerSearch = (q: string) => {
     const trimmed = q.trim();
     setSearchQuery(trimmed);
-    setSort('relevance'); // 搜索时自动切相关度排序
+    setSort("relevance"); // 搜索时自动切相关度排序
     setPage(1);
   };
 
@@ -174,8 +212,8 @@ export function ModsPage() {
   const handleSearchClick = () => {
     const trimmed = searchInput.trim();
     setSearchQuery(trimmed);
-    setSort(trimmed ? 'relevance' : 'popular');
-    setTimeRange(trimmed ? timeRange : 'week');
+    setSort(trimmed ? "relevance" : "popular");
+    setTimeRange(trimmed ? timeRange : "week");
     setPage(1);
   };
 
@@ -184,7 +222,7 @@ export function ModsPage() {
     setSort(next);
     setPage(1);
     // 非 popular 排序 Steam 忽略时间范围，重置避免误导
-    if (next !== 'popular') setTimeRange('all');
+    if (next !== "popular") setTimeRange("all");
   };
 
   /** 时间范围改变 */
@@ -199,31 +237,38 @@ export function ModsPage() {
     setPage(1);
   };
 
-  /** 下载 Mod（问题 5——调 download 端点，Toast 即全部反馈，不跳转） */
+  /**
+   * 下载 Mod（BUG-5/6 修复）。
+   * 下载改为**异步启动**：POST 立即 202 返回 jobId（不再等 SteamCMD 下载进程 → 原实现
+   * HTTP 挂起导致 axios 10s 超时）。完成/失败由 WS steamcmd_progress 事件驱动刷新已下载列表。
+   */
   const handleDownload = async (fileId: string) => {
-    setDownloading((prev) => ({ ...prev, [fileId]: true }));
+    if (!serverId) {
+      toast.error("没有可用的服务器实例");
+      return;
+    }
+    if (downloading[fileId] || downloadedSet.has(fileId)) return;
+    setDownloading((prev) => ({ ...prev, [fileId]: "pending" }));
     try {
-      if (!serverId) {
-        toast.error('没有可用的服务器实例');
+      const res = await apiClient.post<{
+        data: { jobId?: string; modTitle?: string };
+      }>(`/servers/${serverId}/mods/download`, { fileId });
+      const { jobId, modTitle } = res.data.data;
+      if (!jobId) {
+        toast.error("下载启动失败");
+        setDownloading((prev) => {
+          const next = { ...prev };
+          delete next[fileId];
+          return next;
+        });
         return;
       }
-      const res = await apiClient.post<{ data: { success: boolean; modTitle?: string; error?: string } }>(
-        `/servers/${serverId}/mods/download`,
-        { fileId },
-      );
-      const { success, modTitle, error } = res.data.data;
-      if (success) {
-        toast.success(`${modTitle ?? 'Mod'} 下载成功`);
-        // ★ BUG-5 修复：刷新已下载列表 → 按钮变「已下载」
-        void refetchDownloaded();
-        // 关闭详情弹窗（若打开）
-        setDetailFileId(null);
-      } else {
-        toast.error(error || '下载失败');
-      }
+      // 记录 jobId——WS completed/failed 事件用它反查 fileId
+      setDownloading((prev) => ({ ...prev, [fileId]: jobId }));
+      toast.success(`${modTitle ?? "Mod"} 下载已启动`);
+      // 不立即刷新已下载列表、不关详情弹窗——等 WS completed 事件
     } catch (err) {
-      toast.error(getApiError(err, '下载失败'));
-    } finally {
+      toast.error(getApiError(err, "下载失败"));
       setDownloading((prev) => {
         const next = { ...prev };
         delete next[fileId];
@@ -231,6 +276,30 @@ export function ModsPage() {
       });
     }
   };
+
+  // ★ BUG-5/6 修复：监听 SteamCMD 下载任务完成/失败 → 刷新已下载列表 + 恢复按钮状态
+  const downloadProgress = useSteamCmdProgress();
+  useEffect(() => {
+    const { jobId, stage } = downloadProgress ?? {};
+    if (!jobId || !jobId.startsWith("steamcmd-download-")) return;
+    if (stage !== "completed" && stage !== "failed") return;
+    // 用 jobId 反查 fileId（downloading 映射）
+    const entry = Object.entries(downloading).find(([, jid]) => jid === jobId);
+    if (!entry) return;
+    const [fileId] = entry;
+    setDownloading((prev) => {
+      const next = { ...prev };
+      delete next[fileId];
+      return next;
+    });
+    if (stage === "completed") {
+      toast.success("Mod 下载完成");
+      // 刷新已下载列表（staging acf 已写入）→ 卡片按钮变「已下载」（BUG-5 闭环）
+      void refetchDownloaded();
+    } else {
+      toast.error("Mod 下载失败");
+    }
+  }, [downloadProgress, downloading, refetchDownloaded]);
 
   // ── 渲染 ────────────────────────────────────────────
 
@@ -242,8 +311,10 @@ export function ModsPage() {
       </div>
 
       {/* Filter Bar — 始终渲染（问题 8） */}
-      <div className="shrink-0 mx-4 md:mx-6 px-4 rounded-lg flex flex-wrap items-center gap-3 h-11"
-        style={{ backgroundColor: '#172133' }}>
+      <div
+        className="shrink-0 mx-4 md:mx-6 px-4 rounded-lg flex flex-wrap items-center gap-3 h-11"
+        style={{ backgroundColor: "#172133" }}
+      >
         <SearchInput
           value={searchInput}
           onChange={setSearchInput}
@@ -251,10 +322,33 @@ export function ModsPage() {
           placeholder="搜索 Mod 名称..."
           width={260}
         />
-        <Dropdown value={sort} options={SORT_OPTIONS} onChange={handleSortChange} width={170} ariaLabel="排序方式" />
-        <Dropdown value={timeRange} options={RANGE_OPTIONS} onChange={handleRangeChange} disabled={sort !== 'popular'} width={110} ariaLabel="时间范围" />
-        <Dropdown<number> value={pageSize} options={PAGE_SIZE_OPTIONS} onChange={handlePageSizeChange} width={110} ariaLabel="每页条数" />
-        <Button size="sm" onClick={handleSearchClick} className="h-9 text-xs gap-1">
+        <Dropdown
+          value={sort}
+          options={SORT_OPTIONS}
+          onChange={handleSortChange}
+          width={170}
+          ariaLabel="排序方式"
+        />
+        <Dropdown
+          value={timeRange}
+          options={RANGE_OPTIONS}
+          onChange={handleRangeChange}
+          disabled={sort !== "popular"}
+          width={110}
+          ariaLabel="时间范围"
+        />
+        <Dropdown<number>
+          value={pageSize}
+          options={PAGE_SIZE_OPTIONS}
+          onChange={handlePageSizeChange}
+          width={110}
+          ariaLabel="每页条数"
+        />
+        <Button
+          size="sm"
+          onClick={handleSearchClick}
+          className="h-9 text-xs gap-1"
+        >
           <Search size={14} /> 搜索
         </Button>
         <span className="text-xs text-slate-500 ml-auto">
@@ -273,21 +367,36 @@ export function ModsPage() {
           </div>
         ) : browseError && !browse ? (
           <div className="flex items-center justify-center h-64 text-slate-500 flex-col gap-3">
-            <AlertCircle size={32} style={{ color: '#EF4444' }} />
+            <AlertCircle size={32} style={{ color: "#EF4444" }} />
             <span className="text-sm text-slate-300">无法加载创意工坊</span>
-            <span className="text-xs text-slate-500">请确认已配置 Steam WebAPI Key，或稍后重试</span>
-            <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-slate-400">重试</Button>
+            <span className="text-xs text-slate-500">
+              请确认已配置 Steam WebAPI Key，或稍后重试
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refetch()}
+              className="text-slate-400"
+            >
+              重试
+            </Button>
           </div>
         ) : (browse?.rows ?? []).length === 0 ? (
           <div className="flex items-center justify-center h-64 text-slate-500">
             <Package size={32} />
             <span className="ml-3 text-sm">
-              {searchQuery ? '没有匹配的 Mod' : (
+              {searchQuery ? (
+                "没有匹配的 Mod"
+              ) : (
                 <span>
-                  请先到{' '}
-                  <a href="/settings" className="underline" style={{ color: '#3B82F6' }}>
+                  请先到{" "}
+                  <a
+                    href="/settings"
+                    className="underline"
+                    style={{ color: "#3B82F6" }}
+                  >
                     Settings → Steam WebAPI Key
-                  </a>{' '}
+                  </a>{" "}
                   配置密钥后浏览创意工坊
                 </span>
               )}
@@ -305,7 +414,7 @@ export function ModsPage() {
                 subscriptions={mod.subscriptions}
                 voteScore={mod.voteScore}
                 loading={!!downloading[mod.fileId]}
-                downloaded={downloadedSet.has(mod.fileId)}   // ★ BUG-5 修复
+                downloaded={downloadedSet.has(mod.fileId)} // ★ BUG-5 修复
                 onDownload={handleDownload}
                 onDetails={(id) => setDetailFileId(id)}
               />
@@ -316,7 +425,12 @@ export function ModsPage() {
 
       {/* Pagination — 始终渲染 */}
       <div className="shrink-0 mx-4 md:mx-6 my-4">
-        <PaginationBar page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+        />
       </div>
 
       {/* 详情弹窗（问题 6——弹窗而非跳转）

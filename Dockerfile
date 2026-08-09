@@ -140,6 +140,10 @@ WORKDIR /app
 COPY --from=base /usr/lib/i386-linux-gnu /usr/lib/i386-linux-gnu
 COPY --from=base /usr/lib/x86_64-linux-gnu/libgdiplus* /usr/lib/x86_64-linux-gnu/
 COPY --from=base /opt/steamcmd /opt/steamcmd
+# ★ BUG-4：SteamCMD bind mount 初始化用——镜像内置引导副本。
+#   compose 挂 ./steamcmd:/opt/steamcmd 时空宿主目录会遮蔽镜像 SteamCMD，
+#   entrypoint 启动时从这个 bootstrap 目录 cp -an 补缺（见 docker-entrypoint.sh）。
+COPY --from=base /opt/steamcmd /opt/steamcmd-bootstrap
 COPY --from=base /root/.steam /root/.steam
 # ★ BUG-3 联动：复制 mono 到 runtime（不然 U3DS 启不起来）
 COPY --from=base /usr/bin/mono /usr/bin/mono
@@ -155,6 +159,11 @@ COPY --from=builder /app/manager-server/src ./manager-server/src
 COPY --from=builder /app/manager-web/dist ./public
 
 RUN mkdir -p /data /opt/unturned
+
+# ★ BUG-4：入口初始化脚本——SteamCMD bind mount 空目录时从 /opt/steamcmd-bootstrap 补缺
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # 面板 HTTP
 EXPOSE 3001

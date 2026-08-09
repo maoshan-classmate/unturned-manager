@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { apiClient } from '../api/client.js';
+import { useState, useEffect, useCallback } from "react";
+import { apiClient } from "../api/client.js";
 
 /** 服务器实例信息——GET /servers 响应形状（后端 ServerConfig，state 在服务端内存不返回） */
 export interface ServerInfo {
@@ -18,7 +18,7 @@ export interface ServerInfo {
 }
 
 /** 创建实例请求体——POST /servers 契约（RCON 凭证走后端 K-V 加密存储） */
-export interface CreateServerPayload extends Omit<ServerInfo, 'state'> {
+export interface CreateServerPayload extends Omit<ServerInfo, "state"> {
   /** RocketMod Telnet RCON 裸密码（可选，留空后端自动生成） */
   rconPassword?: string;
   /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
@@ -56,11 +56,11 @@ export function useServer(): UseServerReturn {
 
   const refresh = useCallback(async () => {
     try {
-      const { data } = await apiClient.get<{ data: ServerInfo[] }>('/servers');
+      const { data } = await apiClient.get<{ data: ServerInfo[] }>("/servers");
       setServers(data.data);
       setError(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '获取服务器列表失败';
+      const msg = err instanceof Error ? err.message : "获取服务器列表失败";
       setError(msg);
     } finally {
       setLoading(false);
@@ -73,21 +73,37 @@ export function useServer(): UseServerReturn {
     void refresh();
   }, [refresh]);
 
-  const addServer = useCallback(async (server: CreateServerPayload) => {
-    await apiClient.post('/servers', server);
-    await refresh();
-  }, [refresh]);
+  const addServer = useCallback(
+    async (server: CreateServerPayload) => {
+      await apiClient.post("/servers", server);
+      await refresh();
+    },
+    [refresh],
+  );
 
-  const removeServer = useCallback(async (id: string) => {
-    await apiClient.delete(`/servers/${id}`);
-    await refresh();
-  }, [refresh]);
+  const removeServer = useCallback(
+    async (id: string) => {
+      await apiClient.delete(`/servers/${id}`);
+      await refresh();
+    },
+    [refresh],
+  );
 
   return { servers, loading, error, refresh, addServer, removeServer };
 }
 
+/** 从 axios 错误提取后端中文 message（否则 e.message 是 axios 通用英文） */
+function extractApiError(err: unknown, fallback: string): string {
+  const msg = (
+    err as { response?: { data?: { error?: { message?: string } } } }
+  )?.response?.data?.error?.message;
+  return msg ?? (err instanceof Error ? err.message : fallback);
+}
+
 /**
  * 服务端操作 hook（start / stop / restart）。
+ * BUG-3/7：错误统一抛后端中文 message（如 start-script-not-found 的安装引导），
+ * 调用方 `e.message` 直接可展示。
  */
 export function useServerActions() {
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -96,6 +112,8 @@ export function useServerActions() {
     setPendingId(serverId);
     try {
       await apiClient.post(`/servers/${serverId}/start`);
+    } catch (err) {
+      throw new Error(extractApiError(err, "启动失败"));
     } finally {
       setPendingId(null);
     }
@@ -105,6 +123,8 @@ export function useServerActions() {
     setPendingId(serverId);
     try {
       await apiClient.post(`/servers/${serverId}/stop`);
+    } catch (err) {
+      throw new Error(extractApiError(err, "停止失败"));
     } finally {
       setPendingId(null);
     }
@@ -114,6 +134,8 @@ export function useServerActions() {
     setPendingId(serverId);
     try {
       await apiClient.post(`/servers/${serverId}/restart`);
+    } catch (err) {
+      throw new Error(extractApiError(err, "重启失败"));
     } finally {
       setPendingId(null);
     }

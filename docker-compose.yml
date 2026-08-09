@@ -6,14 +6,14 @@
 #   1. cp .env.example .env      # 填 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD
 #   2. docker compose up -d --build
 #
-# ★ BUG-4 说明（2026-08-10）：
-#   volumes 使用**命名卷**（panel-data/unturned-data/steamcmd-data），Docker 自动创建，
-#   **不会**以宿主机文件夹形式出现在项目目录下。查看实际挂载位置：
-#       docker volume inspect unturned-manager_panel-data
-#       docker volume inspect unturned-manager_unturned-data
-#       docker volume inspect unturned-manager_steamcmd-data
-#   首次 `compose up` 后 /opt/unturned 目录为空是**预期**——需在面板 Server Setup
-#   页点击「安装 U3DS」按钮（引导式，不会自动装）。SteamCMD 已烘焙进镜像（/opt/steamcmd）。
+# ★ BUG-4 修复（2026-08-10）：
+#   挂载目录用**宿主 bind mount 相对路径**（./data ./opt/unturned ./steamcmd），`docker compose up` 时
+#   Docker 自动创建宿主目录——无需手动 mkdir。数据直接落在项目目录下，宿主可访问/备份
+#   （ServerID、Workshop、Logs 都在 ./opt/unturned/Servers/ 下）。
+#   SteamCMD 也挂载到 ./steamcmd：首次启动 entrypoint 从镜像内置 /opt/steamcmd-bootstrap
+#   cp -an 初始化，避免空宿主目录遮蔽镜像 SteamCMD（BUG-1 EACCES 复发）。
+#   首次 up 后 ./opt/unturned 为空是**预期**——需在面板 Server Setup 页点击「安装 U3DS」
+#   （引导式，不会自动装），装完文件直接落在宿主的 ./opt/unturned/ 下。
 #
 # 三个密钥/密码带默认值（快速启动）——生产必须用宿主 .env 覆盖，见下方 ⚠️ 警告。
 #   JWT_SECRET      JWT 签名密钥（config.ts requireEnv，缺失即崩溃）
@@ -40,7 +40,7 @@ services:
       DB_PATH: /data/unturned-manager.db
       DATA_DIR: /data
       INSTALL_DIR: /opt/unturned
-      # SteamCMD 安装路径（镜像烘焙到 /opt/steamcmd；如需挂 volume 持久自更新，改这里 + volumes）
+      # SteamCMD 安装路径（挂载到宿主 ./steamcmd，首次启动 entrypoint 从镜像初始化）
       STEAMCMD_DIR: ${STEAMCMD_DIR:-/opt/steamcmd}
     ports:
       # 面板 HTTP
@@ -51,16 +51,13 @@ services:
       # OpenMod Valve Source RCON
       - "25545:25545"
     volumes:
-      # 面板数据（SQLite + 日志）
-      - panel-data:/data
-      # U3DS 安装根目录（多 ServerID 共装，省 10GB×N）
-      - unturned-data:/opt/unturned
-      # SteamCMD 自更新持久化（steamclient.so + 二进制）——容器重建不重下。
-      # 命名卷首次挂载会把镜像烘焙的 /opt/steamcmd 灌入卷（copy-on-first-use）；
-      # 镜像 rebuild 新版会被旧卷内容遮蔽，但 SteamCMD 每次运行自动更新追平，影响可忽略。
-      - steamcmd-data:/opt/steamcmd
-
-volumes:
-  panel-data:
-  unturned-data:
-  steamcmd-data:
+      # 面板数据（SQLite + 日志）——宿主项目目录 ./data，compose up 自动创建
+      - ./data:/data
+      # U3DS 安装根目录（多 ServerID 共装，省 10GB×N）——宿主项目目录 ./opt/unturned，
+      # compose up 自动创建；面板安装 U3DS 后文件直接落宿主目录，便于备份/放 Mod/看日志
+      - ./opt/unturned:/opt/unturned
+      # SteamCMD 安装目录——宿主项目目录 ./steamcmd，compose up 自动创建。
+      # 首次启动 entrypoint（docker-entrypoint.sh）从镜像内置 /opt/steamcmd-bootstrap
+      # cp -an 初始化，空宿主目录不会遮蔽镜像 SteamCMD（BUG-1 EACCES 不复发）；
+      # 之后 steamcmd 自更新持久化到宿主目录，容器重建不重下。
+      - ./steamcmd:/opt/steamcmd

@@ -13,6 +13,12 @@
 test-servers
 .test-install
 
+# ── Docker compose bind-mount 宿主目录（运行时数据，不进构建上下文）──
+# ⚠️ 必须用 / 锚定根目录：裸 `steamcmd` 会误排除 manager-server/src/modules/steamcmd 源码
+/data
+/opt
+/steamcmd
+
 # ── VCS ──
 .git
 .gitignore

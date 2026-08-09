@@ -12,6 +12,10 @@ data/
 *.db-shm
 *.db-wal
 
+# Docker compose bind-mount 宿主目录（运行时数据，不入库）
+/opt/
+/steamcmd/
+
 # Build
 dist/
 .vite/
