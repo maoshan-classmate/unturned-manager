@@ -79,7 +79,7 @@ export function ModCard({
         {/* Name + star rating（问题 5：按 voteScore 填充星级） */}
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-medium text-slate-100 truncate flex-1">{title}</h3>
-          {/* 评分星星——精确填充（问题 5：2.7 分 = 2 满星 + 0.7 部分填充，不整渲染） */}
+          {/* 评分星星 + 数字（v2.4 增量：补详情页已有的 toFixed(1) 评分数字） */}
           {voteScore != null && (
             <div className="flex items-center gap-0.5 shrink-0">
               {Array.from({ length: 5 }).map((_, i) => {
@@ -95,6 +95,7 @@ export function ModCard({
                   </div>
                 );
               })}
+              <span className="ml-1 text-[11px] text-amber-500 tabular-nums">{voteScore.toFixed(1)}</span>
             </div>
           )}
         </div>

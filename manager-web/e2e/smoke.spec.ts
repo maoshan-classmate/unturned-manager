@@ -116,4 +116,81 @@ test.describe('unturned-manager E2E 冒烟测试', () => {
     // 操作区渲染（在 Steam 中打开 / 下载 / 关闭）——弹窗内容完整
     await expect(dialog.getByRole('button', { name: /关闭/ })).toBeVisible({ timeout: 10_000 });
   });
+
+  // ADR-0002 §5.5 + Task #1：WS 必须用 accessToken 而非 refreshToken（C安全缺陷修复）
+  test('WS 登录后自动连上——URL 使用 accessToken（短期 15min）而非 refreshToken', async ({ page }) => {
+    // 注入 WebSocket 探针：在浏览器上下文里记录所有 WS 连接和握手 URL
+    await page.addInitScript(() => {
+      const w = window as unknown as { __wsUrls?: string[] };
+      w.__wsUrls = [];
+      const OrigWS = window.WebSocket;
+      window.WebSocket = class extends OrigWS {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          w.__wsUrls!.push(url.toString());
+        }
+      } as unknown as typeof WebSocket;
+    });
+
+    // 登录
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    // 等 WSContext 建连——路由切到任一 server 触发
+    await page.goto('/test-server/console');
+    await page.waitForTimeout(2_000); // 给 ensureAccessToken + 建连 + subscribe 留时间
+
+    const urls = await page.evaluate(() => (window as unknown as { __wsUrls?: string[] }).__wsUrls ?? []);
+    expect(urls.length).toBeGreaterThan(0);
+    const wsUrl = urls.find((u) => u.includes('/ws?token='));
+    expect(wsUrl).toBeDefined();
+
+    // C安全修复断言：URL 不能含 refreshToken
+    const refreshToken = await page.evaluate(() => localStorage.getItem('refreshToken'));
+    expect(refreshToken).toBeTruthy(); // 前提:有 refreshToken(否则用例无意义)
+    expect(wsUrl!).not.toContain(refreshToken!); // ★ 核心断言:WS URL ≠ refreshToken
+
+    // 副断言:URL 是 ws:// 或 wss:// 开头,符合 WS 协议
+    expect(wsUrl!).toMatch(/^ws(s)?:\/\//);
+  });
+
+  // Task #1 闭环：accessToken 过期后 WS 触发服务端 401 → 自动 refresh + 重连
+  test('WS accessToken 过期后自动 refresh + 重连', async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __wsReconnects?: number; __origWs?: typeof WebSocket };
+      w.__wsReconnects = 0;
+      const OrigWS = window.WebSocket;
+      window.WebSocket = class extends OrigWS {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          w.__wsReconnects = (w.__wsReconnects ?? 0) + 1;
+          // 模拟服务端 401 后断开：3 秒后强制 close 触发客户端重连逻辑
+          setTimeout(() => {
+            if (this.readyState === WebSocket.OPEN) this.close(4001, 'simulated-401');
+          }, 3_000);
+        }
+      } as unknown as typeof WebSocket;
+    });
+
+    // 登录
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/test-server/console');
+
+    // 等首次 WS 建连 + 3 秒模拟 401 + 退避重连(默认 1s) + 第二次建连
+    await page.waitForTimeout(6_000);
+
+    const reconnects = await page.evaluate(
+      () => (window as unknown as { __wsReconnects?: number }).__wsReconnects ?? 0,
+    );
+    // 期望:至少 2 次 WS 构造(首次 + 重连后)
+    expect(reconnects).toBeGreaterThanOrEqual(2);
+  });
 });

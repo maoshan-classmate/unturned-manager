@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { apiClient } from '../api/client.js';
+import { apiClient, ensureAccessToken } from '../api/client.js';
 
 interface ConsoleLine {
   id: number;
@@ -30,51 +30,76 @@ export function useConsole(serverId: string): UseConsoleReturn {
   const [connected, setConnected] = useState(false);
   const historyRef = useRef<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout>>();
+  const retryDelay = useRef(1000);
+  const intentionalClose = useRef(false);
 
   // WebSocket 连接控制台输出流
   useEffect(() => {
     if (!serverId) return;
 
-    const token = localStorage.getItem('refreshToken');
-    if (!token) return;
+    let cancelled = false;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws?token=${token}`,
-    );
+    async function connect() {
+      // C安全缺陷修复:WS 必须用 accessToken,过期后 ensureAccessToken() 自动 refresh
+      const token = await ensureAccessToken();
+      if (!token || cancelled) return;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}/ws?token=${token}`,
+      );
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'console_line' && msg.serverId === serverId) {
-          setLines((prev) => {
-            const next = [
-              ...prev,
-              {
-                id: nextId++,
-                text: msg.line,
-                source: msg.source ?? 'stdout',
-                timestamp: Date.now(),
-              },
-            ];
-            // 限制最大行数
-            return next.length > MAX_LINES
-              ? next.slice(next.length - MAX_LINES)
-              : next;
-          });
+      ws.onopen = () => {
+        setConnected(true);
+        retryDelay.current = 1000;
+      };
+      ws.onclose = () => {
+        setConnected(false);
+        if (cancelled) return;
+        // accessToken 过期后服务端 401 → WS 断开 → 退避重连
+        // 重连时 ensureAccessToken() 会自动用 refreshToken 拿新 accessToken
+        retryTimer.current = setTimeout(() => {
+          retryDelay.current = Math.min(retryDelay.current * 2, 30_000);
+          connect();
+        }, retryDelay.current);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'console_line' && msg.serverId === serverId) {
+            setLines((prev) => {
+              const next = [
+                ...prev,
+                {
+                  id: nextId++,
+                  text: msg.line,
+                  source: msg.source ?? 'stdout',
+                  timestamp: Date.now(),
+                },
+              ];
+              // 限制最大行数
+              return next.length > MAX_LINES
+                ? next.slice(next.length - MAX_LINES)
+                : next;
+            });
+          }
+        } catch {
+          // 忽略非 JSON 消息
         }
-      } catch {
-        // 忽略非 JSON 消息
-      }
-    };
+      };
 
-    wsRef.current = ws;
+      wsRef.current = ws;
+    }
+
+    intentionalClose.current = false;
+    connect();
 
     return () => {
-      ws.close();
+      cancelled = true;
+      clearTimeout(retryTimer.current);
+      wsRef.current?.close();
     };
   }, [serverId]);
 

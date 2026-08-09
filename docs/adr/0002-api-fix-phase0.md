@@ -177,6 +177,7 @@ router.post('/:id/files/raw',
 | 2 | POST | `/api/servers/:id/files/raw` | 二进制文件上传 | 200 / 400 / 401 / 403 / 413 |
 | 3 | GET | `/api/servers/:id/files/raw` | 二进制文件下载 | 200 / 401 / 403 / 404 |
 | 4 | GET | `/api/servers/:id/players` | 在线玩家列表（解析 RCON Players 输出） | 200 / 404 / 500 |
+| 5 | POST | `/api/servers/:id/mods/apply` | Mod 变更应用 + 重启流水线（原 ADR 写 `/apply`，落地时归入 mods 路由组更精准） | 200 / 401 / 403 / 500 |
 
 #### Players 端点设计
 
@@ -286,7 +287,7 @@ router.post('/:id/upload', authenticateToken, validate(WriteFileSchema, 'body'),
 | `POST /servers/:id/stop` | `StopServerSchema`（已有） |
 | `POST /servers/:id/restart` | `RestartServerSchema`（已有） |
 | `POST /servers/:id/rcon/execute` | `RconExecuteSchema`（已有） |
-| `POST /servers/:id/apply` | `ApplyModsSchema`（已有） |
+| `POST /servers/:id/mods/apply` | `ApplyModsSchema`（已有） |
 | `GET /servers/:id/config/commands` | 无 body |
 | `PUT /servers/:id/config/commands` | `WriteCommandsDatSchema`（待改） |
 | `GET /servers/:id/config/txt` | 无 body |
@@ -822,7 +823,7 @@ router.get('/:id/files/raw', authenticateToken, asyncHandler(async (req, res) =>
 | 9 | `POST /api/servers/:id/restart` | `hooks/useServer.ts:75` + `DashboardPage.tsx:38` + `ServerSetupPage.tsx:38` | 重启按钮 | ✅ 路径正确 | ✅ 接 Zod `RestartServerSchema` |
 | 10 | `POST /api/servers/:id/execute` | `hooks/useConsole.ts:101` | 控制台命令发送 | ✅ 可用 | ✅ 接 Zod `RconExecuteSchema` + asyncHandler |
 | 11 | `POST /api/servers/:id/rcon/execute` 🆕 | `pages/PlayersPage.tsx:46`（Players 列表）+ `:63`（Kick/Ban） | 玩家操作 | ❌ **404**（C1） | ✅ **新增别名，行为与 `/execute` 完全一致** |
-| 12 | `POST /api/servers/:id/apply` | （前端**无调用点**——C5） | Mods 页面"应用变更"按钮 | ❌ 前端不调 | ✅ 接 Zod `ApplyModsSchema`，前端 `ModsPage.tsx:169` applyChanges 改调此端点 |
+| 12 | `POST /api/servers/:id/mods/apply` | `pages/ConfigPage.tsx:182` `handleApplyConfirm` | Config · Workshop Tab「应用变更」按钮 | ❌ 前端不调 | ✅ 接 Zod `ApplyModsSchema`，已闭环（实际路径 `/mods/apply`，归入 mods 路由组） |
 | 13 | `GET /api/servers/:id/config/commands` | `pages/ConfigPage.tsx:90` | Config · Commands Tab | ⚠️ 返回 Map → `{}` | ✅ **改 Record** + Zod 校验（修复 C4） |
 | 14 | `PUT /api/servers/:id/config/commands` | `pages/ConfigPage.tsx:141` | Config · Commands 保存 | ❌ for...of 抛 500 | ✅ **改 Record** + Zod `WriteCommandsDatSchema`（修复 C3） |
 | 15 | `GET /api/servers/:id/config/txt` | `pages/ConfigPage.tsx:103` | Config · Txt Tab | ❌ 数组 vs map | ✅ **后端改 Record** + Zod（修复 C2） |
@@ -869,7 +870,7 @@ router.get('/:id/files/raw', authenticateToken, asyncHandler(async (req, res) =>
 | `pages/ConfigPage.tsx:90-141` | Commands 收 `data.known ?? {}`（Record 已可工作）；保存改为普通对象 `{ known: {...}, unknown: {}, comments: [] }` | §2.1 |
 | `pages/ConfigPage.tsx:103-150` | Txt 用 `sections['浏览器']` map 用法，**后端改 Record 后端到端通** | §2.2 |
 | `pages/ConfigPage.tsx:152` | `filter((r) => r.status !== 'disabled')` 已合理 | — |
-| `pages/ModsPage.tsx:96,169` | `applyChanges` 改调 `POST /servers/:id/apply`（C5 修复） | §3.4 |
+| `pages/ConfigPage.tsx:182` `handleApplyConfirm` | 已调 `POST /servers/:id/mods/apply`（C5 修复已闭环） | §3.4 |
 | `pages/PlayersPage.tsx:42-46` | `fetchPlayers` 从 `POST /rcon/execute` 改 `GET /servers/:id/players` 拿结构化列表 | §3.3 |
 | `pages/PlayersPage.tsx:63` | 行为不变（路径 `/rcon/execute` 已加别名） | §3.1 |
 | `pages/FilesPage.tsx:136` | 无变 | — |
@@ -897,7 +898,7 @@ router.get('/:id/files/raw', authenticateToken, asyncHandler(async (req, res) =>
 | **D3**: Console WS 重连后订阅不丢 | WS subscribe 协议 |
 | **D4**: Config·Commands 读取正确、保存不报错 | C3+C4 |
 | **D5**: Config·Txt 读取正确、保存不报错 | C2 |
-| **D6**: Mods "应用变更" 真正触发重启流水线 | C5 + POST /apply |
+| **D6**: Config · Workshop 「应用变更」真正触发重启流水线 | C5 + POST /mods/apply |
 | **D7**: Files 上传 .unity3d 不被破坏 | C7 + /files/raw multipart |
 | **D8**: Players 表格非空（数据来自 GET /players） | 新增端点 |
 | **D9**: Settings 改密码真正写到 DB | 新增端点 32 |
