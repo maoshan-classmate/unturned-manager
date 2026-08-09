@@ -43,3 +43,102 @@ export function stateColor(state: string): string {
 export function errorMessage(err: unknown, fallback = '操作失败'): string {
   return err instanceof Error ? err.message : fallback
 }
+
+// ─── Mod 工具（v2.2 新增）────────────────────────────
+
+/**
+ * 剥离 Steam Workshop BBCode（问题 3——后端 strip_description_bbcode 可能不生效时前端兜底）。
+ * 移除 [tag]...[/tag] 对、孤立标签、解码 HTML 实体、折叠空白。
+ *
+ * @param text - 原始 BBCode 文本（Steam GetDetails 的 file_description）
+ * @returns 纯文本
+ *
+ * @example
+ * ```ts
+ * stripBbcode('[h1]Hawaii[/h1] [EN]English[/EN]') // 'Hawaii English'
+ * ```
+ */
+export function stripBbcode(text: string): string {
+  if (!text) return ''
+  return text
+    // 0. 特殊处理 [img]url[/img]——整对移除（URL 是内容不是属性，纯文本场景不需要图片）
+    .replace(/\[img\]([\s\S]*?)\[\/img\]/gi, '')
+    // 1. 移除 [tag=value]...[/tag] 完整对（含值，如 [color=red]...[/color]）
+    .replace(/\[(\w+)(?:=[^\]]*)?\]([\s\S]*?)\[\/\1\]/g, '$2')
+    // 2. 移除孤立开/闭标签（[b]、[/i]、[EN] 等）
+    .replace(/\[\/?\w+(?:=[^\]]*)?\]/g, '')
+    // 3. 解码常见 HTML 实体
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    // 4. 折叠连续空白
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * 格式化 Mod 元数据为带图标的前缀展示数组（问题 2——作者/订阅数/ID 视觉分层）。
+ * 不直接渲染——返回数据由调用方用 <flex> + lucide 图标渲染，避免重复 JSX。
+ *
+ * @param meta - Mod 元数据
+ * @param meta.author - 作者 SteamID64（fallback 显示）
+ * @param meta.authorName - 作者昵称（GetPlayerSummaries 补全，优先显示）
+ * @param meta.subscriptions - 订阅数（可选，有则显示）
+ * @param meta.fileId - Workshop File ID
+ * @returns 展示项数组：{ icon, text, className }
+ *
+ * @example
+ * ```ts
+ * formatModMeta({ author: '76561198...', authorName: 'Renaxon', subscriptions: 12345, fileId: '111' })
+ * // [{ icon: User, text: 'Renaxon', className: 'text-slate-400 text-xs' },
+ * //  { icon: Users, text: '1.2万 订阅', className: 'text-slate-500 text-xs' },
+ * //  { icon: Hash, text: '111', className: 'text-slate-500 text-[11px] font-mono' }]
+ * ```
+ */
+export function formatModMeta(meta: {
+  author: string
+  authorName?: string
+  subscriptions?: number
+  fileId: string
+}): Array<{ icon: string; text: string; className: string }> {
+  const items: Array<{ icon: string; text: string; className: string }> = [
+    {
+      icon: 'User',
+      text: meta.authorName || meta.author,
+      className: 'text-slate-400 text-xs',
+    },
+  ]
+  if (meta.subscriptions != null && meta.subscriptions > 0) {
+    items.push({
+      icon: 'Users',
+      text: `${formatCompactNumber(meta.subscriptions)} 订阅`,
+      className: 'text-slate-500 text-xs',
+    })
+  }
+  items.push({
+    icon: 'Hash',
+    text: meta.fileId,
+    className: 'text-slate-500 text-[11px] font-mono',
+  })
+  return items
+}
+
+/**
+ * 大数紧凑格式化：12345 → 1.2万；1200 → 1200。
+ * 订阅数等大数字展示用。
+ *
+ * @param n - 数字
+ * @returns 紧凑格式字符串
+ *
+ * @example
+ * ```ts
+ * formatCompactNumber(12345) // '1.2万'
+ * ```
+ */
+export function formatCompactNumber(n: number): string {
+  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}亿`
+  if (n >= 10_000) return `${(n / 10_000).toFixed(1)}万`
+  return String(n)
+}

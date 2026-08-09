@@ -11,6 +11,7 @@ import { ConfigPage } from './pages/ConfigPage.js';
 import { FilesPage } from './pages/FilesPage.js';
 import { ServerSetupPage } from './pages/ServerSetupPage.js';
 import { SettingsPage } from './pages/SettingsPage.js';
+import { Toaster } from './components/ui/sonner.js';
 
 function AppLayout() {
   const { isAuthenticated, restoring } = useAuth();
@@ -60,6 +61,7 @@ export default function App() {
       <Routes>
         <Route path="/*" element={<AppLayout />} />
       </Routes>
+      <Toaster />
     </AuthProvider>
   );
 }

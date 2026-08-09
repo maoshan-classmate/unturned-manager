@@ -38,4 +38,43 @@ test.describe('unturned-manager E2E 冒烟测试', () => {
       expect(errors.filter((e) => !e.includes('@base-ui') && !e.includes('motion'))).toHaveLength(0);
     }
   });
+
+  // 问题 8：Mods 页页面壳（标题 + 筛选栏）立即可见，不等 Steam 数据
+  test('Mods 页页面壳立即渲染（不等 Steam 数据）', async ({ page }) => {
+    // 先登录（Mods 页受认证门控）
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    // 等登录完成跳转（侧边栏出现 = 登录成功）
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/test-server/mods');
+    // 页面壳（标题 + 搜索框）应立即可见——即使 Steam 未通/服务器不存在也渲染（问题 8）
+    await expect(page.getByPlaceholder('搜索 Mod 名称...')).toBeVisible({ timeout: 10_000 });
+    // 排序下拉「最热门」存在
+    await expect(page.getByText('最热门')).toBeVisible({ timeout: 10_000 });
+    // 不崩溃——无 JS 错误
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    await page.waitForTimeout(800);
+    expect(errors.filter((e) => !e.includes('@base-ui') && !e.includes('motion'))).toHaveLength(0);
+  });
+
+  // 问题 8：Mods 页不整页 loading——页面壳渲染时错误/空态也在合理位置
+  test('Mods 页 loading 只覆盖列表区，页面壳始终渲染', async ({ page }) => {
+    // 登录
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/test-server/mods');
+    // 页面壳（搜索框）立即渲染 = 不是整页 loading
+    await expect(page.getByPlaceholder('搜索 Mod 名称...')).toBeVisible({ timeout: 10_000 });
+    // 结果区显示「共 X 条」或错误态——二者必居其一，证明列表区有明确状态而非死等
+    const resultText = await page.locator('text=/浏览全部|无法加载/').first().isVisible().catch(() => false);
+    expect(resultText).toBe(true);
+  });
 });

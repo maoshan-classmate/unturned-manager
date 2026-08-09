@@ -12,6 +12,7 @@ import {
   type ServerId,
   type WorkshopFileId,
 } from '@unturned-manager/shared';
+import { AppError } from '../utils/AppError.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -49,7 +50,7 @@ export function createModsRouter(
     return cfg!.installDir;
   };
   function res_status_404(_serverId: string): never {
-    throw Object.assign(new Error('Server not found'), { code: 'not_found', status: 404 });
+    throw new AppError('server-not-found', `服务端 ${_serverId} 不存在`, 404);
   }
 
   // ── 1. GET /search ───────────────────────────────────

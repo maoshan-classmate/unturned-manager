@@ -1,64 +1,65 @@
-import { Star, Eye, Plus, Trash2 } from 'lucide-react';
+import { Star, Plus, Eye, User, Users, Hash } from 'lucide-react';
 import { Button } from '../ui/button.js';
-import { cn } from '@/lib/utils';
+import { cn, formatModMeta, stripBbcode } from '@/lib/utils';
 
-/** ModCard Props */
+/** ModCard Props（v2.2 单 variant——只服务 ModsPage Steam 浏览） */
 interface ModCardProps {
   /** Workshop File ID */
   fileId: string;
   /** Mod 名称 */
   title: string;
-  /** 作者名 */
+  /** 作者 SteamID64 */
   author: string;
-  /** Mod 简介描述 */
+  /** 作者昵称（GetPlayerSummaries 补全，优先显示） */
+  authorName?: string;
+  /** Mod 简介描述（原始 BBCode，内部 strip） */
   description: string;
   /** 预览图 URL */
   previewUrl?: string;
   /** 订阅数（可选） */
-  subscriptions?: number | string;
-  /** 是否已订阅（已安装在服务器上） */
-  installed?: boolean;
+  subscriptions?: number;
   /** 是否正在操作中 */
   loading?: boolean;
-  /** 订阅回调 */
-  onSubscribe?: (fileId: string) => void;
+  /** 下载回调 */
+  onDownload?: (fileId: string) => void;
   /** 详情回调 */
   onDetails?: (fileId: string) => void;
-  /** 移除回调（已安装时显示） */
-  onRemove?: (fileId: string) => void;
-  /** 是否标记为待移除 */
-  pendingRemoval?: boolean;
 }
 
 /**
  * 创意工坊 Mod 卡片——对齐 Figma 14:16695 ModCard。
+ * v2.2 改造：走 shadcn Button variant（问题 4）+ formatModMeta 视觉分层（问题 2）
+ * + stripBbcode 兜底（问题 3）+ "订阅"→"下载"（问题 5）。
  *
  * @param props - 组件属性
  * @returns ModCard React 元素
  *
  * @example
  * ```tsx
- * <ModCard fileId="1753134636" title="Hawaii" author="Renaxon" description="热带群岛地图"
- *   subscriptions="12.3k" installed onSubscribe={handleSubscribe} />
+ * <ModCard fileId="1753134636" title="Hawaii" author="76561198..."
+ *   authorName="Renaxon" description="[h1]热带群岛[/h1]" subscriptions={12345}
+ *   onDownload={handleDownload} onDetails={handleDetails} />
  * ```
  */
 export function ModCard({
-  fileId, title, author, description, previewUrl,
-  subscriptions, installed, loading, pendingRemoval,
-  onSubscribe, onDetails, onRemove,
+  fileId, title, author, authorName, description, previewUrl,
+  subscriptions, loading, onDownload, onDetails,
 }: ModCardProps) {
+  const metaItems = formatModMeta({ author, authorName, subscriptions, fileId });
+  const cleanDescription = stripBbcode(description);
+
   return (
     <div
       className={cn(
         'rounded-lg overflow-hidden transition-colors border border-slate-700',
-        pendingRemoval ? 'opacity-50 ring-1 ring-red-500' : 'hover:ring-1 hover:ring-slate-600',
+        'hover:ring-1 hover:ring-slate-600',
       )}
       style={{ backgroundColor: '#1E293B' }}
     >
       {/* Cover image */}
       {previewUrl ? (
         <div className="relative w-full h-[140px] overflow-hidden">
-          <img src={previewUrl} alt={title} className="w-full h-full object-cover" />
+          <img src={previewUrl} alt={title} loading="lazy" className="w-full h-full object-cover" />
           {/* Gradient overlay from Figma */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -87,60 +88,43 @@ export function ModCard({
           </div>
         </div>
 
-        {/* Author · subscriptions · ID — Figma single line */}
-        <p className="text-xs text-slate-500 mt-1.5 truncate">
-          作者 {author}
-          {subscriptions ? ` · ${subscriptions} 订阅` : ''}
-          {' · '}ID {fileId}
-        </p>
+        {/* Author · subscriptions · ID — 视觉分层（formatModMeta 返回带图标前缀的展示项） */}
+        <div className="flex items-center gap-3 mt-1.5 truncate">
+          {metaItems.map((item) => {
+            const Icon = item.icon === 'User' ? User : item.icon === 'Users' ? Users : Hash;
+            return (
+              <span key={item.text} className={cn('flex items-center gap-1 shrink-0', item.className)}>
+                <Icon size={11} />
+                {item.text}
+              </span>
+            );
+          })}
+        </div>
 
-        {/* Description — Figma single line */}
+        {/* Description — BBCode 已 strip（问题 3） */}
         <p className="text-xs text-slate-500 mt-0.5 truncate">
-          {description || '暂无描述'}
+          {cleanDescription || '暂无描述'}
         </p>
 
-        {/* Action buttons — Figma: 订阅 / 详情 / 移除 */}
+        {/* Action buttons — shadcn variant（问题 4）+ "订阅"→"下载"（问题 5） */}
         <div className="flex items-center gap-2 mt-3">
-          {installed ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled
-              className="h-7 text-[11px] px-3"
-              style={{ color: '#22C55E', opacity: 0.6 }}
-            >
-              已安装
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              onClick={() => onSubscribe?.(fileId)}
-              disabled={loading}
-              className="h-7 text-[11px] gap-1 px-3"
-              style={{ backgroundColor: '#22C55E', color: 'white' }}
-            >
-              <Plus size={12} /> 订阅
-            </Button>
-          )}
           <Button
             size="sm"
-            variant="outline"
+            variant="default"
+            onClick={() => onDownload?.(fileId)}
+            disabled={loading}
+            className="h-7 text-[11px] gap-1 px-3"
+          >
+            <Plus size={12} /> 下载
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => onDetails?.(fileId)}
-            className="h-7 text-[11px] gap-1 px-3 border-slate-500 text-slate-400"
+            className="h-7 text-[11px] gap-1 px-3"
           >
             <Eye size={12} /> 详情
           </Button>
-          {installed && onRemove && (
-            <Button
-              size="sm"
-              onClick={() => onRemove(fileId)}
-              disabled={loading}
-              className="h-7 text-[11px] gap-1 px-3"
-              style={{ backgroundColor: '#EF4444', color: 'white' }}
-            >
-              <Trash2 size={12} /> 移除
-            </Button>
-          )}
         </div>
       </div>
     </div>

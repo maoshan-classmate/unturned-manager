@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Save, AlertCircle, Loader2, Check, FileText, Package, Wrench, Cpu } from 'lucide-react';
+import { Save, AlertCircle, Loader2, Check, FileText, Wrench, Cpu, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { TabBar } from '../components/shared/TabBar.js';
 import { ConfigSection } from '../components/shared/ConfigSection.js';
 import { ConfigField } from '../components/shared/ConfigField.js';
 import { ConfigToggle } from '../components/shared/ConfigToggle.js';
 import { SearchInput } from '../components/shared/SearchInput.js';
 import { DataTable, type DataTableColumn } from '../components/shared/DataTable.js';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
 import { useServer } from '../hooks/useServer.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
@@ -75,7 +77,7 @@ export function ConfigPage() {
   const [txtFields, setTxtFields] = useState<ConfigTxtFields>(EMPTY_TXT);
   const [workshopRows, setWorkshopRows] = useState<WorkshopRow[]>([]);
   const [workshopSearch, setWorkshopSearch] = useState('');
-  const [workshopStatusFilter, setWorkshopStatusFilter] = useState('全部状态');
+  const [workshopStatusFilter] = useState('全部状态');
   const [workshopPage, setWorkshopPage] = useState(1);
 
   const [configLoading, setConfigLoading] = useState(false);
@@ -83,6 +85,9 @@ export function ConfigPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // v2.2：Workshop 应用变更（重启服务器）二次确认
+  const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const fetchConfig = useCallback(async () => {
     if (!server) return;
@@ -118,9 +123,15 @@ export function ConfigPage() {
           });
         }
       } else {
-        const res = await apiClient.get(`/servers/${server.id}/config/workshop`);
-        const ids: string[] = res.data.data?.File_IDs ?? [];
-        setWorkshopRows(ids.map((id) => ({ fileId: id, name: id, status: 'enabled' as const, selected: false })));
+        // v2.2：已下载 Mod 列表改走 /mods/downloaded（acf 扫描 + WebAPI 元数据合并）
+        const res = await apiClient.get(`/servers/${server.id}/mods/downloaded`);
+        const items: Array<{ fileId: string; title?: string; authorName?: string }> = res.data.data ?? [];
+        setWorkshopRows(items.map((item) => ({
+          fileId: item.fileId,
+          name: item.title || item.fileId,
+          status: 'enabled' as const,
+          selected: false,
+        })));
       }
       setDirty(false);
     } catch (err) { setConfigError(err instanceof Error ? err.message : '加载配置失败'); }
@@ -131,6 +142,11 @@ export function ConfigPage() {
 
   const handleSave = async () => {
     if (!server) return;
+    // v2.2：Workshop 分支先弹二次确认（apply 会重启服务器），确认后才执行
+    if (tab === 'workshop') {
+      setApplyConfirmOpen(true);
+      return;
+    }
     setSaving(true); setConfigError(null);
     try {
       if (tab === 'commands') {
@@ -150,12 +166,43 @@ export function ConfigPage() {
             '玩法开关': { '肩后视角': txtFields.肩后视角, '自由建造': txtFields.自由建造, '玩家伤害': txtFields.玩家伤害, '允许自杀': txtFields.允许自杀 },
           },
         });
-      } else {
-        await apiClient.put(`/servers/${server.id}/config/workshop`, { fileIds: workshopRows.filter((r) => r.status !== 'disabled').map((r) => r.fileId) });
       }
       setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
     } catch (err) { setConfigError(err instanceof Error ? err.message : '保存配置失败'); }
     finally { setSaving(false); }
+  };
+
+  /** v2.2：确认后执行 Workshop apply（触发重启流水线） */
+  const handleApplyConfirm = async () => {
+    if (!server) return;
+    setApplyConfirmOpen(false);
+    setSaving(true); setConfigError(null);
+    try {
+      const fileIds = workshopRows.filter((r) => r.status !== 'disabled').map((r) => r.fileId);
+      await apiClient.post(`/servers/${server.id}/mods/apply`, { fileIds });
+      toast.success('Mod 变更已提交，服务器正在重启应用...');
+      setDirty(false);
+    } catch (err) {
+      setConfigError(err instanceof Error ? err.message : '应用变更失败');
+      toast.error(err instanceof Error ? err.message : '应用变更失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** v2.2：删除 Mod——先确认，确认后调 DELETE 端点（acf + content + File_IDs 同步删） */
+  const handleDeleteConfirm = async () => {
+    if (!server || !deleteConfirm) return;
+    const fileId = deleteConfirm;
+    setDeleteConfirm(null);
+    try {
+      await apiClient.delete(`/servers/${server.id}/mods/${fileId}`);
+      setWorkshopRows((prev) => prev.filter((r) => r.fileId !== fileId));
+      toast.success('Mod 已删除');
+    } catch (err) {
+      setConfigError(err instanceof Error ? err.message : '删除 Mod 失败');
+      toast.error(err instanceof Error ? err.message : '删除 Mod 失败');
+    }
   };
 
   const handleFieldChange = (key: keyof CommandsFields, value: string | boolean) => { setFields((prev) => ({ ...prev, [key]: value })); setDirty(true); };
@@ -165,7 +212,7 @@ export function ConfigPage() {
   const toggleWsStatus = (fileId: string) => {
     setWorkshopRows((prev) => { setDirty(true); return prev.map((r) => (r.fileId === fileId ? { ...r, status: r.status === 'enabled' ? 'disabled' as const : 'enabled' as const } : r)); });
   };
-  const removeWs = (fileId: string) => { setWorkshopRows((prev) => { setDirty(true); return prev.filter((r) => r.fileId !== fileId); }); };
+  const removeWs = (fileId: string) => { setDeleteConfirm(fileId); };
 
   const filteredWorkshop = workshopRows.filter((r) => {
     const m = r.name.toLowerCase().includes(workshopSearch.toLowerCase()) || r.fileId.includes(workshopSearch);
@@ -226,6 +273,31 @@ export function ConfigPage() {
           </div>
         </div>
       </div>
+
+      {/* v2.2：Workshop 应用变更确认（会重启服务器） */}
+      <ConfirmDialog
+        open={applyConfirmOpen}
+        title="应用 Mod 变更"
+        message="将保存 Mod 列表并重启服务器（RCON Save → 优雅关服 → 应用 Mod → 重启）。确认继续？"
+        confirmLabel="确认重启"
+        variant="default"
+        icon={RefreshCw}
+        loading={saving}
+        onConfirm={handleApplyConfirm}
+        onCancel={() => setApplyConfirmOpen(false)}
+      />
+
+      {/* v2.2：删除 Mod 确认（acf + content + File_IDs 同步删） */}
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="删除 Mod"
+        message={`确定删除 Mod ${deleteConfirm}？将同时移除下载内容与启用列表。`}
+        confirmLabel="删除"
+        variant="danger"
+        icon={AlertCircle}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }
