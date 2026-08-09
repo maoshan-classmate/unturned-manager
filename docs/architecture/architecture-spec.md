@@ -396,7 +396,7 @@ App
 | Hook | 用途 | 依赖 |
 |---|---|---|
 | `useAuth` | JWT 状态、登录/登出/刷新 | AuthContext |
-| `useServer(serverId)` | 服务端状态 GET 轮询 + WS 增量合并 | IServerManager |
+| `useServer()` | 实例列表挂载拉一次 + `addServer`/`removeServer` 本地增删（纯前端效果阶段）；状态实时待 WS 推送 | IServerManager |
 | `useConsole(serverId)` | WS 控制台收发封装 | WebSocketContext |
 | `useLogs(serverId)` | WS 日志流封装 | WebSocketContext |
 | `useConfig(serverId)` | Config CRUD + dirty tracking | IConfigService |

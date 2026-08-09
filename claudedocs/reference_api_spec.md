@@ -40,8 +40,8 @@
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| GET | `/` | `ServerManager.listServers` | — | `useServer` 5s 轮询（全部页面） | ✅ |
-| POST | `/` | `ServerManager.createServer` | ❌ 无 | `ServerSetupPage`「创建服务器」 | ⚠️ 脏数据直入库 |
+| GET | `/` | `ServerManager.listServers` | — | `useServer` 挂载拉一次 + 手动 refresh（已去轮询，状态实时待 WS 推送） | ✅ |
+| POST | `/` | `ServerManager.createServer` | ❌ 无 | **前端当前不调用**——创建/删除改为纯本地 UI 效果（`useServer.addServer`/`removeServer`），待后端实现目录扫描/创建/删除后接通 | ⚠️ 脏数据直入库 |
 | PATCH | `/:id` | `ServerManager.configureServer` | ❌ 无 | **前端无调用点** | ⚠️ 僵尸端点 |
 | POST | `/:id/start` | `ServerManager.start` | — | `useServerActions.start`（Dashboard/ServerSetup） | ⚠️ A2S bug 必失败 |
 | POST | `/:id/stop` | `ServerManager.stop` | — | `useServerActions.stop` | ⚠️ RCON 不可达时无 SIGTERM |
@@ -52,7 +52,7 @@
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| POST | `/:id/apply` | `ServerManager.applyModChanges` | ❌ 仅 Array.isArray | **ModsPage「应用变更」未调用** | ❌ apply 流水线 stub + 前端不接线 |
+| POST | `/:id/mods/apply` | `ServerManager.applyModChanges` | ❌ 仅 Array.isArray | `ConfigPage`「应用变更」（:182） | ✅ apply 流水线已接线（Sprint 2） |
 
 ### 2.4 配置文件 `/api/servers`
 
@@ -125,7 +125,7 @@
 | **Config·Txt** | 保存 | `PUT /servers/:id/config/txt` | ❌ 契约不匹配 |
 | **Config·Workshop** | 读取 / 保存 | `GET/PUT /servers/:id/config/workshop` | ✅ |
 | **Files** | 列表 / 读 / 上传 / 新建 / 删除 / 重命名 | `GET /:id` `GET /:id/content` `POST /:id/upload` `POST /:id/mkdir` `DELETE /:id` `PUT /:id/rename` | ⚠️ 上传二进制破坏，其余可用 |
-| **ServerSetup** | 创建实例 | `POST /servers` | ⚠️ 无校验 |
+| **ServerSetup** | 创建实例 | `POST /servers` | ⚠️ 无校验；**前端当前纯本地效果，不调用** |
 | **ServerSetup** | SteamCMD 状态 | `GET /steamcmd/status` | ⚠️ |
 | **ServerSetup** | 更新 U3DS | `POST /steamcmd/update` | ❌ 假成功 |
 | **Settings** | 5 张卡片 | — | ⚠️ 无后端支撑，纯静态 |
@@ -150,7 +150,7 @@
 
 | # | 断裂 | 证据 | 后果 | 修复方向 |
 |---|---|---|---|---|
-| C1 | PlayersPage 调 `/servers/:id/rcon/execute`，后端只挂 `/execute` | `PlayersPage.tsx:46,63` vs `rcon.ts:25` `index.ts:56` | 玩家页 404 | 后端补 `/rcon/execute` 别名，或前端改路径 |
+| C1 | PlayersPage 调 `/servers/:id/rcon/execute`，后端只挂 `/execute` | `rcon.ts:89`(`/execute`) + `:94`(`/rcon/execute` 别名) | ~~玩家页 404~~ ✅ 已修复 | Phase 0 已补别名 |
 | C2 | Config.txt 契约：后端 `sections: ConfigSection[]`（数组），前端当 map（`sections['浏览器']`）用 | `ConfigPage.tsx:106` vs `domain.ts:21-36` | 前端永远读默认值 | 统一为 map：`Record<sectionName, Record<key, value>>` 或前端改数组遍历 |
 | C3 | Commands.dat 写：前端传普通对象，后端 `serializeCommandsDat` 对 `record.known` 做 `for...of` | `ConfigPage.tsx:141` vs `ConfigService.ts:198` | 保存必 500 | `domain.ts` 改 `Record<string,string>` |
 | C4 | Commands.dat 读：后端返回 Map → `JSON.stringify` 成 `{}` | `routes/config.ts:12` vs `ConfigPage.tsx:93-96` | 前端读空 | 同 C3，路由层 `Object.fromEntries` |
@@ -172,9 +172,9 @@
 | 4 | 测试与部署基线 | vitest 配置、录制回放、docker-compose.yml + Dockerfile |
 
 **新增端点**（前端已在用/将用，后端缺失）：
-- `GET /api/servers/:id/players` — PlayersPage 玩家列表（替代 RCON 文本 hack）
+- `GET /api/servers/:id/players` — PlayersPage 玩家列表（替代 RCON 文本 hack）✅ 已实现（`routes/players.ts:57`，`PlayersPage.tsx:46` 调用）
 - `GET /api/servers/:id/download?path=` — Files 二进制下载
-- `GET /api/audit-logs` — Settings 系统日志
+- `GET /api/audit-logs` — Settings 系统日志 ✅ 已实现（`index.ts:104` 挂载）
 - `GET/PUT /api/servers/:id/config/openmod/:pluginId`、`/rocket/:pluginName`、`/lists/:type` — Sprint 4
 
 ---

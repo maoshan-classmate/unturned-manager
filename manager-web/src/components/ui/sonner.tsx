@@ -22,7 +22,7 @@ export function Toaster() {
   return (
     <Sonner
       theme="dark"
-      position="bottom-right"
+      position="top-center"
       toastOptions={{
         style: {
           background: '#1E293B',

@@ -193,4 +193,34 @@ test.describe('unturned-manager E2E 冒烟测试', () => {
     // 期望:至少 2 次 WS 构造(首次 + 重连后)
     expect(reconnects).toBeGreaterThanOrEqual(2);
   });
+
+  // Figma 🎨 Server Setup 1:1 复刻回归——4 卡片 + 实例库侧栏可达
+  test('Server Setup 页 4 卡片 + 实例库侧栏全部渲染', async ({ page }) => {
+    // 登录
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/test-server/server-setup');
+
+    // Header 标题 + 实例库侧栏
+    await expect(page.getByText('服务器部署与管理')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('实例库', { exact: true })).toBeVisible({ timeout: 10_000 });
+
+    // 4 卡片标题(SteamCMD / U3DS / 服务器控制 / 计划任务)
+    await expect(page.getByText('SteamCMD').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Unturned 专用服务器').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('服务器控制').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('计划任务').first()).toBeVisible({ timeout: 10_000 });
+
+    // 实例库「新建」按钮——验证点击能弹出 Dialog(必须存在的弹窗行为)
+    const newBtn = page.getByRole('button', { name: /新建/ }).first();
+    await newBtn.click();
+    await expect(page.getByText('创建新实例', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+    // 视觉回归:实拍截图,让 CI 能 diff 颜色变化(撞色问题)
+    await page.screenshot({ path: 'test-results/server-setup-snap.png', fullPage: false });
+  });
 });

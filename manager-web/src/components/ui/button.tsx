@@ -20,11 +20,13 @@ const buttonVariants = cva(
         default:
           'bg-emerald-500 text-white hover:bg-emerald-600',
         secondary:
-          'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700',
+          // slate-700 明显比 Card 背景 #1E293B(slate-800)亮一档,有视觉差
+          'bg-slate-700 text-slate-100 border border-slate-600 hover:bg-slate-600',
         outline:
-          'bg-transparent text-slate-400 border border-slate-700 hover:bg-slate-800 hover:text-slate-200',
+          // outline 用 bg-slate-800(等于 Card 色) + 亮边框 + 高对比文字——透明 background 已被验证隐形,显式上色
+          'bg-slate-800 text-slate-100 border border-slate-500 hover:bg-slate-700 hover:text-white',
         ghost:
-          'bg-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+          'bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white',
         destructive:
           'bg-red-500 text-white hover:bg-red-600',
         link: 'text-emerald-500 underline-offset-4 hover:underline',

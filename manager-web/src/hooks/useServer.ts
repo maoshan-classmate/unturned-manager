@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../api/client.js';
 
 export interface ServerInfo {
@@ -15,15 +15,16 @@ interface UseServerReturn {
   loading: boolean;
   error: string | null;
   refresh: () => void;
+  /** 纯前端本地新增——后端创建实例目录接口尚未实现,先做 UI 效果闭环 */
+  addServer: (server: ServerInfo) => void;
+  /** 纯前端本地移除——后端 DELETE /servers/:id 尚未实现,用于删除 UI 效果闭环 */
+  removeServer: (id: string) => void;
 }
-
-const POLL_INTERVAL = 5_000;
 
 export function useServer(): UseServerReturn {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
 
   const fetchServers = useCallback(async () => {
     try {
@@ -38,13 +39,22 @@ export function useServer(): UseServerReturn {
     }
   }, []);
 
+  // 实例列表只挂载时拉取一次 + 手动 refresh——不轮询。
+  // 理由:本地增删(纯前端效果)不该被轮询的"后端真相"覆盖;
+  // 状态(state)实时变化将来由 WebSocket 推送(后端 ServerManager.onStateChange),不走轮询。
   useEffect(() => {
     fetchServers();
-    timerRef.current = setInterval(fetchServers, POLL_INTERVAL);
-    return () => clearInterval(timerRef.current);
   }, [fetchServers]);
 
-  return { servers, loading, error, refresh: fetchServers };
+  const addServer = useCallback((server: ServerInfo) => {
+    setServers((prev) => [server, ...prev]);
+  }, []);
+
+  const removeServer = useCallback((id: string) => {
+    setServers((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  return { servers, loading, error, refresh: fetchServers, addServer, removeServer };
 }
 
 /**
