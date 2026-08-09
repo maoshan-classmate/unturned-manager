@@ -4,11 +4,15 @@ import request from 'supertest';
 import Database from 'better-sqlite3';
 import * as argon2 from 'argon2';
 
+import fs from 'fs/promises';
+import path from 'path';
+
 import { buildContainer } from '../src/composition-root.js';
 import { setAuthService } from '../src/middleware/auth.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 import { createServersRouter } from '../src/routes/servers.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
+import { resolveInstallDir } from '../src/modules/server/pathResolver.js';
 
 let db: Database.Database;
 let app: express.Express;
@@ -29,13 +33,6 @@ beforeAll(async () => {
   db = new Database(':memory:');
   db.pragma('journal_mode = MEMORY');
   db.exec(`
-    CREATE TABLE servers (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, game_port INTEGER NOT NULL,
-      state TEXT NOT NULL DEFAULT 'STOPPED', install_dir TEXT NOT NULL,
-      rcon_port INTEGER, rcon_password_enc TEXT, owner_steam_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
     CREATE TABLE users (
       id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 1,
@@ -45,22 +42,6 @@ beforeAll(async () => {
       jti TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL,
       revoked_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE TABLE config_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL,
-      file_path TEXT NOT NULL, content TEXT NOT NULL, version INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE workshop_mods (
-      file_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
-      author TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
-      preview_url TEXT, file_size INTEGER, updated_at_steam TEXT,
-      cached_at TEXT NOT NULL DEFAULT (datetime('now')), raw_xml TEXT
-    );
-    CREATE TABLE audit_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT,
-      action TEXT NOT NULL, actor TEXT NOT NULL DEFAULT 'admin',
-      detail TEXT, ip_address TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
     CREATE TABLE settings (
       key TEXT PRIMARY KEY, value_enc TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -68,6 +49,11 @@ beforeAll(async () => {
   `);
 
   await seedAdminUser(db);
+
+  // ADR-0003 B2：实例身份=目录存在性。清理本文件专用 id 目录——防上次 run 残留
+  // Commands.dat 导致 createServer 的幂等检查（server-exists）误触发。
+  await fs.rm(path.join(resolveInstallDir(), 'Servers', 'ApiServer'), { recursive: true, force: true });
+
   const container = buildContainer(db);
   setAuthService(container.authService as import('../src/modules/auth/AuthService.js').AuthService);
 
@@ -116,7 +102,7 @@ describe('API 冒烟测试（supertest）', () => {
       .post('/api/servers')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        id: 'MyServer',
+        id: 'ApiServer',
         name: 'Test',
         gamePort: 27015,
         ownerSteamId: '76561198000000001',
@@ -134,20 +120,20 @@ describe('API 冒烟测试（supertest）', () => {
       .expect(401);
   });
 
-  // 6. 创建重复 → 500（唯一键冲突，由 AppError 兜底）
-  it('POST /api/servers → 500 重复 ServerID', async () => {
-    // 已经创建了 MyServer，再创会报（better-sqlite3 UNIQUE 约束 → 被 errorHandler 捕获）
+  // 6. 创建重复 → 409（目录真源：Commands.dat 已存在 → server-exists）
+  it('POST /api/servers → 409 重复 ServerID', async () => {
+    // 已经创建了 ApiServer（Commands.dat 已落盘），再创报 server-exists 409
     await request(app)
       .post('/api/servers')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        id: 'MyServer',
+        id: 'ApiServer',
         name: 'Dup',
         gamePort: 27016,
         ownerSteamId: '76561198000000002',
         installDir: '/tmp/unturned-test',
       })
-      .expect(500);
+      .expect(409);
   });
 
   // 7. List servers
@@ -156,8 +142,8 @@ describe('API 冒烟测试（supertest）', () => {
       .get('/api/servers')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
-    expect(res.body.data).toHaveLength(1);
-    expect(res.body.data[0].id).toBe('MyServer');
+    // 目录扫描可能加载其他测试残留实例——只断言 ApiServer 在（B2：实例身份=目录存在性）
+    expect(res.body.data.some((s: { id: string }) => s.id === 'ApiServer')).toBe(true);
   });
 
   // 8. Zod 校验失败 → 400

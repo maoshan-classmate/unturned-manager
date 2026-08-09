@@ -2,7 +2,6 @@ import fs from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   WorkshopFileId,
@@ -12,6 +11,7 @@ import type {
   IBroadcaster,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { resolveInstallDir, resolveServerPath } from '../server/pathResolver.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,8 +23,8 @@ const STAGING_CONTENT_SUBDIR = path.join('Workshop', 'staging', 'steamapps', 'wo
 /** content acf 内容目录（U3DS 启动读取） */
 const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
 
-/** WorkshopDownloadConfig.json 相对 install_dir 的路径（注意：在 Servers/<ID>/Server/ 下，不在 Workshop/ 下） */
-const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverId, 'Server', 'WorkshopDownloadConfig.json');
+/** WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径（注意：在 Server/ 下，不在 Workshop/ 下） */
+const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Server', 'WorkshopDownloadConfig.json');
 
 /**
  * apply 流水线服务——在 ServerManager.applyModChanges 流水线内、U3DS 已 STOPPED 时调用
@@ -42,7 +42,6 @@ const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverI
  */
 export class WorkshopApplyService implements IWorkshopApplyService {
   constructor(
-    private db: Database.Database,
     private acfService: IWorkshopAcfService,
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
@@ -207,21 +206,13 @@ export class WorkshopApplyService implements IWorkshopApplyService {
   }
 
   /**
-   * 从 DB 查 install_dir，拼 staging / content 绝对路径
+   * 拼 staging / content 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
    */
-  private async resolvePaths(serverId: ServerId): Promise<{ installDir: string; stagingDir: string; contentDir: string }> {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置 install_dir`);
-    }
-    const installDir = row.install_dir;
-    const serverDir = path.join(installDir, 'Servers', serverId);
+  private resolvePaths(serverId: ServerId): { installDir: string; stagingDir: string; contentDir: string } {
     return {
-      installDir,
-      stagingDir: path.join(serverDir, STAGING_CONTENT_SUBDIR),
-      contentDir: path.join(serverDir, CONTENT_SUBDIR),
+      installDir: resolveInstallDir(),
+      stagingDir: resolveServerPath(serverId, STAGING_CONTENT_SUBDIR),
+      contentDir: resolveServerPath(serverId, CONTENT_SUBDIR),
     };
   }
 }

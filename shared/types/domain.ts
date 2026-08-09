@@ -8,6 +8,8 @@ export interface ServerConfig {
   ownerSteamId: SteamId64;
   installDir: string;
   rconPassword?: string;
+  /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
+  openModCredential?: string;
 }
 
 // Commands.dat 解析结果

@@ -9,6 +9,7 @@ export const ServerConfigSchema = z.object({
   ownerSteamId: z.string().regex(/^7656119\d{10}$/, '无效的 SteamID64'),
   installDir: z.string().min(1, '安装路径不能为空'),
   rconPassword: z.string().optional(),
+  openModCredential: z.string().optional(),
 });
 
 export const CreateServerSchema = ServerConfigSchema;
@@ -19,6 +20,7 @@ export const ConfigureServerSchema = z.object({
   ownerSteamId: z.string().regex(/^7656119\d{10}$/).optional(),
   installDir: z.string().min(1).optional(),
   rconPassword: z.string().optional(),
+  openModCredential: z.string().optional(),
 });
 
 // ─── RCON ───────────────────────────────────────────────

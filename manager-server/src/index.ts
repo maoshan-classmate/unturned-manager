@@ -38,7 +38,6 @@ import { createFilesRouter } from './routes/files.js';
 import { createPlayersRouter } from './routes/players.js';
 import { createSteamCmdRouter } from './routes/steamcmd.js';
 import { createWorkshopRouter } from './routes/workshop.js';
-import { createAuditLogsRouter } from './routes/audit-logs.js';
 import { createSettingsRouter } from './routes/settings.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { noCache } from './middleware/noCache.js';
@@ -101,7 +100,6 @@ app.use('/api/servers', createFilesRouter(container.filesService));
 app.use('/api/servers', createPlayersRouter(container.rconManager));
 app.use('/api/steamcmd', createSteamCmdRouter(container.steamCmdManager));
 app.use('/api/workshop', createWorkshopRouter(container.workshopMeta));
-app.use('/api/audit-logs', createAuditLogsRouter());
 app.use('/api/settings', createSettingsRouter(db));
 
 // WebSocket

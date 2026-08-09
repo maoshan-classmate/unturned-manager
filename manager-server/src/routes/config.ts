@@ -26,11 +26,11 @@ export function createConfigRouter(configService: IConfigService): Router {
     '/:id/config/commands',
     validate(WriteCommandsDatSchema),
     asyncHandler(async (req, res) => {
-      const body = req.body as { known: Record<string, string>; unknown: Record<string, string>; comments: string[]; expectedVersion?: number };
+      const body = req.body as { known: Record<string, string>; unknown: Record<string, string>; comments: string[]; expectedMtime?: number };
       await configService.writeCommandsDat(
         req.params.id as never,
         { known: body.known, unknown: body.unknown, comments: body.comments ?? [] },
-        body.expectedVersion,
+        body.expectedMtime,
       );
       res.json({ data: { message: 'Commands.dat 已保存' } });
     }),
@@ -49,8 +49,8 @@ export function createConfigRouter(configService: IConfigService): Router {
     '/:id/config/txt',
     validate(WriteConfigTxtSchema),
     asyncHandler(async (req, res) => {
-      const body = req.body as { sections: Record<string, { name: string; entries: Array<{ key: string; value: string | null; comment: string | null; known: boolean; type?: 'string' | 'bool' | 'int' }> }>; expectedVersion?: number };
-      await configService.writeConfigTxt(req.params.id as never, { sections: body.sections as never }, body.expectedVersion);
+      const body = req.body as { sections: Record<string, { name: string; entries: Array<{ key: string; value: string | null; comment: string | null; known: boolean; type?: 'string' | 'bool' | 'int' }> }>; expectedMtime?: number };
+      await configService.writeConfigTxt(req.params.id as never, { sections: body.sections as never }, body.expectedMtime);
       res.json({ data: { message: 'Config.txt 已保存' } });
     }),
   );
@@ -68,8 +68,8 @@ export function createConfigRouter(configService: IConfigService): Router {
     '/:id/config/workshop',
     validate(WriteWorkshopFileIdsSchema),
     asyncHandler(async (req, res) => {
-      const body = req.body as { fileIds: string[]; expectedVersion?: number };
-      await configService.writeWorkshopFileIds(req.params.id as never, body.fileIds as never, body.expectedVersion);
+      const body = req.body as { fileIds: string[]; expectedMtime?: number };
+      await configService.writeWorkshopFileIds(req.params.id as never, body.fileIds as never, body.expectedMtime);
       res.json({ data: { message: 'Workshop File IDs 已更新' } });
     }),
   );

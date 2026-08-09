@@ -1,10 +1,10 @@
+import fs from 'fs/promises';
 import type Database from 'better-sqlite3';
 import type {
   ServerId,
-  SteamId64,
-  Port,
   ServerConfig,
   IServerManager,
+  IServerDiscovery,
   IProcessSupervisor,
   IRconManager,
   IA2SClient,
@@ -13,9 +13,17 @@ import type {
   ActiveOperation,
   WorkshopFileId,
   IWorkshopApplyService,
+  CommandsDatRecord,
 } from '@unturned-manager/shared';
-import { ServerState } from '@unturned-manager/shared';
+import { ServerState, RconConnectionState } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { AppError } from '../../utils/AppError.js';
+import { resolveInstallDir, resolveServerPath } from './pathResolver.js';
+import {
+  getRconCredential,
+  setRconCredential,
+  deleteRconCredentials,
+} from '../settings/settingsStorage.js';
 
 // ─── 常量 ────────────────────────────────────────────
 
@@ -23,7 +31,7 @@ const A2S_POLL_INTERVAL = 3_000;   // 3s 轮询
 const A2S_POLL_TIMEOUT = 30_000;   // CLAUDE.md §4.6: 30s 总超时，超时报错
 const SHUTDOWN_TIMEOUT = 30_000;   // 等待进程退出
 
-// ─── 运行时状态 (in-memory, backed by DB) ────────────
+// ─── 运行时状态 (in-memory, 目录扫描真源 + settings K-V) ──
 
 interface RuntimeServerState {
   state: ServerState;
@@ -31,11 +39,22 @@ interface RuntimeServerState {
   config: ServerConfig;
 }
 
+/**
+ * 服务端聚合根（ADR-0003 B2 目录扫描重构）。
+ *
+ * 数据源变更：
+ *   - 实例身份 = <installDir>/Servers/<id>/Server/Commands.dat 存在性（目录扫描，替代 DB servers 表）
+ *   - 运行时状态 = in-memory（B2 §9.6：面板启动不吸附真实进程，一律 STOPPED）
+ *   - RCON 凭证 = settings K-V（AES-GCM 加密，ADR-17 双协议分离）
+ *
+ * 状态机：STOPPED → STARTING → RUNNING；RUNNING → STOPPING → STOPPED；RUNNING ↔ DEGRADED。
+ */
 export class ServerManager implements IServerManager {
   private servers = new Map<ServerId, RuntimeServerState>();
 
   constructor(
     private db: Database.Database,
+    private discovery: IServerDiscovery,
     private processSupervisor: IProcessSupervisor,
     private rconManager: IRconManager,
     private a2sClient: IA2SClient,
@@ -43,16 +62,16 @@ export class ServerManager implements IServerManager {
     private broadcaster: IBroadcaster,
     private workshopApply?: IWorkshopApplyService,
   ) {
-    this.loadServersFromDb();
+    this.loadServersFromDisk();
 
     // CLAUDE.md §4.7: DEGRADED 状态接线——RCON 断连 → 降级
     this.rconManager.onStateChange((serverId, state) => {
-      if (state === 'degraded' as any) {
-        this.transition(serverId as ServerId, ServerState.DEGRADED);
-      } else if (state === 'connected' as any) {
-        const current = this.getState(serverId as ServerId);
+      if (state === RconConnectionState.DEGRADED) {
+        this.transition(serverId, ServerState.DEGRADED);
+      } else if (state === RconConnectionState.CONNECTED) {
+        const current = this.getState(serverId);
         if (current === ServerState.DEGRADED) {
-          this.transition(serverId as ServerId, ServerState.RUNNING);
+          this.transition(serverId, ServerState.RUNNING);
         }
       }
     });
@@ -61,36 +80,33 @@ export class ServerManager implements IServerManager {
     this.processSupervisor.onCrash((serverId, exitCode) => {
       logger.warn({ serverId, exitCode }, 'U3DS 进程崩溃');
       this.transition(serverId, ServerState.STOPPED);
-      this.auditLog(serverId, 'server.crash', { exitCode });
     });
   }
 
-  // ── 持久化加载 ──────────────────────────────────────
+  // ── 目录扫描加载 ────────────────────────────────────
 
-  private loadServersFromDb(): void {
-    const rows = this.db
-      .prepare('SELECT id, name, game_port, state, install_dir, rcon_port, rcon_password_enc, owner_steam_id FROM servers')
-      .all() as Array<{
-        id: string; name: string; game_port: number; state: string; install_dir: string;
-        rcon_port: number | null; rcon_password_enc: string | null;
-        owner_steam_id: string | null;
-      }>;
-
-    for (const row of rows) {
-      this.servers.set(row.id as ServerId, {
-        state: row.state as ServerState,
+  /**
+   * 从目录扫描加载实例（B2 §3.1）。真源 = Commands.dat 存在性。
+   * 状态一律 STOPPED（B2 §9.6：不吸附真实进程）；RCON 凭证从 settings K-V 恢复。
+   */
+  private loadServersFromDisk(): void {
+    const discovered = this.discovery.scanSync(resolveInstallDir());
+    for (const s of discovered) {
+      this.servers.set(s.id, {
+        state: ServerState.STOPPED,
         activeOperation: { type: 'none' },
         config: {
-          id: row.id as ServerId,
-          name: row.name,
-          gamePort: row.game_port as Port,
-          ownerSteamId: (row.owner_steam_id ?? '') as SteamId64,
-          installDir: row.install_dir || '/opt/unturned',
+          id: s.id,
+          name: s.name,
+          gamePort: s.gamePort,
+          ownerSteamId: s.ownerSteamId,
+          installDir: resolveInstallDir(),
         },
       });
-      this.a2sClient.register(row.id as ServerId, '127.0.0.1', row.game_port);
+      this.a2sClient.register(s.id, '127.0.0.1', s.gamePort);
+      this.restoreRcon(s.id);
     }
-    logger.info({ count: rows.length }, '已从 DB 加载服务器');
+    logger.info({ count: discovered.length }, '已从目录扫描加载服务器');
   }
 
   // ── 查询 ────────────────────────────────────────────
@@ -107,63 +123,122 @@ export class ServerManager implements IServerManager {
     return Array.from(this.servers.values()).map((s) => s.config);
   }
 
-  /**
-   * 同步版——直接读 in-memory Map（启动时给 LogStreamer 接线用）。
-   * 不走 await DB，启动期间不会卡。
-   */
+  /** 同步版——直接读 in-memory Map（启动时给 LogStreamer 接线用） */
   listServersSync(): string[] {
     return Array.from(this.servers.keys());
   }
 
-  // ── 创建 / 配置 ─────────────────────────────────────
+  /** 活跃实例（状态非 STOPPED）——SteamCmdManager 更新 U3DS 前置检查用（替代 DB state 列） */
+  listActiveServerIds(): ServerId[] {
+    return Array.from(this.servers.entries())
+      .filter(([, e]) => e.state !== ServerState.STOPPED)
+      .map(([id]) => id);
+  }
 
+  // ── 创建 / 配置 / 删除 ──────────────────────────────
+
+  /**
+   * 创建实例（B2 §3.1）：目录真源——建 Servers/<id>/Server/Commands.dat 即实例成立。
+   * 不再写 DB；RCON 凭证落 settings K-V。
+   *
+   * @throws {AppError} code=server-exists, status=409 当 Commands.dat 已存在（重复创建）
+   */
   async createServer(config: ServerConfig): Promise<void> {
-    this.db
-      .prepare(
-        `INSERT INTO servers (id, name, game_port, state, install_dir, owner_steam_id)
-         VALUES (?, ?, ?, 'STOPPED', ?, ?)`,
-      )
-      .run(config.id, config.name, config.gamePort, config.installDir, config.ownerSteamId);
+    // 目录真源幂等检查：Commands.dat 已存在 → 已创建过
+    const cmdsPath = resolveServerPath(config.id, 'Server/Commands.dat');
+    try {
+      await fs.access(cmdsPath);
+      throw new AppError('server-exists', `服务端 ${config.id} 已存在`, 409);
+    } catch (err) {
+      if (err instanceof AppError) throw err; // 已存在 → 409
+      // ENOENT → 正常创建
+    }
 
+    await fs.mkdir(resolveServerPath(config.id, 'Server'), { recursive: true });
+    const record: CommandsDatRecord = {
+      known: { Name: config.name, Port: String(config.gamePort), Owner: config.ownerSteamId },
+      unknown: {},
+      comments: [],
+    };
+    await this.configService.writeCommandsDat(config.id, record);
+
+    // RCON 凭证 → settings K-V（AES-GCM）
+    if (config.openModCredential) {
+      setRconCredential(this.db, config.id, 'openmod', config.openModCredential);
+    }
+    if (config.rconPassword) {
+      setRconCredential(this.db, config.id, 'rocketmod', config.rconPassword);
+    }
+
+    // installDir 一律取全局（B2 §2.5：忽略客户端传入值，防多路径漂移）
+    const normalized: ServerConfig = { ...config, installDir: resolveInstallDir() };
     this.servers.set(config.id, {
       state: ServerState.STOPPED,
       activeOperation: { type: 'none' },
-      config,
+      config: normalized,
     });
 
-    // 注册到下游模块
-    this.a2sClient.register(config.id, '127.0.0.1', config.gamePort as unknown as number);
-    if (config.rconPassword) {
-      this.rconManager.register(config.id, {
-        host: '127.0.0.1',
-        gamePort: config.gamePort as unknown as number,
-        // v1: 用户填的是一个密码，优先作为 RocketMod 裸密码
-        // OpenMod 用户需通过 configureServer 单独设置 openModCredential
-        rocketModPassword: config.rconPassword,
-        ownerSteamId: config.ownerSteamId as string,
-      });
-    }
-
-    this.auditLog(config.id, 'server.create', { name: config.name });
+    this.a2sClient.register(config.id, '127.0.0.1', config.gamePort);
+    this.restoreRcon(config.id);
     logger.info({ serverId: config.id }, '服务器已创建');
   }
 
+  /**
+   * 更新实例配置。凭证变更 → settings K-V + 重新 register（B2 §3.3 缺口 2 修复）；
+   * 身份字段变更 → 写回 Commands.dat，保持目录真源同步。
+   *
+   * @throws {AppError} code=server-not-found, status=404 当实例不存在
+   */
   async configureServer(serverId: ServerId, patch: Partial<ServerConfig>): Promise<void> {
-    const existing = this.servers.get(serverId);
-    if (!existing) throw new Error(`服务器不存在: ${serverId}`);
+    const existing = this.ensureServer(serverId);
+    const updated = { ...existing.config, ...patch, installDir: resolveInstallDir() };
 
-    const updated = { ...existing.config, ...patch };
-    this.db
-      .prepare('UPDATE servers SET name = ?, game_port = ?, owner_steam_id = ?, updated_at = datetime(?) WHERE id = ?')
-      .run(updated.name, updated.gamePort, updated.ownerSteamId, 'now', serverId);
+    // 凭证变更 → 落 K-V，随后 restoreRcon 重新 register
+    if (patch.openModCredential !== undefined) {
+      setRconCredential(this.db, serverId, 'openmod', patch.openModCredential);
+    }
+    if (patch.rconPassword !== undefined) {
+      setRconCredential(this.db, serverId, 'rocketmod', patch.rconPassword);
+    }
+
+    // 身份字段变更 → 写回 Commands.dat
+    if (patch.name !== undefined || patch.gamePort !== undefined || patch.ownerSteamId !== undefined) {
+      const record = await this.configService.readCommandsDat(serverId);
+      if (patch.name !== undefined) record.known.Name = patch.name;
+      if (patch.gamePort !== undefined) record.known.Port = String(patch.gamePort);
+      if (patch.ownerSteamId !== undefined) record.known.Owner = patch.ownerSteamId;
+      await this.configService.writeCommandsDat(serverId, record);
+    }
 
     existing.config = updated;
     if (patch.gamePort != null) {
-      this.a2sClient.register(serverId, '127.0.0.1', patch.gamePort as unknown as number);
+      this.a2sClient.register(serverId, '127.0.0.1', patch.gamePort);
+    }
+    this.restoreRcon(serverId);
+    logger.info({ serverId }, '服务器配置已更新');
+  }
+
+  /**
+   * 删除实例（B2 §3.6）：RUNNING 先优雅 stop → 删目录（幂等）→ 删 RCON 凭证 K-V → unregister。
+   * 目录不存在时幂等返回（不抛错）。
+   *
+   * @param serverId - 实例 ID
+   */
+  async removeServer(serverId: ServerId): Promise<void> {
+    const entry = this.servers.get(serverId);
+    if (entry && entry.state !== ServerState.STOPPED) {
+      await this.stopInternal(serverId, '删除实例');
     }
 
-    this.auditLog(serverId, 'server.configure', patch);
-    logger.info({ serverId }, '服务器配置已更新');
+    try {
+      await fs.rm(resolveServerPath(serverId, ''), { recursive: true, force: true });
+    } catch { /* 目录不存在——幂等返回 */ }
+
+    deleteRconCredentials(this.db, serverId);
+    this.rconManager.unregister(serverId);
+    this.a2sClient.unregister(serverId);
+    this.servers.delete(serverId);
+    logger.info({ serverId }, '服务器已删除');
   }
 
   // ── 生命周期 ───────────────────────────────────────
@@ -172,7 +247,7 @@ export class ServerManager implements IServerManager {
     const entry = this.ensureServer(serverId);
 
     if (entry.activeOperation.type !== 'none') {
-      throw Object.assign(new Error(`操作冲突: ${entry.activeOperation.type}`), { status: 409 });
+      throw new AppError('operation-conflict', `操作冲突: ${entry.activeOperation.type}`, 409);
     }
 
     if (entry.state === ServerState.RUNNING) return;
@@ -182,13 +257,9 @@ export class ServerManager implements IServerManager {
 
     try {
       const { id, installDir } = entry.config;
-      if (!installDir) {
-        throw new Error('未配置服务器安装目录 (installDir)');
-      }
-      const command = `${installDir}/ServerHelper.sh`;
       const pid = await this.processSupervisor.spawn(
         id,
-        command,
+        `${installDir}/ServerHelper.sh`,
         [`+InternetServer/${id}`, '-ThreadedConsole'],
         installDir, // cwd = U3DS 安装根目录
       );
@@ -205,8 +276,6 @@ export class ServerManager implements IServerManager {
       } catch (err) {
         logger.warn({ serverId, err }, 'RCON 连接失败，服务仍在运行');
       }
-
-      this.auditLog(serverId, 'server.start', { pid });
     } catch (err) {
       logger.error({ serverId, err }, '启动失败');
       this.transition(serverId, ServerState.STOPPED);
@@ -220,7 +289,7 @@ export class ServerManager implements IServerManager {
     const entry = this.ensureServer(serverId);
 
     if (entry.activeOperation.type !== 'none') {
-      throw Object.assign(new Error(`操作冲突: ${entry.activeOperation.type}`), { status: 409 });
+      throw new AppError('operation-conflict', `操作冲突: ${entry.activeOperation.type}`, 409);
     }
 
     entry.activeOperation = { type: 'manual_stop', startedAt: new Date().toISOString() };
@@ -240,8 +309,6 @@ export class ServerManager implements IServerManager {
       await this.processSupervisor.waitForExit(serverId, SHUTDOWN_TIMEOUT);
       this.transition(serverId, ServerState.STOPPED);
       this.rconManager.disconnect(serverId);
-
-      this.auditLog(serverId, 'server.stop', { reason });
     } catch {
       // 进程未在超时内退出
       logger.warn({ serverId }, '停止超时，SIGKILL');
@@ -257,7 +324,7 @@ export class ServerManager implements IServerManager {
 
     // CLAUDE.md §4.7: restart 全过程由一个 activeOperation 覆盖，防止竞态
     if (entry.activeOperation.type !== 'none') {
-      throw Object.assign(new Error(`操作冲突: ${entry.activeOperation.type}`), { status: 409 });
+      throw new AppError('operation-conflict', `操作冲突: ${entry.activeOperation.type}`, 409);
     }
     entry.activeOperation = { type: 'manual_restart', startedAt: new Date().toISOString() };
 
@@ -266,15 +333,12 @@ export class ServerManager implements IServerManager {
       await this.stopInternal(serverId, reason);
       // 内部 start
       await this.startInternal(serverId);
-      this.auditLog(serverId, 'server.restart', { reason });
     } finally {
       entry.activeOperation = { type: 'none' };
     }
   }
 
-  /**
-   * 内部 stop——不检查 activeOperation（由 restart 统一管理）。
-   */
+  /** 内部 stop——不检查 activeOperation（由 restart / removeServer 统一管理）。 */
   private async stopInternal(serverId: ServerId, reason: string): Promise<void> {
     this.transition(serverId, ServerState.STOPPING);
 
@@ -293,9 +357,7 @@ export class ServerManager implements IServerManager {
     this.rconManager.disconnect(serverId);
   }
 
-  /**
-   * 内部 start——不检查 activeOperation（由 restart 统一管理）。
-   */
+  /** 内部 start——不检查 activeOperation（由 restart 统一管理）。 */
   private async startInternal(serverId: ServerId): Promise<void> {
     const entry = this.ensureServer(serverId);
     if (entry.state === ServerState.RUNNING) return;
@@ -303,8 +365,6 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STARTING);
 
     const { id, installDir } = entry.config;
-    if (!installDir) throw new Error('未配置服务器安装目录 (installDir)');
-
     const pid = await this.processSupervisor.spawn(
       id,
       `${installDir}/ServerHelper.sh`,
@@ -327,8 +387,6 @@ export class ServerManager implements IServerManager {
     this.rconManager.disconnect(serverId);
     this.transition(serverId, ServerState.STOPPED);
     entry.activeOperation = { type: 'none' };
-
-    this.auditLog(serverId, 'server.force_stop', {});
   }
 
   // ── Mod / Update (Phase 2: Mod apply 流水线) ─────────
@@ -343,26 +401,22 @@ export class ServerManager implements IServerManager {
    * ⑥ RCON `Shutdown 10 "<原因>"`
    * ⑦ waitForExit（30s 超时则 forceKill）
    * ⑧ spawn（走 startInternal + pollA2S）
-   * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + audit + final broadcast
+   * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
    *
    * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
    */
   async applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void> {
     const entry = this.ensureServer(serverId);
 
-    // 锁：与 restart 同模式，但 mod_apply 暴露给前端「应用变更」按钮
     if (entry.activeOperation.type !== 'none') {
-      throw Object.assign(new Error(`操作冲突: ${entry.activeOperation.type}`), { status: 409 });
+      throw new AppError('operation-conflict', `操作冲突: ${entry.activeOperation.type}`, 409);
     }
     entry.activeOperation = { type: 'mod_apply', startedAt: new Date().toISOString(), modIds: modIds as string[] };
 
     // 当前必须是 RUNNING（DEGRADED 也允许）才能 mod_apply
     if (entry.state !== ServerState.RUNNING && entry.state !== ServerState.DEGRADED) {
       entry.activeOperation = { type: 'none' };
-      throw Object.assign(
-        new Error(`Mod 应用要求服务器运行中，当前状态: ${entry.state}`),
-        { status: 409 },
-      );
+      throw new AppError('server-not-running', `Mod 应用要求服务器运行中，当前状态: ${entry.state}`, 409);
     }
 
     // 进度 helper
@@ -381,7 +435,7 @@ export class ServerManager implements IServerManager {
       // ① 备份
       announce('backing_up');
       try {
-        await this.configService.backup(serverId, 'Servers/' + serverId + '/Server/WorkshopDownloadConfig.json');
+        await this.configService.backup(serverId, 'Server/WorkshopDownloadConfig.json');
       } catch (err) {
         // 备份失败：文件可能还不存在（首次启动），降级为 warn，不阻塞
         logger.warn({ serverId, err }, 'WorkshopDownloadConfig.json 备份失败（文件可能不存在）');
@@ -400,7 +454,6 @@ export class ServerManager implements IServerManager {
       }
 
       // ④ 5 次倒计时广播（10s 间隔）——不真正等，只是发事件
-      // 注意：真实停下来等 Shutdown 用 A2S/RCON 超时；前端靠 mod_apply_progress 事件驱动 UI
       for (const remaining of [50, 40, 30, 20, 10]) {
         announce('countdown', remaining);
       }
@@ -447,7 +500,6 @@ export class ServerManager implements IServerManager {
         } catch { /* ignore */ }
       }
       announce('completed');
-      this.auditLog(serverId, 'mod.apply', { modIds: modIds as string[] });
       logger.info({ serverId, modCount: modIds.length }, 'Mod 变更流水线完成');
     } catch (err) {
       logger.error({ serverId, err }, 'Mod 变更流水线失败');
@@ -460,16 +512,16 @@ export class ServerManager implements IServerManager {
     }
   }
 
+  /** 更新 U3DS 二进制——Phase 3 卡 C 待实现（SteamCmdManager 已承担） */
   async updateServerBinaries(_installDir: string): Promise<void> {
-    // 卡 C（Phase 3）实装：spawn steamcmd + ... +validate
-    throw new Error('updateServerBinaries: Phase 3 卡 C 待实现');
+    throw new AppError('not-implemented', 'updateServerBinaries: Phase 3 待实现', 501);
   }
 
   // ── 内部方法 ────────────────────────────────────────
 
   private ensureServer(serverId: ServerId): RuntimeServerState {
     const entry = this.servers.get(serverId);
-    if (!entry) throw new Error(`服务器不存在: ${serverId}`);
+    if (!entry) throw new AppError('server-not-found', `服务器不存在: ${serverId}`, 404);
     return entry;
   }
 
@@ -478,11 +530,6 @@ export class ServerManager implements IServerManager {
     if (!entry) return;
     const from = entry.state;
     entry.state = to;
-
-    // 持久化
-    this.db
-      .prepare('UPDATE servers SET state = ?, updated_at = datetime(?) WHERE id = ?')
-      .run(to, 'now', serverId);
 
     // 广播
     try {
@@ -495,6 +542,19 @@ export class ServerManager implements IServerManager {
     } catch { /* 广播失败不影响主流程 */ }
 
     logger.info({ serverId, from, to }, '状态转换');
+  }
+
+  /** 从 settings K-V 恢复 RCON 凭证并 register（B2 §3.3 缺口 1 修复——面板重启后凭证不丢） */
+  private restoreRcon(serverId: ServerId): void {
+    const cfg = this.servers.get(serverId)?.config;
+    if (!cfg) return;
+    this.rconManager.register(serverId, {
+      host: '127.0.0.1',
+      gamePort: cfg.gamePort,
+      openModCredential: getRconCredential(this.db, serverId, 'openmod') ?? undefined,
+      rocketModPassword: getRconCredential(this.db, serverId, 'rocketmod') ?? undefined,
+      ownerSteamId: cfg.ownerSteamId,
+    });
   }
 
   private async pollA2S(serverId: ServerId): Promise<void> {
@@ -512,18 +572,6 @@ export class ServerManager implements IServerManager {
       await new Promise((r) => setTimeout(r, A2S_POLL_INTERVAL));
     }
     // CLAUDE.md §4.6: "超时 30 秒就报错"
-    throw new Error(`A2S 轮询超时 (${A2S_POLL_TIMEOUT / 1000}s): ${serverId}`);
-  }
-
-  private auditLog(serverId: ServerId, action: string, detail: Record<string, unknown>): void {
-    try {
-      this.db
-        .prepare(
-          'INSERT INTO audit_logs (server_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, datetime(?))',
-        )
-        .run(serverId, action, 'admin', JSON.stringify(detail), 'now');
-    } catch (err) {
-      logger.error({ err, serverId, action }, '审计日志写入失败');
-    }
+    throw new AppError('a2s-poll-timeout', `A2S 轮询超时 (${A2S_POLL_TIMEOUT / 1000}s): ${serverId}`, 504);
   }
 }

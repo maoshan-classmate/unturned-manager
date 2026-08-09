@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   ILogStreamer,
@@ -8,6 +7,7 @@ import type {
   IProcessSupervisor,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { resolveServerPath } from '../server/pathResolver.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -45,7 +45,6 @@ export class LogStreamer implements ILogStreamer {
   constructor(
     private broadcaster: IBroadcaster,
     private processSupervisor: IProcessSupervisor,
-    private db: Database.Database,
   ) {}
 
   startStreaming(serverId: ServerId): void {
@@ -168,11 +167,6 @@ export class LogStreamer implements ILogStreamer {
   // ── 路径 ──────────────────────────────────────────────
 
   private resolveLogsDir(serverId: ServerId): string | null {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-
-    if (!row?.install_dir) return null;
-    return path.join(row.install_dir, 'Servers', serverId, 'Logs');
+    return resolveServerPath(serverId, 'Logs');
   }
 }

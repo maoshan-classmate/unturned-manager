@@ -5,7 +5,7 @@ import { RconExecuteSchema } from '@unturned-manager/shared';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { getDb } from '../db/connection.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * 危险指令——需要前端 ConfirmDialog 确认后才允许执行。
@@ -62,20 +62,18 @@ export function createRconRouter(rconManager: IRconManager): Router {
 
       const result = await rconManager.execute(serverId as never, command);
 
-      // 危险指令审计日志
+      // 危险指令审计日志（ADR-0003 / T4：pino 承接，原 DB 写入删除）
       if (DANGEROUS_COMMANDS.has(cmdName)) {
-        try {
-          const db = getDb();
-          db.prepare(
-            'INSERT INTO audit_logs (server_id, action, actor, detail, ip_address, created_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))',
-          ).run(
+        logger.info(
+          {
             serverId,
-            `rcon.${cmdName}`,
-            'admin',
-            JSON.stringify({ command }),
-            req.ip ?? '',
-          );
-        } catch { /* 审计日志写入失败不影响主流程 */ }
+            action: `rcon.${cmdName}`,
+            actor: 'admin',
+            command,
+            ip: req.ip ?? '',
+          },
+          '危险指令已执行',
+        );
       }
 
       res.json({ data: { output: result } });

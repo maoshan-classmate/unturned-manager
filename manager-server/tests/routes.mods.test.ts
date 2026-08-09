@@ -15,6 +15,7 @@ import { createModsRouter } from '../src/routes/mods.js';
 import { createModBrowseRouter } from '../src/routes/mod-browse.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 import { setSetting } from '../src/modules/settings/settingsStorage.js';
+import { resolveInstallDir } from '../src/modules/server/pathResolver.js';
 
 let db: Database.Database;
 let app: express.Express;
@@ -65,13 +66,6 @@ beforeAll(async () => {
   db = new Database(':memory:');
   db.pragma('journal_mode = MEMORY');
   db.exec(`
-    CREATE TABLE servers (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, game_port INTEGER NOT NULL,
-      state TEXT NOT NULL DEFAULT 'STOPPED', install_dir TEXT NOT NULL,
-      rcon_port INTEGER, rcon_password_enc TEXT, owner_steam_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
     CREATE TABLE users (
       id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 1,
@@ -80,16 +74,6 @@ beforeAll(async () => {
     CREATE TABLE refresh_tokens (
       jti TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL,
       revoked_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE config_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL,
-      file_path TEXT NOT NULL, content TEXT NOT NULL, version INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE audit_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT,
-      action TEXT NOT NULL, actor TEXT NOT NULL DEFAULT 'admin',
-      detail TEXT, ip_address TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE settings (
       key TEXT PRIMARY KEY, value_enc TEXT NOT NULL,
@@ -166,6 +150,9 @@ beforeAll(async () => {
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
 
+  // ADR-0003 B2：实例身份=目录存在性。清理 MyServer——防上次 run 残留 Commands.dat 误触发 409
+  await fs.rm(path.join(resolveInstallDir(), 'Servers', 'MyServer'), { recursive: true, force: true });
+
   container = buildContainer(db);
   setAuthService(container.authService as import('../src/modules/auth/AuthService.js').AuthService);
 
@@ -195,6 +182,8 @@ beforeAll(async () => {
 
   // 创建 MyServer（POST /api/servers 会触发 ServerManager.createServer，
   // 该方法会 INSERT DB + set 到 in-memory Map，listServers 立即可见）
+  // installDir 传 resolveInstallDir()（全局 .test-install）——routes local resolveInstallDir 读
+  // ServerManager.config.installDir，Config/Workshop 服务读 config.installDir，三者必须指向同一根
   await request(app)
     .post('/api/servers')
     .set('Authorization', `Bearer ${accessToken}`)
@@ -203,7 +192,7 @@ beforeAll(async () => {
       name: 'Test',
       gamePort: 27015,
       ownerSteamId: '76561198000000001',
-      installDir: '/tmp/unturned-routes-test',
+      installDir: resolveInstallDir(),
     })
     .expect(201);
 });
@@ -283,9 +272,8 @@ describe('routes/mods · 8 端点', () => {
 
   it('POST /mods/download → 200 + modTitle（steamcmd mocked）', async () => {
     // steamCmd.downloadWorkshopItem 已全局 mock（beforeAll）
-    // 写 staging acf 让 parseStagingItem 拿到
-    const installDir = '/tmp/unturned-routes-test';
-    const stagingDir = path.join(installDir, 'Servers', 'MyServer', 'Workshop', 'staging', 'steamapps', 'workshop');
+    // 写 staging acf 让 parseStagingItem 拿到（路径根 = resolveInstallDir()，与 WorkshopAcfService 读取一致）
+    const stagingDir = path.join(resolveInstallDir(), 'Servers', 'MyServer', 'Workshop', 'staging', 'steamapps', 'workshop');
     await fs.mkdir(stagingDir, { recursive: true });
     await fs.writeFile(
       path.join(stagingDir, 'appworkshop_1110390.acf'),
@@ -312,8 +300,8 @@ describe('routes/mods · 8 端点', () => {
     expect(res.body.data.fileId).toBe('333');
     expect(res.body.data.modTitle).toBe('Mod 333');  // GetDetails mock 动态返回
     expect(res.body.data.acfItem.size).toBe(12345678);
-    // 清理
-    await fs.rm(installDir, { recursive: true, force: true });
+    // 清理（只清本项目测试目录，不影响其他测试的 fixture）
+    await fs.rm(path.join(resolveInstallDir(), 'Servers', 'MyServer', 'Workshop', 'staging'), { recursive: true, force: true });
   });
 
   it('POST /mods/download → 400 无 fileId', async () => {
@@ -336,11 +324,10 @@ describe('routes/mods · 8 端点', () => {
     expect(res.body.data.status).toBe('running');
   });
 
-  it('DELETE /mods/:fileId → 409 server_busy（默认 STOPPED 但 activeOperation 为 none 应成功）', async () => {
+  it('DELETE /mods/:fileId → 200（STOPPED + activeOperation=none 应成功）', async () => {
     // 实际：STOPPED + activeOperation=none → delete 应成功
-    // 写一个假的 acf 让它有东西可删
-    const installDir = '/tmp/unturned-delete-test';
-    const serverDir = path.join(installDir, 'Servers', 'MyServer');
+    // 写一个假的 acf 让它有东西可删（路径根 = resolveInstallDir()，与 WorkshopDeleteService 读取一致）
+    const serverDir = path.join(resolveInstallDir(), 'Servers', 'MyServer');
     const workshopDir = path.join(serverDir, 'Workshop', 'steamapps', 'workshop');
     const contentDir = path.join(workshopDir, 'content', '1110390', '444');
     await fs.mkdir(contentDir, { recursive: true });
@@ -370,9 +357,7 @@ describe('routes/mods · 8 端点', () => {
       'utf-8',
     );
 
-    // 改 install_dir
-    db.prepare('UPDATE servers SET install_dir = ? WHERE id = ?').run(installDir, 'MyServer');
-
+    // ADR-0003 / T2：不再 UPDATE servers.install_dir——Config/Workshop 服务走全局 config.installDir
     const res = await request(app)
       .delete('/api/servers/MyServer/mods/444')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -380,14 +365,13 @@ describe('routes/mods · 8 端点', () => {
     expect(res.body.data.success).toBe(true);
     expect(res.body.data.removedFrom).toEqual(expect.arrayContaining(['acf', 'content', 'file_ids']));
 
-    // 清理
-    await fs.rm(installDir, { recursive: true, force: true });
+    // 清理（只清本项目测试目录）
+    await fs.rm(serverDir, { recursive: true, force: true });
   });
 
   it('GET /mods/downloaded → 200 + 已下载列表', async () => {
     // 复用 delete 测试的 fixture — 但已被删除，单独再写一个
-    const installDir = '/tmp/unturned-downloaded-test';
-    const serverDir = path.join(installDir, 'Servers', 'MyServer');
+    const serverDir = path.join(resolveInstallDir(), 'Servers', 'MyServer');
     const workshopDir = path.join(serverDir, 'Workshop', 'steamapps', 'workshop');
     await fs.mkdir(workshopDir, { recursive: true });
     await fs.writeFile(
@@ -406,7 +390,6 @@ describe('routes/mods · 8 端点', () => {
 }`,
       'utf-8',
     );
-    db.prepare('UPDATE servers SET install_dir = ? WHERE id = ?').run(installDir, 'MyServer');
 
     const res = await request(app)
       .get('/api/servers/MyServer/mods/downloaded')
@@ -416,6 +399,6 @@ describe('routes/mods · 8 端点', () => {
     expect(res.body.data[0].fileId).toBe('555');
     expect(res.body.data[0].title).toBe('Mod 555');  // GetDetails mock 动态返回
 
-    await fs.rm(installDir, { recursive: true, force: true });
+    await fs.rm(serverDir, { recursive: true, force: true });
   });
 });

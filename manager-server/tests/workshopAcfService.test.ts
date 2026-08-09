@@ -1,49 +1,40 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { WorkshopAcfService } from '../src/modules/workshop/WorkshopAcfService.js';
+import { resolveInstallDir } from '../src/modules/server/pathResolver.js';
 import type { IConfigService, ServerId, WorkshopFileId } from '@unturned-manager/shared';
 
 // ─── Mock IConfigService ──────────────────────────────────
 
 function makeConfigService(): IConfigService {
-  // IConfigService 接口在单测中只需要 install_dir → filePath 映射，
-  // 实际 writeWorkshopFileIds / readWorkshopConfig 由 AcfService 通过 db 自身管，
-  // 只需要不抛错即可。
+  // IConfigService 接口在单测中只需不抛错；AcfService 的路径真源已由 pathResolver 接管
   return {} as IConfigService;
 }
 
 // ─── 测试基础设施 ────────────────────────────────────────
 
-let tmpDir: string;
-let db: Database.Database;
+// serverId 唯一（并行 forks pool 下各文件目录隔离，避免互踩 .test-install）
+const SERVER_ID = 'AcfServer' as ServerId;
+/** fixture 根 = config.installDir（ADR-0003 / T2：真源全局，与 pathResolver 读取一致） */
+const installDir = resolveInstallDir();
+const serverDir = path.join(installDir, 'Servers', SERVER_ID);
+const workshopDir = path.join(serverDir, 'Workshop', 'steamapps', 'workshop');
+const acfPath = path.join(workshopDir, 'appworkshop_1110390.acf');
+
 let acfService: WorkshopAcfService;
-const SERVER_ID = 'TestServer' as ServerId;
 
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unturned-acf-test-'));
-  const installDir = path.join(tmpDir, 'U3DS');
-  const serverDir = path.join(installDir, 'Servers', SERVER_ID);
-  const workshopDir = path.join(serverDir, 'Workshop', 'steamapps', 'workshop');
+  // 清理 + 重建本测试的 Servers/<id> 目录（避免跨用例残留）
+  await fs.rm(serverDir, { recursive: true, force: true });
   await fs.mkdir(workshopDir, { recursive: true });
 
-  db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE servers (
-      id TEXT PRIMARY KEY,
-      install_dir TEXT NOT NULL
-    );
-  `);
-  db.prepare('INSERT INTO servers (id, install_dir) VALUES (?, ?)').run(SERVER_ID, installDir);
-
-  acfService = new WorkshopAcfService(db, makeConfigService());
+  // T2 后构造器单参（configService）——不再依赖 db
+  acfService = new WorkshopAcfService(makeConfigService());
 });
 
 afterEach(async () => {
-  db.close();
-  await fs.rm(tmpDir, { recursive: true, force: true });
+  await fs.rm(serverDir, { recursive: true, force: true });
 });
 
 // ─── parse ──────────────────────────────────────────────
@@ -56,7 +47,6 @@ describe('WorkshopAcfService · parse', () => {
   });
 
   it('解析真实格式 acf', async () => {
-    const acfPath = path.join(tmpDir, 'U3DS', 'Servers', SERVER_ID, 'Workshop', 'steamapps', 'workshop', 'appworkshop_1110390.acf');
     await fs.writeFile(
       acfPath,
       `"AppWorkshop"
@@ -96,7 +86,6 @@ describe('WorkshopAcfService · parse', () => {
 describe('WorkshopAcfService · write/addItem/removeItem', () => {
   it('write 原子写 + 创建备份', async () => {
     // 先创建原 acf
-    const acfPath = path.join(tmpDir, 'U3DS', 'Servers', SERVER_ID, 'Workshop', 'steamapps', 'workshop', 'appworkshop_1110390.acf');
     await fs.writeFile(acfPath, '"AppWorkshop"\n{\n  "appid"\t\t"1110390"\n}\n', 'utf-8');
 
     await acfService.write(SERVER_ID, {
@@ -129,15 +118,19 @@ describe('WorkshopAcfService · write/addItem/removeItem', () => {
       timeupdated: 1722612345,
       size: 12345678,
     });
-    // 模拟磁盘写失败——把 install_dir 改成不可写位置
-    db.prepare('UPDATE servers SET install_dir = ? WHERE id = ?').run('/proc/0/cannot-write', SERVER_ID);
-    await expect(
-      acfService.addItem('Other' as ServerId, fileId, {
-        fileId,
-        timeupdated: 999,
-        size: 1,
-      }),
-    ).rejects.toThrow();
+    // 模拟磁盘写失败——mock fs.writeFile 抛错（无 DB 可注入 install_dir 后，改用 IO 层 mock）
+    const spy = vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(new Error('ENOSPC'));
+    try {
+      await expect(
+        acfService.addItem('Other' as ServerId, fileId, {
+          fileId,
+          timeupdated: 999,
+          size: 1,
+        }),
+      ).rejects.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('removeItem 后 listItems 不包含该项', async () => {
@@ -206,7 +199,7 @@ describe('WorkshopAcfService · parseStagingItem', () => {
   });
 
   it('staging acf 存在且包含该 mod 时返回元数据', async () => {
-    const stagingAcfDir = path.join(tmpDir, 'U3DS', 'Servers', SERVER_ID, 'Workshop', 'staging', 'steamapps', 'workshop');
+    const stagingAcfDir = path.join(serverDir, 'Workshop', 'staging', 'steamapps', 'workshop');
     await fs.mkdir(stagingAcfDir, { recursive: true });
     const stagingAcfPath = path.join(stagingAcfDir, 'appworkshop_1110390.acf');
     await fs.writeFile(

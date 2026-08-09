@@ -10,6 +10,10 @@ export interface IServerManager {
 
   createServer(config: ServerConfig): Promise<void>;
   configureServer(serverId: ServerId, patch: Partial<ServerConfig>): Promise<void>;
+  /** 删除实例（ADR-0003 B2 §3.6）：先 stop → 删目录 → 删 RCON 凭证 K-V → unregister。目录不存在幂等返回。 */
+  removeServer(serverId: ServerId): Promise<void>;
+  /** 返回状态非 STOPPED 的实例（SteamCmdManager 活跃实例探活用，替代 DB state 列） */
+  listActiveServerIds(): ServerId[];
 
   start(serverId: ServerId): Promise<void>;
   stop(serverId: ServerId, reason: string): Promise<void>;

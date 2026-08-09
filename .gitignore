@@ -35,6 +35,9 @@ manager-web/playwright-report/
 # Backups (server-side auto-backups, never tracked)
 manager-server/backups/
 
+# Test fixtures (ADR-0003: INSTALL_DIR 指向本项目临时目录，绝不入库)
+manager-server/.test-install/
+
 # Debug
 *.stackdump
 

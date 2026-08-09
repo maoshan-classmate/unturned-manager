@@ -1,7 +1,5 @@
 import fs from 'fs/promises';
-import { createReadStream, createWriteStream } from 'fs';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   IFilesService,
@@ -11,6 +9,8 @@ import type {
   WritableFileStream,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { resolveInstallDir } from '../server/pathResolver.js';
+import { AppError } from '../../utils/AppError.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -40,21 +40,9 @@ const TEXT_EXTENSIONS = new Set([
 export class FilesService implements IFilesService {
   constructor(
     private fileLock: IFileLockProvider,
-    private db: Database.Database,
   ) {}
 
   // ── 路径解析 + 安全校验 ──────────────────────────────
-
-  private resolveInstallDir(serverId: ServerId): string {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置安装路径`);
-    }
-    return row.install_dir;
-  }
 
   /** 安全路径校验：realpath + 白名单前缀 + 防穿越 */
   private async validatePath(
@@ -63,23 +51,23 @@ export class FilesService implements IFilesService {
   ): Promise<string> {
     // 禁止非法字符
     if (relativePath.includes('\x00') || relativePath.includes('..')) {
-      throw Object.assign(new Error('路径包含非法字符'), { statusCode: 403 });
+      throw new AppError('path_invalid', '路径包含非法字符', 403);
     }
 
-    const installDir = this.resolveInstallDir(serverId);
+    const installDir = resolveInstallDir();
     const baseDir = path.join(installDir, 'Servers', serverId);
     const absPath = path.resolve(baseDir, relativePath);
 
     // 前缀校验
     if (!absPath.startsWith(path.resolve(baseDir))) {
-      throw Object.assign(new Error('路径越界'), { statusCode: 403 });
+      throw new AppError('path_forbidden', '路径越界', 403);
     }
 
     // realpath 解析（文件不存在时跳过——用于 write/create 操作）
     try {
       const real = await fs.realpath(absPath);
       if (!real.startsWith(path.resolve(baseDir))) {
-        throw Object.assign(new Error('符号链接越界'), { statusCode: 403 });
+        throw new AppError('path_forbidden', '符号链接越界', 403);
       }
       return real;
     } catch (err: unknown) {
@@ -183,9 +171,9 @@ export class FilesService implements IFilesService {
     const newPath = path.join(dir, newName);
 
     // 校验新路径仍在白名单内
-    const baseDir = path.join(this.resolveInstallDir(serverId), 'Servers', serverId);
-    if (!path.resolve(newPath).startsWith(path.resolve(baseDir))) {
-      throw Object.assign(new Error('重命名目标越界'), { statusCode: 403 });
+    const baseDir = path.resolve(resolveInstallDir(), 'Servers', serverId);
+    if (!path.resolve(newPath).startsWith(baseDir)) {
+      throw new AppError('path_forbidden', '重命名目标越界', 403);
     }
 
     await fs.rename(absPath, newPath);
@@ -209,7 +197,7 @@ export class FilesService implements IFilesService {
 
   createUploadStream(_serverId: ServerId, _relativePath: string, _size: number): WritableFileStream {
     // Sprint 2: 暂不实现分块上传
-    throw new Error('分块上传将在后续 Sprint 实现');
+    throw new AppError('not_implemented', '分块上传将在后续 Sprint 实现', 501);
   }
 
   // ── 脱敏 ──────────────────────────────────────────────

@@ -3,15 +3,18 @@ import type { CommandsDatRecord, ConfigTxtRecord, WorkshopConfig } from '../type
 
 export interface IConfigService {
   readCommandsDat(serverId: ServerId): Promise<CommandsDatRecord>;
-  writeCommandsDat(serverId: ServerId, config: CommandsDatRecord, expectedVersion?: number): Promise<void>;
+  /**
+   * @param expectedMtime - 文件 mtime（Unix ms），客户端读时拿到、服务端写时比对——mtime 不一致抛 AppError('config_conflict')
+   */
+  writeCommandsDat(serverId: ServerId, config: CommandsDatRecord, expectedMtime?: number): Promise<void>;
 
   readConfigTxt(serverId: ServerId): Promise<ConfigTxtRecord>;
-  writeConfigTxt(serverId: ServerId, entries: ConfigTxtRecord, expectedVersion?: number): Promise<void>;
+  writeConfigTxt(serverId: ServerId, entries: ConfigTxtRecord, expectedMtime?: number): Promise<void>;
 
   // WorkshopDownloadConfig.json — 面板只写 File_IDs（CLAUDE.md §4.4）
   // 其他字段只读展示；写前自动备份
   readWorkshopConfig(serverId: ServerId): Promise<WorkshopConfig>;
-  writeWorkshopFileIds(serverId: ServerId, fileIds: WorkshopFileId[], expectedVersion?: number): Promise<void>;
+  writeWorkshopFileIds(serverId: ServerId, fileIds: WorkshopFileId[], expectedMtime?: number): Promise<void>;
 
   backup(serverId: ServerId, filePath: string): Promise<string>;
   /**

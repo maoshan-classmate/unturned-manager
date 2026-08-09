@@ -23,10 +23,13 @@
 DROP TABLE IF EXISTS workshop_mods;
 DROP TABLE IF EXISTS workshop_creators;
 
--- 保留的表（5 个）：
---   - servers         服务端实例
+-- 本迁移执行时的保留表（6 个）：
+--   - servers         服务端实例（ADR-0003 B2 后由目录扫描取代，005 中删除）
 --   - users           用户
 --   - refresh_tokens  JWT 刷新
---   - config_snapshots 配置文件快照
---   - audit_logs      审计
+--   - config_snapshots 配置文件快照（005 中删除）
+--   - audit_logs      审计（005 中删除）
 --   - settings        全局设置（含 webapi_key 等）
+--
+-- 注：ADR-0003 B2（005-drop-servers-tables.sql）最终将表收敛到 3 张——
+--   users / refresh_tokens / settings。实例身份 = 目录存在性，不再落库。

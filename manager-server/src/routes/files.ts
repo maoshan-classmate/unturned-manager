@@ -8,7 +8,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import path from 'path';
-import { getDb } from '../db/connection.js';
+import { resolveInstallDir } from '../modules/server/pathResolver.js';
 
 const PathQuerySchema = z.object({ path: z.string().default('') });
 const ReadQuerySchema = z.object({ path: z.string().min(1, '文件路径不能为空') });
@@ -23,13 +23,7 @@ function readQueryString(v: unknown): string {
 
 /** 解析并校验文件路径白名单（与 FilesService 一致：realpath + 白名单前缀） */
 async function resolveValidatedPath(serverId: string, relativePath: string): Promise<string> {
-  const row = (getDb()
-    .prepare('SELECT install_dir FROM servers WHERE id = ?')
-    .get(serverId) as { install_dir: string } | undefined);
-  if (!row?.install_dir) {
-    throw new AppError('server_not_found', `服务器 ${serverId} 不存在或未配置安装路径`, 404);
-  }
-  const baseDir = path.resolve(row.install_dir, 'Servers', serverId);
+  const baseDir = path.resolve(resolveInstallDir(), 'Servers', serverId);
   const absPath = path.resolve(baseDir, relativePath);
   if (!absPath.startsWith(baseDir + path.sep) && absPath !== baseDir) {
     throw new AppError('path_forbidden', '路径越界', 403);

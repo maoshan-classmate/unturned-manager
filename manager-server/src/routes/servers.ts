@@ -59,5 +59,13 @@ export function createServersRouter(serverManager: IServerManager): Router {
     }),
   );
 
+  router.delete(
+    '/:id',
+    asyncHandler(async (req, res) => {
+      await serverManager.removeServer(req.params.id as never);
+      res.json({ data: { message: '服务端已删除' } });
+    }),
+  );
+
   return router;
 }

@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   WorkshopFileId,
@@ -10,14 +9,15 @@ import type {
   ModDeleteResult,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { resolveServerPath } from '../server/pathResolver.js';
 
 const U3DS_APPID = '1110390';
 
 /** content 目录（U3DS 实际加载的 mod 位置） */
 const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
 
-/** WorkshopDownloadConfig.json 相对 install_dir 的路径（注意：在 Servers/<ID>/Server/ 下，不在 Workshop/ 下） */
-const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverId, 'Server', 'WorkshopDownloadConfig.json');
+/** WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径（注意：在 Server/ 下，不在 Workshop/ 下） */
+const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Server', 'WorkshopDownloadConfig.json');
 
 /**
  * Mod 删除服务——acf + content + File_IDs 三处同步
@@ -26,7 +26,6 @@ const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverI
  */
 export class WorkshopDeleteService implements IWorkshopDeleteService {
   constructor(
-    private db: Database.Database,
     private acfService: IWorkshopAcfService,
     private configService: IConfigService,
   ) {}
@@ -109,16 +108,10 @@ export class WorkshopDeleteService implements IWorkshopDeleteService {
   // ── 私有 ────────────────────────────────────────────
 
   /**
-   * 从 DB 查 install_dir，拼 content/<id>/ 绝对路径
+   * 拼 content/<id>/ 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
    */
-  private async resolveContentDir(serverId: ServerId, fileId: WorkshopFileId): Promise<string> {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置 install_dir`);
-    }
-    return path.join(row.install_dir, 'Servers', serverId, CONTENT_SUBDIR, fileId);
+  private resolveContentDir(serverId: ServerId, fileId: WorkshopFileId): string {
+    return resolveServerPath(serverId, path.join(CONTENT_SUBDIR, fileId));
   }
 
   private async fileExists(p: string): Promise<boolean> {

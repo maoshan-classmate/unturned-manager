@@ -2,7 +2,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import yaml from 'js-yaml';
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   WorkshopFileId,
@@ -15,6 +14,8 @@ import type {
   ConfigEntry,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { resolveServerPath } from '../server/pathResolver.js';
+import { AppError } from '../../utils/AppError.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -37,42 +38,54 @@ const BACKUP_DIR = 'backups';
 
 export class ConfigService implements IConfigService {
   constructor(
-    private db: Database.Database,
     private fileLock: IFileLockProvider,
   ) {}
 
   // ── 路径解析 ──────────────────────────────────────────
 
-  /** 从 DB 查 install_dir，拼接服务器文件路径 */
+  /** 拼接服务器文件路径（ADR-0003 / T2：真源 = config.installDir 全局） */
   private resolvePath(serverId: ServerId, relativePath: string): string {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置安装路径`);
-    }
-    return path.join(row.install_dir, relativePath);
+    return resolveServerPath(serverId, relativePath);
   }
 
-  // ── 原子写 + 备份 + 乐观锁 ────────────────────────────
+  // ── 原子写 + 备份 + mtime 乐观锁 ───────────────────────
 
+  /**
+   * 原子写配置文件，附带 mtime 乐观锁（ADR-0003 / T3）。
+   *
+   * - expectedMtime 提供时，先 stat 磁盘文件 mtime；不匹配抛 AppError('config_conflict', 409)
+   * - 不提供 expectedMtime 时跳过检查（兼容初始化场景）
+   *
+   * @throws {AppError} code=config_conflict, status=409 当 mtime 不一致
+   */
   private async atomicWrite(
     serverId: ServerId,
     filePath: string,
     content: string,
-    expectedVersion?: number,
+    expectedMtime?: number,
   ): Promise<void> {
     const absPath = this.resolvePath(serverId, filePath);
 
-    // 乐观锁检查
-    if (expectedVersion !== undefined) {
-      const current = this.db
-        .prepare('SELECT version FROM config_snapshots WHERE server_id = ? AND file_path = ? ORDER BY version DESC LIMIT 1')
-        .get(serverId, filePath) as { version: number } | undefined;
+    // mtime 乐观锁检查
+    if (expectedMtime !== undefined) {
+      let currentMtime: number;
+      try {
+        const stat = await fs.stat(absPath);
+        currentMtime = Math.floor(stat.mtimeMs);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          // 文件不存在但客户端要求 mtime——视为冲突
+          throw new AppError('config_conflict', '配置文件不存在，无法基于 mtime 写入', 409);
+        }
+        throw err;
+      }
 
-      if (current && current.version !== expectedVersion) {
-        throw new Error('VERSION_CONFLICT');
+      if (currentMtime !== expectedMtime) {
+        throw new AppError(
+          'config_conflict',
+          `配置文件已被修改：磁盘 mtime=${currentMtime}, 客户端预期=${expectedMtime}`,
+          409,
+        );
       }
     }
 
@@ -88,13 +101,7 @@ export class ConfigService implements IConfigService {
       await fs.writeFile(tmpPath, content, 'utf-8');
       await fs.rename(tmpPath, absPath);
 
-      // 更新版本快照
-      const currentVersion = expectedVersion ?? 0;
-      this.db
-        .prepare('INSERT INTO config_snapshots (server_id, file_path, content, version) VALUES (?, ?, ?, ?)')
-        .run(serverId, filePath, content, currentVersion + 1);
-
-      logger.info({ serverId, filePath, version: currentVersion + 1 }, '配置文件已写入');
+      logger.info({ serverId, filePath }, '配置文件已写入');
     } finally {
       this.fileLock.release(absPath, 'ConfigService');
     }
@@ -116,7 +123,7 @@ export class ConfigService implements IConfigService {
   // ── Commands.dat ──────────────────────────────────────
 
   async readCommandsDat(serverId: ServerId): Promise<CommandsDatRecord> {
-    const absPath = this.resolvePath(serverId, 'Servers/' + serverId + '/Server/Commands.dat');
+    const absPath = this.resolvePath(serverId, 'Server/Commands.dat');
 
     let content: string;
     try {
@@ -126,63 +133,21 @@ export class ConfigService implements IConfigService {
       return { known: {}, unknown: {}, comments: [] };
     }
 
-    return this.parseCommandsDat(content);
+    return parseCommandsDatContent(content);
   }
 
   async writeCommandsDat(
     serverId: ServerId,
     record: CommandsDatRecord,
-    expectedVersion?: number,
+    expectedMtime?: number,
   ): Promise<void> {
     const serialized = this.serializeCommandsDat(record);
     await this.atomicWrite(
       serverId,
-      'Servers/' + serverId + '/Server/Commands.dat',
+      'Server/Commands.dat',
       serialized,
-      expectedVersion,
+      expectedMtime,
     );
-  }
-
-  /** 行解析：每行 `key value` 或 `key`（flag），`#`/`;` 为注释 */
-  private parseCommandsDat(content: string): CommandsDatRecord {
-    const known: Record<string, string> = {};
-    const unknown: Record<string, string> = {};
-    const comments: string[] = [];
-
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-
-      // 空行跳过
-      if (!trimmed) continue;
-
-      // 注释行
-      if (trimmed.startsWith('#') || trimmed.startsWith(';')) {
-        comments.push(trimmed);
-        continue;
-      }
-
-      // 解析 key value
-      const spaceIdx = trimmed.indexOf(' ');
-      if (spaceIdx === -1) {
-        // 无空格：flag 型或单键
-        const key = trimmed;
-        if (KNOWN_KEYS.has(key)) {
-          known[key] = '';
-        } else {
-          unknown[key] = '';
-        }
-      } else {
-        const key = trimmed.slice(0, spaceIdx);
-        const value = trimmed.slice(spaceIdx + 1).trim();
-        if (KNOWN_KEYS.has(key)) {
-          known[key] = value;
-        } else {
-          unknown[key] = value;
-        }
-      }
-    }
-
-    return { known, unknown, comments };
   }
 
   /** 序列化：comments → known → unknown，保留原始顺序 */
@@ -218,7 +183,7 @@ export class ConfigService implements IConfigService {
   // ── Config.txt ────────────────────────────────────────
 
   async readConfigTxt(serverId: ServerId): Promise<ConfigTxtRecord> {
-    const absPath = this.resolvePath(serverId, 'Servers/' + serverId + '/Config.txt');
+    const absPath = this.resolvePath(serverId, 'Config.txt');
 
     let content: string;
     try {
@@ -234,14 +199,14 @@ export class ConfigService implements IConfigService {
   async writeConfigTxt(
     serverId: ServerId,
     record: ConfigTxtRecord,
-    expectedVersion?: number,
+    expectedMtime?: number,
   ): Promise<void> {
     const serialized = this.serializeConfigTxt(record);
     await this.atomicWrite(
       serverId,
-      'Servers/' + serverId + '/Config.txt',
+      'Config.txt',
       serialized,
-      expectedVersion,
+      expectedMtime,
     );
   }
 
@@ -332,7 +297,7 @@ export class ConfigService implements IConfigService {
   async readWorkshopConfig(serverId: ServerId): Promise<WorkshopConfig> {
     const absPath = this.resolvePath(
       serverId,
-      'Servers/' + serverId + '/Server/WorkshopDownloadConfig.json',
+      'Server/WorkshopDownloadConfig.json',
     );
 
     try {
@@ -356,7 +321,7 @@ export class ConfigService implements IConfigService {
   async writeWorkshopFileIds(
     serverId: ServerId,
     fileIds: WorkshopFileId[],
-    expectedVersion?: number,
+    expectedMtime?: number,
   ): Promise<void> {
     // 读取现有配置，只替换 File_IDs
     const current = await this.readWorkshopConfig(serverId);
@@ -364,9 +329,9 @@ export class ConfigService implements IConfigService {
 
     await this.atomicWrite(
       serverId,
-      'Servers/' + serverId + '/Server/WorkshopDownloadConfig.json',
+      'Server/WorkshopDownloadConfig.json',
       JSON.stringify(current, null, 2),
-      expectedVersion,
+      expectedMtime,
     );
   }
 
@@ -407,7 +372,7 @@ export class ConfigService implements IConfigService {
   ): Promise<Record<string, unknown>> {
     const absPath = this.resolvePath(
       serverId,
-      'Servers/' + serverId + '/openmod/plugins/' + pluginId + '/config.yaml',
+      'openmod/plugins/' + pluginId + '/config.yaml',
     );
 
     try {
@@ -427,7 +392,7 @@ export class ConfigService implements IConfigService {
     const yamlStr = yaml.dump(config, { indent: 2 });
     await this.atomicWrite(
       serverId,
-      'Servers/' + serverId + '/openmod/plugins/' + pluginId + '/config.yaml',
+      'openmod/plugins/' + pluginId + '/config.yaml',
       yamlStr,
     );
   }
@@ -440,7 +405,7 @@ export class ConfigService implements IConfigService {
   ): Promise<Record<string, unknown>> {
     const absPath = this.resolvePath(
       serverId,
-      'Servers/' + serverId + '/Rocket/Plugins/' + pluginName + '/Configuration.xml',
+      'Rocket/Plugins/' + pluginName + '/Configuration.xml',
     );
 
     try {
@@ -462,8 +427,59 @@ export class ConfigService implements IConfigService {
     const xmlStr = builder.build(config) as string;
     await this.atomicWrite(
       serverId,
-      'Servers/' + serverId + '/Rocket/Plugins/' + pluginName + '/Configuration.xml',
+      'Rocket/Plugins/' + pluginName + '/Configuration.xml',
       xmlStr,
     );
   }
+}
+
+// ─── Commands.dat 行解析（导出纯函数——ServerDiscovery 复用）──────────────
+
+/**
+ * 解析 Commands.dat 文本（ADR-0003 B2 §3.1：ServerDiscovery 身份读取复用）。
+ * 行语义：`key value` 或单独 `key`（flag 型）；`#`/`;` 起注释。
+ * 硬约束：保留未知键——面板不能删除不认识的指令（CLAUDE.md §4.3）。
+ *
+ * @param content - Commands.dat 原始文本
+ * @returns 结构化记录 { known, unknown, comments }
+ */
+export function parseCommandsDatContent(content: string): CommandsDatRecord {
+  const known: Record<string, string> = {};
+  const unknown: Record<string, string> = {};
+  const comments: string[] = [];
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+
+    // 空行跳过
+    if (!trimmed) continue;
+
+    // 注释行
+    if (trimmed.startsWith('#') || trimmed.startsWith(';')) {
+      comments.push(trimmed);
+      continue;
+    }
+
+    // 解析 key value
+    const spaceIdx = trimmed.indexOf(' ');
+    if (spaceIdx === -1) {
+      // 无空格：flag 型或单键
+      const key = trimmed;
+      if (KNOWN_KEYS.has(key)) {
+        known[key] = '';
+      } else {
+        unknown[key] = '';
+      }
+    } else {
+      const key = trimmed.slice(0, spaceIdx);
+      const value = trimmed.slice(spaceIdx + 1).trim();
+      if (KNOWN_KEYS.has(key)) {
+        known[key] = value;
+      } else {
+        unknown[key] = value;
+      }
+    }
+  }
+
+  return { known, unknown, comments };
 }

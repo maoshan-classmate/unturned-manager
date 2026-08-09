@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ServerId,
   WorkshopFileId,
@@ -11,6 +10,7 @@ import type {
 } from '@unturned-manager/shared';
 import { parseVdf, serializeVdf, VdfParseError, VdfSerializeError } from './VdfParser.js';
 import { logger } from '../../utils/logger.js';
+import { resolveServerPath } from '../server/pathResolver.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -41,7 +41,6 @@ const ACF_ROOT_KEY = 'AppWorkshop';
  */
 export class WorkshopAcfService implements IWorkshopAcfService {
   constructor(
-    private db: Database.Database,
     private configService: IConfigService,
   ) {}
 
@@ -182,29 +181,17 @@ export class WorkshopAcfService implements IWorkshopAcfService {
   // ─── 私有 ────────────────────────────────────────────
 
   /**
-   * 从 servers 表查 install_dir，拼 acf 绝对路径
+   * acf 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
    */
-  private async resolveAcfPath(serverId: ServerId): Promise<string> {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置 install_dir`);
-    }
-    return path.join(row.install_dir, 'Servers', serverId, WORKSHOP_ACF_REL_PATH);
+  private resolveAcfPath(serverId: ServerId): string {
+    return resolveServerPath(serverId, WORKSHOP_ACF_REL_PATH);
   }
 
   /**
-   * staging acf 路径
+   * staging acf 绝对路径
    */
-  private async resolveStagingAcfPath(serverId: ServerId): Promise<string> {
-    const row = this.db
-      .prepare('SELECT install_dir FROM servers WHERE id = ?')
-      .get(serverId) as { install_dir: string } | undefined;
-    if (!row?.install_dir) {
-      throw new Error(`Server ${serverId} 未配置 install_dir`);
-    }
-    return path.join(row.install_dir, 'Servers', serverId, STAGING_ACF_REL_PATH);
+  private resolveStagingAcfPath(serverId: ServerId): string {
+    return resolveServerPath(serverId, STAGING_ACF_REL_PATH);
   }
 
   /**

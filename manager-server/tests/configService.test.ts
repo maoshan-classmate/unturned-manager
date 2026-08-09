@@ -1,62 +1,30 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
-import Database from 'better-sqlite3';
 import { ConfigService } from '../src/modules/config/ConfigService.js';
 import { FileLockProvider } from '../src/modules/filelock/FileLockProvider.js';
+import { resolveInstallDir } from '../src/modules/server/pathResolver.js';
 import type { ServerId } from '@unturned-manager/shared';
 
-function makeDb(): Database.Database {
-  const db = new Database(':memory:');
-  db.pragma('journal_mode = MEMORY');
-  db.exec(`
-    CREATE TABLE servers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      game_port INTEGER NOT NULL,
-      state TEXT NOT NULL DEFAULT 'STOPPED',
-      install_dir TEXT NOT NULL,
-      rcon_port INTEGER,
-      rcon_password_enc TEXT,
-      owner_steam_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE config_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      server_id TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      content TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-  return db;
-}
-
 describe('ConfigService — 5 种格式往返', () => {
-  let tmpDir: string;
-  let db: Database.Database;
   let svc: ConfigService;
-  const serverId: ServerId = 'TestServer' as ServerId;
+  // serverId 唯一（并行 forks pool 下各文件目录隔离，避免互踩 .test-install）
+  const serverId: ServerId = 'CfgServer' as ServerId;
+  /** fixture 根 = config.installDir（ADR-0003 / T2：真源全局，测试 fixture 必须写到同一处） */
+  const serverDir = path.join(resolveInstallDir(), 'Servers', serverId);
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'um-cfg-'));
-    db = makeDb();
-    db.prepare(
-      'INSERT INTO servers (id, name, game_port, install_dir) VALUES (?, ?, ?, ?)',
-    ).run('TestServer', 'TestServer', 27015, tmpDir);
+    // 清理 + 重建本测试的 Servers/<id> 目录（避免跨用例残留）
+    await fs.rm(serverDir, { recursive: true, force: true });
+    await fs.mkdir(path.join(serverDir, 'Server'), { recursive: true });
 
-    // 创建 Servers/<id>/ 子目录
-    await fs.mkdir(path.join(tmpDir, 'Servers', 'TestServer', 'Server'), { recursive: true });
-
-    svc = new ConfigService(db as never, new FileLockProvider());
+    // T2 后构造器单参（fileLock）——不再依赖 db
+    svc = new ConfigService(new FileLockProvider());
   });
 
   it('Commands.dat: read → write → read 等价', async () => {
     const input = 'Name MyServer\nPort 27015\nCheats\n# comment\nUnknownKey customValue\n';
-    await fs.writeFile(path.join(tmpDir, 'Servers', 'TestServer', 'Server', 'Commands.dat'), input);
+    await fs.writeFile(path.join(serverDir, 'Server', 'Commands.dat'), input);
 
     const first = await svc.readCommandsDat(serverId);
     expect(first.known.Name).toBe('MyServer');
@@ -73,25 +41,31 @@ describe('ConfigService — 5 种格式往返', () => {
     expect(second.unknown.UnknownKey).toBe('customValue');
   });
 
-  it('Commands.dat: 乐观锁 version 冲突抛 VERSION_CONFLICT', async () => {
-    const relativePath = 'Servers/TestServer/Server/Commands.dat';
-    await fs.writeFile(path.join(tmpDir, relativePath), 'Name A\n');
+  it('Commands.dat: 乐观锁 mtime 冲突抛 config_conflict(409)', async () => {
+    const absPath = path.join(serverDir, 'Server', 'Commands.dat');
+    await fs.writeFile(absPath, 'Name A\n');
+    const st = await fs.stat(absPath);
+    const expectedMtime = Math.floor(st.mtimeMs);
 
+    // 用当前 mtime 写 → 成功（mtime 未变）
     await svc.writeCommandsDat(serverId, {
       known: { Name: 'A' },
       unknown: {},
       comments: [],
-    }, 0); // expectedVersion=0 → 当前是 0 → 写成功，版本变 1
+    }, expectedMtime);
 
+    // 外部改文件 → mtime 变化 → 再用旧 mtime 写 → 冲突
+    await new Promise((r) => setTimeout(r, 20));
+    await fs.writeFile(absPath, 'Name C\n');
     await expect(
-      svc.writeCommandsDat(serverId, { known: { Name: 'B' }, unknown: {}, comments: [] }, 0),
-    ).rejects.toThrow('VERSION_CONFLICT');
+      svc.writeCommandsDat(serverId, { known: { Name: 'B' }, unknown: {}, comments: [] }, expectedMtime),
+    ).rejects.toMatchObject({ code: 'config_conflict', status: 409 });
   });
 
   it('Config.txt: sections Record 往返', async () => {
     // ConfigService parseConfigTxt 只认 '=' 或 ':' 分隔（当前实现），所以测试用等号
     const input = '[Browser]\nLogin_Token=abc123\nDesc_Full=hello\n\n[Server]\nVAC_Secure=true\n';
-    await fs.writeFile(path.join(tmpDir, 'Servers', 'TestServer', 'Config.txt'), input);
+    await fs.writeFile(path.join(serverDir, 'Config.txt'), input);
 
     const first = await svc.readConfigTxt(serverId);
     expect(first.sections.Browser?.entries).toContainEqual(
@@ -115,10 +89,10 @@ describe('ConfigService — 5 种格式往返', () => {
       Shutdown_Update_Detected_Message: 'msg1',
       Shutdown_Kick_Message: 'msg2',
     });
-    await fs.writeFile(path.join(tmpDir, 'Servers', 'TestServer', 'Server', 'WorkshopDownloadConfig.json'), input);
+    await fs.writeFile(path.join(serverDir, 'Server', 'WorkshopDownloadConfig.json'), input);
 
     await svc.writeWorkshopFileIds(serverId, ['3', '4']);
-    const content = await fs.readFile(path.join(tmpDir, 'Servers', 'TestServer', 'Server', 'WorkshopDownloadConfig.json'), 'utf-8');
+    const content = await fs.readFile(path.join(serverDir, 'Server', 'WorkshopDownloadConfig.json'), 'utf-8');
     const parsed = JSON.parse(content);
     expect(parsed.File_IDs).toEqual(['3', '4']);
     expect(parsed.Should_Monitor_Updates).toBe(true);
@@ -126,19 +100,18 @@ describe('ConfigService — 5 种格式往返', () => {
   });
 
   it('OpenMod YAML: 写入+读回等价', async () => {
-    await fs.mkdir(path.join(tmpDir, 'Servers', 'TestServer', 'openmod', 'plugins', 'Economy'), { recursive: true });
-    const svc2 = svc;
+    await fs.mkdir(path.join(serverDir, 'openmod', 'plugins', 'Economy'), { recursive: true });
 
     const input = { Rate: 100, Enabled: true, Name: 'economy' };
-    await svc2.writeOpenModConfig(serverId, 'Economy', input);
-    const back = await svc2.readOpenModConfig(serverId, 'Economy');
+    await svc.writeOpenModConfig(serverId, 'Economy', input);
+    const back = await svc.readOpenModConfig(serverId, 'Economy');
     expect(back.Rate).toBe(100);
     expect(back.Enabled).toBe(true);
     expect(back.Name).toBe('economy');
   });
 
   it('Rocket XML: 写入+读回关键字段', async () => {
-    await fs.mkdir(path.join(tmpDir, 'Servers', 'TestServer', 'Rocket', 'Plugins', 'BasicChat'), { recursive: true });
+    await fs.mkdir(path.join(serverDir, 'Rocket', 'Plugins', 'BasicChat'), { recursive: true });
     const input = { PluginSettings: { MaxMessageLength: 200, AllowLinks: false } };
     await svc.writeRocketModConfig(serverId, 'BasicChat', input);
     const back = await svc.readRocketModConfig(serverId, 'BasicChat');

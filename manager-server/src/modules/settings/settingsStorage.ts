@@ -46,3 +46,38 @@ export function deleteSteamWebApiKey(db: Database.Database): void {
 export function hasSteamWebApiKey(db: Database.Database): boolean {
   return getSetting(db, STEAM_WEBAPI_KEY) != null;
 }
+
+// ─── RCON 凭证 K-V（ADR-0003 B2 §3.3 / ADR-17 双协议分离）─────────────────
+// key 约定：`rcon:<ServerID>:openmod` / `rcon:<ServerID>:rocketmod`
+// 值走 setSetting 的 AES-GCM 加密。打印日志时绝不能带凭证内容。
+
+/** RCON 双协议（ADR-17：OpenMod=SteamID:密码，RocketMod=裸密码） */
+export type RconProtocol = 'openmod' | 'rocketmod';
+
+const rconKey = (serverId: string, protocol: RconProtocol): string =>
+  `rcon:${serverId}:${protocol}`;
+
+/** 读取某实例某协议的 RCON 凭证；未配置返回 null */
+export function getRconCredential(
+  db: Database.Database,
+  serverId: string,
+  protocol: RconProtocol,
+): string | null {
+  return getSetting(db, rconKey(serverId, protocol));
+}
+
+/** 写入某实例某协议的 RCON 凭证（AES-GCM 加密落库） */
+export function setRconCredential(
+  db: Database.Database,
+  serverId: string,
+  protocol: RconProtocol,
+  value: string,
+): void {
+  setSetting(db, rconKey(serverId, protocol), value);
+}
+
+/** 删除某实例全部 RCON 凭证（removeServer 时调用） */
+export function deleteRconCredentials(db: Database.Database, serverId: string): void {
+  deleteSetting(db, rconKey(serverId, 'openmod'));
+  deleteSetting(db, rconKey(serverId, 'rocketmod'));
+}

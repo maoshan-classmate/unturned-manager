@@ -7,6 +7,7 @@ export * from './types/domain.js';
 
 // Contracts
 export type { IServerManager } from './contracts/server.js';
+export type { IServerDiscovery, DiscoveredServer } from './contracts/discovery.js';
 export type { IConfigService } from './contracts/config.js';
 export type { IRconManager, RconServerConfig } from './contracts/rcon.js';
 export type { IProcessSupervisor } from './contracts/process.js';

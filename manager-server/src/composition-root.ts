@@ -23,6 +23,7 @@ import { ProcessSupervisor } from './modules/process/ProcessSupervisor.js';
 import { A2SClient } from './modules/a2s/A2SClient.js';
 import { RconManager } from './modules/rcon/RconManager.js';
 import { ServerManager } from './modules/server/ServerManager.js';
+import { ServerDiscovery } from './modules/server/ServerDiscovery.js';
 import { ConfigService } from './modules/config/ConfigService.js';
 import { FilesService } from './modules/files/FilesService.js';
 import { SteamCmdManager } from './modules/steamcmd/SteamCmdManager.js';
@@ -63,18 +64,35 @@ export function buildContainer(db: Database.Database): AppContainer {
   const broadcaster = wsBroadcaster;  // 单例，已在 index.ts 中 init
 
   // ── 核心域层 ──────────────────────────────────────────
-  const configService = new ConfigService(db, fileLock);
-  const filesService = new FilesService(fileLock, db);
-  const steamCmdManager = new SteamCmdManager(db, processSupervisor, broadcaster);
-  const workshopMeta = new WorkshopMetadataService(db);
-  const workshopAcf = new WorkshopAcfService(db, configService);
-  const workshopApply = new WorkshopApplyService(db, workshopAcf, configService, broadcaster);
-  const workshopDelete = new WorkshopDeleteService(db, workshopAcf, configService);
-  const logStreamer = new LogStreamer(broadcaster, processSupervisor, db);
+  const configService = new ConfigService(fileLock);
+  const filesService = new FilesService(fileLock);
 
-  // ServerManager（聚合根）
-  const serverManager = new ServerManager(
-    db, processSupervisor, rconManager, a2sClient, configService, broadcaster, workshopApply,
+  // SteamCmdManager 依赖 ServerManager 活跃实例探活（B2 §3.4：DB state 列已删）——
+  // 用延迟绑定闭包打破构造循环：先声明 serverManager，SteamCmdManager 的 activeProbe 在
+  // 闭包内解引用，构造完成后再赋值。
+  let serverManager: ServerManager | undefined;
+  const steamCmdManager = new SteamCmdManager(
+    processSupervisor,
+    broadcaster,
+    undefined,
+    () => serverManager?.listActiveServerIds() ?? [],
+  );
+  const workshopMeta = new WorkshopMetadataService(db);
+  const workshopAcf = new WorkshopAcfService(configService);
+  const workshopApply = new WorkshopApplyService(workshopAcf, configService, broadcaster);
+  const workshopDelete = new WorkshopDeleteService(workshopAcf, configService);
+  const logStreamer = new LogStreamer(broadcaster, processSupervisor);
+
+  // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
+  serverManager = new ServerManager(
+    db,
+    new ServerDiscovery(),
+    processSupervisor,
+    rconManager,
+    a2sClient,
+    configService,
+    broadcaster,
+    workshopApply,
   );
 
   // AuthService

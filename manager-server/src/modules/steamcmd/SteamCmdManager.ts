@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import type Database from 'better-sqlite3';
 import type {
   ISteamCmdManager,
   IProcessSupervisor,
   IBroadcaster,
   SteamCmdStatus,
+  ServerId,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { AppError } from '../../utils/AppError.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -37,11 +38,17 @@ export class SteamCmdManager implements ISteamCmdManager {
   /** 当前正在跑的 steamcmd 子进程 serverId 集合（防竞态） */
   private activeJobs = new Set<string>();
 
+  /**
+   * @param processSupervisor - 进程编排
+   * @param broadcaster - WS 广播
+   * @param steamCmdPath - SteamCMD 可执行路径（测试注入；生产用 DEFAULT_PATHS 探测）
+   * @param activeProbe - 活跃实例探活器（ADR-0003 B2 §3.4：DB state 列已删，改依赖 ServerManager 内存态）
+   */
   constructor(
-    private db: Database.Database,
     private processSupervisor: IProcessSupervisor,
     private broadcaster: IBroadcaster,
     private steamCmdPath?: string,
+    private activeProbe: () => ServerId[] = () => [],
   ) {}
 
   async getStatus(): Promise<SteamCmdStatus> {
@@ -72,17 +79,17 @@ export class SteamCmdManager implements ISteamCmdManager {
    * 4. 等待进程退出；失败 throw
    */
   async updateU3DS(installDir: string): Promise<void> {
-    // 前置检查：所有该 install_dir 的 server 必须 STOPPED（架构 spec §1.4）
-    const runningServers = this.db
-      .prepare("SELECT id FROM servers WHERE state != 'STOPPED' AND install_dir = ?")
-      .all(installDir) as Array<{ id: string }>;
-
-    if (runningServers.length > 0) {
-      const ids = runningServers.map((s) => s.id).join(', ');
-      throw new Error(`以下服务端仍在运行，无法更新 U3DS：${ids}。请先停止所有实例。`);
+    // 前置检查：任何活跃实例必须 STOPPED（架构 spec §1.4；DB state 列已删 → 内存态探活）
+    const activeIds = this.activeProbe();
+    if (activeIds.length > 0) {
+      throw new AppError(
+        'servers-active',
+        `以下服务端仍在运行，无法更新 U3DS：${activeIds.join(', ')}。请先停止所有实例。`,
+        409,
+      );
     }
     if (this.activeJobs.has(installDir)) {
-      throw new Error('该 installDir 已有 SteamCMD 任务在跑');
+      throw new AppError('steamcmd-busy', '该 installDir 已有 SteamCMD 任务在跑', 409);
     }
 
     const exePath = this.steamCmdPath ?? this.findSteamCmd();

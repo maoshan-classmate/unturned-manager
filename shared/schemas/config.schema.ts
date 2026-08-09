@@ -55,7 +55,8 @@ export const WorkshopConfigSchema = z.object({
 
 export const WriteWorkshopFileIdsSchema = z.object({
   fileIds: z.array(z.string()).min(1, '至少需要一个 Mod ID'),
-  expectedVersion: z.number().int().positive().optional(),
+  /** 文件 mtime（Unix ms），客户端读时拿到、服务端写时比对 */
+  expectedMtime: z.number().nonnegative().optional(),
 });
 
 // ─── Write payloads ─────────────────────────────────────
@@ -64,10 +65,12 @@ export const WriteCommandsDatSchema = z.object({
   known: z.record(z.string(), z.string()),
   unknown: z.record(z.string(), z.string()),
   comments: z.array(z.string()),
-  expectedVersion: z.number().int().positive().optional(),
+  /** 文件 mtime（Unix ms），客户端读时拿到、服务端写时比对 */
+  expectedMtime: z.number().nonnegative().optional(),
 });
 
 export const WriteConfigTxtSchema = z.object({
   sections: z.record(z.string(), ConfigSectionSchema),
-  expectedVersion: z.number().int().positive().optional(),
+  /** 文件 mtime（Unix ms），客户端读时拿到、服务端写时比对 */
+  expectedMtime: z.number().nonnegative().optional(),
 });

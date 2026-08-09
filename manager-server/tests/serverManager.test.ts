@@ -10,6 +10,7 @@ import {
   type IA2SClient,
   type IConfigService,
   type IBroadcaster,
+  type IServerDiscovery,
   type ServerEvent,
   type ServerId,
   type ActiveOperation,
@@ -20,30 +21,20 @@ import {
 function makeDb(): Database.Database {
   const db = new Database(':memory:');
   db.pragma('journal_mode = MEMORY');
+  // ADR-0003 B2：只保留 settings 表（ServerManager 仅用于 RCON 凭证 K-V，不再读写 servers）
   db.exec(`
-    CREATE TABLE servers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      game_port INTEGER NOT NULL,
-      state TEXT NOT NULL DEFAULT 'STOPPED',
-      install_dir TEXT NOT NULL,
-      rcon_port INTEGER,
-      rcon_password_enc TEXT,
-      owner_steam_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CREATE TABLE settings (
+      key TEXT PRIMARY KEY, value_enc TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE audit_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      server_id TEXT,
-      action TEXT NOT NULL,
-      actor TEXT NOT NULL DEFAULT 'admin',
-      detail TEXT,
-      ip_address TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
   return db;
+}
+
+function makeMockDiscovery(): IServerDiscovery {
+  return {
+    scanSync: vi.fn(() => []),
+  };
 }
 
 function makeMockProcess(): IProcessSupervisor {
@@ -134,6 +125,7 @@ describe('ServerManager — 状态机', () => {
   let cfg: IConfigService;
   let bcast: IBroadcaster & { events: ServerEvent[] };
   let mgr: ServerManager;
+  let discovery: IServerDiscovery;
 
   beforeEach(async () => {
     db = makeDb();
@@ -142,18 +134,19 @@ describe('ServerManager — 状态机', () => {
     a2s = makeMockA2S();
     cfg = makeMockConfig();
     bcast = makeMockBroadcaster();
-    mgr = new ServerManager(db as never, proc, rcon, a2s, cfg, bcast);
+    discovery = makeMockDiscovery();
+    mgr = new ServerManager(db as never, discovery, proc, rcon, a2s, cfg, bcast);
   });
 
   it('createServer 写入 DB + STOPPED', async () => {
     await mgr.createServer({
-      id: 'MyServer' as ServerId,
+      id: 'SMTest' as ServerId,
       name: 'Test',
       gamePort: 27015,
       ownerSteamId: '76561198000000001',
       installDir: '/opt/unturned',
     });
-    expect(mgr.getState('MyServer' as ServerId)).toBe(ServerState.STOPPED);
+    expect(mgr.getState('SMTest' as ServerId)).toBe(ServerState.STOPPED);
     const list = await mgr.listServers();
     expect(list).toHaveLength(1);
   });
@@ -245,7 +238,8 @@ describe('ServerManager — activeOperation 锁', () => {
     const a2s = makeMockA2S();
     const cfg = makeMockConfig();
     const bcast = makeMockBroadcaster();
-    const mgr = new ServerManager(db as never, proc, rcon, a2s, cfg, bcast);
+    const discovery = makeMockDiscovery();
+    const mgr = new ServerManager(db as never, discovery, proc, rcon, a2s, cfg, bcast);
 
     await mgr.createServer({
       id: 'S1' as ServerId, name: 'S1', gamePort: 27015,
