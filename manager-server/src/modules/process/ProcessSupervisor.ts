@@ -1,8 +1,11 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, exec, type ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
+import { promisify } from 'util';
+import os from 'os';
 import type { ServerId } from '@unturned-manager/shared';
 import type { IProcessSupervisor } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
+import { buildChildProcessEnvironment } from '../../utils/childProcessEnvironment.js';
 
 interface ManagedProcess {
   process: ChildProcess;
@@ -14,20 +17,46 @@ type StdoutCallback = (line: string) => void;
 type CrashCallback = (serverId: ServerId, exitCode: number | null) => void;
 
 const DEFAULT_SHUTDOWN_TIMEOUT = 30_000;
-const FORCE_KILL_GRACE = 5_000;
+
+// ─── T6 三段关停时长（抄 GSM TerminalManager.ts:2082-2137 forceKillProcess）───
+
+/** 关停各阶段等待时长（可注入——测试用短时长避免真实等待） */
+export interface TerminateTimings {
+  /** SIGINT 等待时长 ms（默认 2000） */
+  sigint: number;
+  /** SIGTERM 等待时长 ms（默认 2000） */
+  sigterm: number;
+  /** SIGKILL 等待时长 ms（默认 1000） */
+  sigkill: number;
+  /** Win taskkill 等待时长 ms（默认 1000） */
+  taskkill: number;
+}
+
+const DEFAULT_TIMINGS: TerminateTimings = {
+  sigint: 2_000,
+  sigterm: 2_000,
+  sigkill: 1_000,
+  taskkill: 1_000,
+};
+
+const execAsync = promisify(exec);
 
 /**
- * U3DS 进程生命周期管理器。
+ * U3DS 进程生命周期管理器（ADR-0003 B2 T6 对齐 GSM 现状）。
  *
- * - 通过 child_process.spawn 启动 ServerHelper.sh
+ * - 通过 child_process.spawn 启动启动脚本（detached 进程组，非 win32）
  * - 维护 ServerId → ChildProcess 的映射
- * - 支持优雅关停（SIGTERM → waitForExit → SIGKILL）
+ * - 关停走 GSM 三段：SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s
+ *   （进程组杀：非 win32 `process.kill(-pid, signal)`）
+ * - 子进程环境剥离面板 secret（JWT_SECRET / ENCRYPTION_KEY）
  * - stdout 行事件 + 崩溃回调
  */
 export class ProcessSupervisor implements IProcessSupervisor {
   private processes = new Map<ServerId, ManagedProcess>();
   private stdoutCallbacks = new Map<ServerId, StdoutCallback[]>();
   private crashCallbacks: CrashCallback[] = [];
+
+  constructor(private timings: TerminateTimings = DEFAULT_TIMINGS) {}
 
   // ── spawn ────────────────────────────────────────────
 
@@ -42,10 +71,24 @@ export class ProcessSupervisor implements IProcessSupervisor {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false, // 安全：不经过 Shell 解析
+      // T6: 进程组——非 win32 起进程组，便于 -pid 整组杀（抄 GSM TerminalManager.ts:728）
+      detached: os.platform() !== 'win32',
+      // T6: 剥离面板 secret（抄 GSM utils/childProcessEnvironment.ts:1-14）
+      env: buildChildProcessEnvironment(),
     });
 
     const entry: ManagedProcess = { process: child, pid: child.pid!, serverId };
     this.processes.set(serverId, entry);
+
+    // T6: 进程组验证（抄 GSM TerminalManager.ts:761-768）
+    if (os.platform() !== 'win32' && child.pid) {
+      try {
+        process.kill(-child.pid, 0);
+        logger.info({ serverId, pid: child.pid }, '进程组设置成功');
+      } catch (err) {
+        logger.warn({ serverId, err }, '进程组设置失败');
+      }
+    }
 
     // stdout → 行事件
     if (child.stdout) {
@@ -96,23 +139,19 @@ export class ProcessSupervisor implements IProcessSupervisor {
 
   // ── lifecycle ────────────────────────────────────────
 
-  async gracefulShutdown(serverId: ServerId, timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT): Promise<void> {
+  /** 优雅关停——GSM 三段（SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s）。 */
+  async gracefulShutdown(serverId: ServerId, _timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT): Promise<void> {
     const entry = this.processes.get(serverId);
     if (!entry) {
       logger.warn({ serverId }, 'gracefulShutdown: 没有运行中的进程');
       return;
     }
 
-    logger.info({ serverId, timeoutMs }, '发送 SIGTERM 优雅关停');
-    entry.process.kill('SIGTERM');
-
-    try {
-      await this.waitForExit(serverId, timeoutMs - FORCE_KILL_GRACE);
-      logger.info({ serverId }, '进程优雅退出');
-    } catch {
-      logger.warn({ serverId }, '进程未在超时内退出，强制 kill');
-      this.forceKill(serverId);
+    const exited = await this.terminateProcess(entry, { graceful: true });
+    if (!exited) {
+      logger.error({ serverId, pid: entry.pid }, '优雅关停未确认退出');
     }
+    this.processes.delete(serverId);
   }
 
   waitForExit(serverId: ServerId, timeoutMs: number): Promise<void> {
@@ -121,30 +160,27 @@ export class ProcessSupervisor implements IProcessSupervisor {
       return Promise.resolve();
     }
 
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`等待进程退出超时: ${serverId} (${timeoutMs}ms)`));
-      }, timeoutMs);
-
-      entry.process.on('exit', () => {
-        clearTimeout(timer);
-        resolve();
-      });
+    return this.waitChildExit(entry, timeoutMs).then((exited) => {
+      if (!exited) {
+        throw new Error(`等待进程退出超时: ${serverId} (${timeoutMs}ms)`);
+      }
     });
   }
 
+  /** 强制停止——跳过优雅段，直接 SIGKILL 1s + Win taskkill 兜底。 */
   forceKill(serverId: ServerId): void {
     const entry = this.processes.get(serverId);
     if (!entry) {
       return;
     }
     logger.warn({ serverId, pid: entry.pid }, '强制 SIGKILL');
-    try {
-      entry.process.kill('SIGKILL');
-    } catch {
-      // 进程可能已退出
-    }
-    this.processes.delete(serverId);
+
+    void this.terminateProcess(entry, { graceful: false }).then((exited) => {
+      if (!exited) {
+        logger.error({ serverId, pid: entry.pid }, '强杀后仍未确认退出');
+      }
+      this.processes.delete(serverId);
+    });
   }
 
   isRunning(serverId: ServerId): boolean {
@@ -177,5 +213,113 @@ export class ProcessSupervisor implements IProcessSupervisor {
       this.forceKill(id);
     }
     this.crashCallbacks.length = 0;
+  }
+
+  // ── T6 内部：GSM 三段关停 + 进程组杀 ─────────────────
+
+  /**
+   * 逐级终止进程（抄 GSM TerminalManager.ts:2082-2137 forceKillProcess）。
+   *
+   * @param entry - 托管进程
+   * @param options.graceful - true=完整三段（SIGINT→SIGTERM→SIGKILL）；false=跳过优雅段直接 SIGKILL
+   * @returns 是否在终止期限内确认退出
+   */
+  private async terminateProcess(
+    entry: ManagedProcess,
+    options: { graceful: boolean },
+  ): Promise<boolean> {
+    if (this.hasProcessExited(entry)) return true;
+    const { pid, serverId } = entry;
+
+    if (options.graceful) {
+      this.signalToProcess(entry, 'SIGINT');
+      if (await this.waitChildExit(entry, this.timings.sigint)) return true;
+      this.logTerminationStep(serverId, pid, 'SIGINT 未响应，尝试 SIGTERM');
+
+      this.signalToProcess(entry, 'SIGTERM');
+      if (await this.waitChildExit(entry, this.timings.sigterm)) return true;
+      this.logTerminationStep(serverId, pid, 'SIGTERM 未响应，尝试 SIGKILL');
+    }
+
+    this.signalToProcess(entry, 'SIGKILL');
+    if (await this.waitChildExit(entry, this.timings.sigkill)) return true;
+
+    // Win 兜底：taskkill /F /T /PID（GSM :2124-2133）
+    if (os.platform() === 'win32' && pid) {
+      try {
+        await execAsync(`taskkill /F /T /PID ${pid}`, { timeout: 3000 });
+      } catch (err) {
+        logger.warn({ serverId, err }, 'taskkill 终止进程失败');
+      }
+      if (await this.waitChildExit(entry, this.timings.taskkill)) return true;
+    }
+
+    logger.error({ serverId, pid }, '进程在终止期限内仍未确认退出');
+    return false;
+  }
+
+  /** 进程组发信号（抄 GSM sendSignalToPtyProcessGroup :2055-2075）：非 win32 向 -pid，否则 child.kill。 */
+  private signalToProcess(entry: ManagedProcess, signal: NodeJS.Signals): void {
+    const { process: child, pid } = entry;
+    if (os.platform() !== 'win32' && pid) {
+      try {
+        process.kill(-pid, signal);
+        logger.info({ serverId: entry.serverId, pid }, `已向进程组发送 ${signal}: -${pid}`);
+        return;
+      } catch (err) {
+        logger.warn({ serverId: entry.serverId, err }, `向进程组发送 ${signal} 失败，尝试主进程`);
+      }
+    }
+    try {
+      child.kill(signal);
+    } catch {
+      // 进程可能已退出
+    }
+  }
+
+  /** 进程是否已退出（抄 GSM hasChildProcessExited :2004-2022）：exitCode/signalCode 或 kill(pid,0) ESRCH。 */
+  private hasProcessExited(entry: ManagedProcess): boolean {
+    const { process: child, pid } = entry;
+    if (child.exitCode !== null && child.exitCode !== undefined) return true;
+    if (child.signalCode !== null && child.signalCode !== undefined) return true;
+    if (!pid) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === 'ESRCH';
+    }
+  }
+
+  /** 等待进程退出（抄 GSM waitForChildProcessExit :2024-2053）——监听 exit+close，超时复查探活。 */
+  private waitChildExit(entry: ManagedProcess, timeoutMs: number): Promise<boolean> {
+    if (this.hasProcessExited(entry)) return Promise.resolve(true);
+
+    return new Promise((resolve) => {
+      const child = entry.process;
+      let settled = false;
+      let timer: NodeJS.Timeout;
+      const finish = (exited: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.removeListener('exit', onExit);
+        child.removeListener('close', onExit);
+        resolve(exited);
+      };
+      const onExit = () => finish(true);
+
+      child.once('exit', onExit);
+      child.once('close', onExit);
+      timer = setTimeout(() => finish(this.hasProcessExited(entry)), timeoutMs);
+      timer.unref?.();
+      if (this.hasProcessExited(entry)) {
+        finish(true);
+      }
+    });
+  }
+
+  private logTerminationStep(serverId: ServerId, pid: number, msg: string): void {
+    logger.warn({ serverId, pid }, msg);
   }
 }

@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import {
   ServerManager,
 } from '../src/modules/server/ServerManager.js';
+import { resolveInstallDir } from '../src/modules/server/pathResolver.js';
 import {
   ServerState,
   type IProcessSupervisor,
@@ -15,6 +16,12 @@ import {
   type ServerId,
   type ActiveOperation,
 } from '@unturned-manager/shared';
+
+// T6: mock 启动脚本探测——避免 Windows 上真实 detectStartScript 返回 null 抛 500
+vi.mock('../src/modules/server/startScript.js', () => ({
+  detectStartScript: vi.fn(async () => 'ServerHelper.sh'),
+  ensureStartScriptExecutable: vi.fn(async () => {}),
+}));
 
 // ─── Mocks ────────────────────────────────────────────────
 
@@ -247,5 +254,83 @@ describe('ServerManager — activeOperation 锁', () => {
     });
     await mgr.start('S1' as ServerId);
     expect(mgr.getActiveOperation('S1' as ServerId).type).toBe('none');
+  });
+});
+
+describe('ServerManager — T6 启动脚本 + 崩溃 5s 重启', () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function setup() {
+    const db = makeDb();
+    const proc = makeMockProcess();
+    const rcon = makeMockRcon();
+    const a2s = makeMockA2S();
+    const cfg = makeMockConfig();
+    const bcast = makeMockBroadcaster();
+    const discovery = makeMockDiscovery();
+    const mgr = new ServerManager(db as never, discovery, proc, rcon, a2s, cfg, bcast);
+    return { mgr, proc };
+  }
+
+  it('start 经 spawnU3DS：ServerHelper.sh → 多实例参数 +InternetServer/<id>', async () => {
+    const { mgr, proc } = await setup();
+    await mgr.createServer({
+      id: 'T1' as ServerId, name: 'T1', gamePort: 27015,
+      ownerSteamId: '76561198000000001', installDir: '/opt/unturned',
+    });
+    await mgr.start('T1' as ServerId);
+    const dir = resolveInstallDir();
+    expect(proc.spawn).toHaveBeenCalledWith(
+      'T1' as ServerId,
+      `${dir}/ServerHelper.sh`,
+      ['+InternetServer/T1', '-ThreadedConsole'],
+      dir,
+    );
+  });
+
+  it('崩溃（exitCode≠0）→ 5s 后自动重启（spawn 调 2 次）', async () => {
+    vi.useFakeTimers();
+    const { mgr, proc } = await setup();
+    await mgr.createServer({
+      id: 'T2' as ServerId, name: 'T2', gamePort: 27015,
+      ownerSteamId: '76561198000000001', installDir: '/opt/unturned',
+    });
+    await mgr.start('T2' as ServerId);
+    expect(proc.spawn).toHaveBeenCalledTimes(1);
+    const onCrash = vi.mocked(proc.onCrash).mock.calls[0][0];
+    onCrash('T2' as ServerId, 1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(proc.spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('exitCode===0（RCON 优雅退出）→ 不重启', async () => {
+    vi.useFakeTimers();
+    const { mgr, proc } = await setup();
+    await mgr.createServer({
+      id: 'T3' as ServerId, name: 'T3', gamePort: 27015,
+      ownerSteamId: '76561198000000001', installDir: '/opt/unturned',
+    });
+    await mgr.start('T3' as ServerId);
+    const onCrash = vi.mocked(proc.onCrash).mock.calls[0][0];
+    onCrash('T3' as ServerId, 0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(proc.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('activeOperation 非 none（用户操作期间退出）→ 不重启', async () => {
+    vi.useFakeTimers();
+    const { mgr, proc } = await setup();
+    await mgr.createServer({
+      id: 'T4' as ServerId, name: 'T4', gamePort: 27015,
+      ownerSteamId: '76561198000000001', installDir: '/opt/unturned',
+    });
+    const promise = mgr.start('T4' as ServerId);
+    // start 进行中（activeOperation=manual_start）进程退出 → 不重启
+    expect(mgr.getActiveOperation('T4' as ServerId).type).toBe('manual_start');
+    const onCrash = vi.mocked(proc.onCrash).mock.calls[0][0];
+    onCrash('T4' as ServerId, 1);
+    await promise;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(proc.spawn).toHaveBeenCalledTimes(1);
   });
 });

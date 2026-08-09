@@ -19,6 +19,7 @@ import { ServerState, RconConnectionState } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
 import { AppError } from '../../utils/AppError.js';
 import { resolveInstallDir, resolveServerPath } from './pathResolver.js';
+import { detectStartScript, ensureStartScriptExecutable } from './startScript.js';
 import {
   getRconCredential,
   setRconCredential,
@@ -30,6 +31,7 @@ import {
 const A2S_POLL_INTERVAL = 3_000;   // 3s 轮询
 const A2S_POLL_TIMEOUT = 30_000;   // CLAUDE.md §4.6: 30s 总超时，超时报错
 const SHUTDOWN_TIMEOUT = 30_000;   // 等待进程退出
+const CRASH_RESTART_DELAY = 5_000; // T6: 崩溃 5s 硬重启（抄 GSM GameManager.ts:331-335）
 
 // ─── 运行时状态 (in-memory, 目录扫描真源 + settings K-V) ──
 
@@ -76,10 +78,11 @@ export class ServerManager implements IServerManager {
       }
     });
 
-    // CLAUDE.md §4.7: 崩溃检测——进程异常退出 → STOPPED
+    // CLAUDE.md §4.7: 崩溃检测——进程退出 → STOPPED；T6: 非预期退出 5s 硬重启
     this.processSupervisor.onCrash((serverId, exitCode) => {
-      logger.warn({ serverId, exitCode }, 'U3DS 进程崩溃');
+      logger.warn({ serverId, exitCode }, 'U3DS 进程退出');
       this.transition(serverId, ServerState.STOPPED);
+      this.scheduleCrashRestart(serverId, exitCode);
     });
   }
 
@@ -257,12 +260,8 @@ export class ServerManager implements IServerManager {
 
     try {
       const { id, installDir } = entry.config;
-      const pid = await this.processSupervisor.spawn(
-        id,
-        `${installDir}/ServerHelper.sh`,
-        [`+InternetServer/${id}`, '-ThreadedConsole'],
-        installDir, // cwd = U3DS 安装根目录
-      );
+      // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
+      const pid = await this.spawnU3DS(id, installDir);
       logger.info({ serverId, pid, installDir }, 'U3DS 进程已启动，等待 A2S 就绪');
 
       // 轮询 A2S 直到就绪（CLAUDE.md §4.6: 30s 超时报错）
@@ -365,18 +364,56 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STARTING);
 
     const { id, installDir } = entry.config;
-    const pid = await this.processSupervisor.spawn(
-      id,
-      `${installDir}/ServerHelper.sh`,
-      [`+InternetServer/${id}`, '-ThreadedConsole'],
-      installDir,
-    );
+    // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
+    const pid = await this.spawnU3DS(id, installDir);
 
     logger.info({ serverId, pid, installDir }, 'U3DS 进程已启动，等待 A2S 就绪');
     await this.pollA2S(serverId);
     this.transition(serverId, ServerState.RUNNING);
 
     try { await this.rconManager.connect(serverId); } catch { /* noop */ }
+  }
+
+  /**
+   * 探测 U3DS 启动脚本 + chmod +x + spawn（T6 抄 GSM detectStartScript）。
+   * 多实例模式（ServerHelper.sh）带 +InternetServer/<id> 参数；单服模式（ExampleServer.sh）无参数。
+   *
+   * @throws {AppError} code=start-script-not-found, status=500 当 installDir 无 U3DS 启动脚本
+   */
+  private async spawnU3DS(id: ServerId, installDir: string): Promise<number> {
+    const script = await detectStartScript(installDir);
+    if (!script) {
+      throw new AppError(
+        'start-script-not-found',
+        `未检测到 U3DS 启动脚本（ServerHelper.sh/ExampleServer.sh）：${installDir}`,
+        500,
+      );
+    }
+    await ensureStartScriptExecutable(installDir, script);
+    // 多实例模式参数；ExampleServer.sh（单服）无 +InternetServer 参数
+    const args = script === 'ServerHelper.sh'
+      ? [`+InternetServer/${id}`, '-ThreadedConsole']
+      : [];
+    return this.processSupervisor.spawn(id, `${installDir}/${script}`, args, installDir);
+  }
+
+  /**
+   * 崩溃 5s 硬重启（T6 抄 GSM GameManager.ts:331-335）。守卫：
+   *   - 主动操作（manual_stop/manual_restart/mod_apply）期间退出 → 不重启
+   *   - exitCode === 0（RCON 优雅关闭等正常退出）→ 不重启
+   *   - 5s 后实例已被删除 → 跳过
+   */
+  private scheduleCrashRestart(serverId: ServerId, exitCode: number | null): void {
+    const entry = this.servers.get(serverId);
+    if (!entry || entry.activeOperation.type !== 'none') return;
+    if (exitCode === 0) return;
+    logger.info({ serverId, exitCode }, '5s 后自动重启');
+    setTimeout(() => {
+      if (!this.servers.has(serverId)) return; // 期间被删除
+      void this.startInternal(serverId).catch((err) => {
+        logger.error({ serverId, err }, '崩溃自动重启失败');
+      });
+    }, CRASH_RESTART_DELAY);
   }
 
   async forceStop(serverId: ServerId): Promise<void> {
