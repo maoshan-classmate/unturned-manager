@@ -94,6 +94,27 @@ export class WorkshopAcfService implements IWorkshopAcfService {
   }
 
   /**
+   * 列出 staging 目录的已下载 mod（BUG-5/6 修复：下载到 staging 的内容主 acf 扫不到）。
+   * SteamCMD `workshop_download_item` 下载到 `Workshop/staging/` 后，
+   * 其 acf 生成在 `Workshop/staging/steamapps/workshop/`——主 acf（content 目录）
+   * 要等 apply 流水线（applyStaged）才会合并。此方法让「已下载待应用」的 mod 可见。
+   *
+   * @returns staging acf 中的 items；staging acf 不存在时返回空数组
+   */
+  async listStagingItems(serverId: ServerId): Promise<WorkshopAcfItem[]> {
+    const stagingAcfPath = await this.resolveStagingAcfPath(serverId);
+    let content: string;
+    try {
+      content = await fs.readFile(stagingAcfPath, 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+    const acf = this.parseContent(content);
+    return Array.from(acf.items.values());
+  }
+
+  /**
    * 读 staging 目录的 acf，提取单个 mod 的元数据（下载完成后调）
    * @returns 单个 mod 的 acf 元数据；mod 不在 staging acf 中则返回 null
    */

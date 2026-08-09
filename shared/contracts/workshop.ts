@@ -98,6 +98,9 @@ export interface IWorkshopAcfService {
   /** 列出全部已下载 mod（read → parse） */
   listItems(serverId: ServerId): Promise<WorkshopAcfItem[]>;
 
+  /** 列出 staging 目录已下载 mod（BUG-5/6：下载到 staging 待 apply 的内容） */
+  listStagingItems(serverId: ServerId): Promise<WorkshopAcfItem[]>;
+
   /** 读 staging 目录的 acf，提取单个 mod 的元数据（下载完成后调） */
   parseStagingItem(serverId: ServerId, fileId: WorkshopFileId): Promise<WorkshopAcfItem | null>;
 

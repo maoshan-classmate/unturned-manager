@@ -12,6 +12,7 @@ import {
   type WorkshopFileId,
 } from '@unturned-manager/shared';
 import { AppError } from '../utils/AppError.js';
+import { logger } from '../utils/logger.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -54,20 +55,37 @@ export function createModsRouter(
 
   // ── 1. GET /downloaded ──────────────────────────────
   // BUG-6 修复：合并 File_IDs（applied 状态）+ acf 元数据（timeupdated/size）
-  // BUG-5 修复：applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
+  // BUG-5 修复：合并主 acf + staging acf——下载到 staging 待 apply 的 mod 也可见
+  //   applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
   router.get(
     '/mods/downloaded',
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as ServerId;
       await resolveInstallDir(serverId);
-      const items = await acfService.listItems(serverId);
+
+      // ★ BUG-5/6 修复：主 acf（已 apply）+ staging acf（刚下载待 apply）合并去重
+      const mainItems = await acfService.listItems(serverId);
+      const stagingItems = await acfService.listStagingItems(serverId);
+      const itemsMap = new Map<string, (typeof mainItems)[number]>();
+      for (const item of stagingItems) itemsMap.set(item.fileId as string, item);
+      for (const item of mainItems) {
+        if (!itemsMap.has(item.fileId as string)) itemsMap.set(item.fileId as string, item);
+      }
+      const items = Array.from(itemsMap.values());
       const fileIds = items.map((i) => i.fileId);
 
       // 读 File_IDs（WorkshopDownloadConfig.json）—— 决定 applied
       const config = await configService.readWorkshopConfig(serverId);
       const fileIdsSet = new Set<string>(config.File_IDs as string[]);
 
-      const metas = fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
+      // ★ 容错：Steam WebAPI 不可达时元数据补全失败**不应**拖垮已下载列表
+      //   （acf 数据真实存在，title/previewUrl 只是增强字段，缺失可接受）
+      let metas: Awaited<ReturnType<IWorkshopMetadataService['batchGetDetails']>> = [];
+      try {
+        metas = fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
+      } catch (err) {
+        logger.warn({ serverId, err }, 'batchGetDetails 失败——已下载列表降级返回（无元数据）');
+      }
       const metaMap = new Map(metas.map((m) => [m.fileId, m]));
       const merged = items.map((item) => ({
         fileId: item.fileId,

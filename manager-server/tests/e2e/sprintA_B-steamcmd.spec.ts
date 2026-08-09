@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import path from 'path';
 
 /**
  * Sprint A + B 新端点 e2e（Sprint A 关闭 + Sprint B 关闭 共同验证）
@@ -108,5 +109,70 @@ test.describe('Sprint A 修复: SteamCMD update 端点 regression', () => {
       data: { installDir: '/tmp/test' },
     });
     expect(res.status()).toBe(400);
+  });
+});
+
+// ─── Sprint C 补强：BUG-5/6 缺口回归（staging 待 apply 的 mod 必须可见）───
+
+/** 同步取 INSTALL_DIR（test-server 用 cwd/.test-install，见 playwright.config.ts） */
+function resolveInstallDirSafe(): string {
+  return path.join(process.cwd(), '.test-install');
+}
+// 为什么补：旧 e2e 只断言「/mods/downloaded 是数组」——空数组也过。
+// 本用例写 staging acf fixture → 断言能看到 mod 且 applied=false。
+test.describe('Sprint C 补强: /mods/downloaded staging 可见性 (BUG-5/6)', () => {
+  test('staging acf 中的 mod → downloaded 列表可见 + applied=false', async ({ request }) => {
+    // ① 确保 MyServer 存在（test-server 清空 Servers/，需重新创建）
+    const createRes = await request.post('/api/servers', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      data: {
+        id: 'MyServer',
+        name: 'E2E Test',
+        gamePort: 27015,
+        ownerSteamId: '76561198000000001',
+        installDir: resolveInstallDirSafe(),  // Schema 必填
+      },
+    });
+    expect([201, 409]).toContain(createRes.status());
+
+    // ② 写 staging acf fixture（test-server INSTALL_DIR = cwd/.test-install）
+    //    注意：不用动态 import pathResolver（会触发 config 读 env，spec 进程无 JWT_SECRET）
+    const path = (await import('path')).default;
+    const fs = (await import('fs')).default;
+    const installRoot = path.join(process.cwd(), '.test-install');
+    const stagingDir = path.join(
+      installRoot, 'Servers', 'MyServer', 'Workshop', 'staging', 'steamapps', 'workshop',
+    );
+    fs.mkdirSync(stagingDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(stagingDir, 'appworkshop_1110390.acf'),
+      `"AppWorkshop"
+{
+	"appid"		"1110390"
+	"WorkshopItemsInstalled"
+	{
+		"666"
+		{
+			"timeupdated"		"1722612346"
+			"size"				"888"
+		}
+	}
+}`,
+      'utf-8',
+    );
+
+    // ③ 断言：staging mod 必须可见 + applied=false
+    const res = await request.get('/api/servers/MyServer/mods/downloaded', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    const staged = body.data.find((m: { fileId: string }) => m.fileId === '666');
+    expect(staged).toBeTruthy();                 // ★ BUG-5/6 缺口断言：必须能看到
+    expect(staged.applied).toBe(false);          // 未 apply → applied=false
+
+    // ④ 清理 fixture（防残留影响后续用例）
+    fs.rmSync(path.join(installRoot, 'Servers', 'MyServer'), { recursive: true, force: true });
   });
 });

@@ -402,4 +402,41 @@ describe('routes/mods · 8 端点', () => {
 
     await fs.rm(serverDir, { recursive: true, force: true });
   });
+
+  it('GET /mods/downloaded → BUG-5/6 修复：staging 待 apply 的 mod 也可见', async () => {
+    // 关键场景：下载到 staging（SteamCMD workshop_download_item 后），主 acf 尚未更新，
+    // 但 /mods/downloaded 必须能看到该 mod（applied=false，前端显示「待应用/已下载」）
+    const serverDir = path.join(resolveInstallDir(), 'Servers', 'MyServer');
+    // 只写 staging acf，不写主 acf —— 模拟「下载完还没 apply」
+    const stagingDir = path.join(serverDir, 'Workshop', 'staging', 'steamapps', 'workshop');
+    await fs.mkdir(stagingDir, { recursive: true });
+    await fs.writeFile(
+      path.join(stagingDir, 'appworkshop_1110390.acf'),
+      `"AppWorkshop"
+{
+	"appid"		"1110390"
+	"WorkshopItemsInstalled"
+	{
+		"666"
+		{
+			"timeupdated"		"1722612346"
+			"size"				"888"
+		}
+	}
+}`,
+      'utf-8',
+    );
+
+    const res = await request(app)
+      .get('/api/servers/MyServer/mods/downloaded')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    // ★ BUG-5/6 缺口断言：staging 的 mod 必须出现，且 applied=false（不在 File_IDs）
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].fileId).toBe('666');
+    expect(res.body.data[0].applied).toBe(false);
+    expect(res.body.data[0].title).toBe('Mod 666');  // GetDetails mock 动态返回
+
+    await fs.rm(serverDir, { recursive: true, force: true });
+  });
 });
