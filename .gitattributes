@@ -1,0 +1,13 @@
+# 换行符统一（.sh 必须 LF——CRLF 的 shebang `#!/bin/sh\r` 会让 Linux exec 报
+# "no such file or directory"，见 BUG-4 docker-entrypoint.sh 教训）
+docker-entrypoint.sh text eol=lf
+*.sh text eol=lf
+
+# 源码文本统一 UTF-8 + LF
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
