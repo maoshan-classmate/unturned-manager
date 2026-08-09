@@ -143,6 +143,8 @@ test.describe('Mods 管理链路 (Phase C)', () => {
   });
 
   test('GET /mods/search → 200 或 502（Steam 可达性容忍）', async ({ request }) => {
+    // Steam 不可达时后端冷启动等待 ConnectTimeout 可达 30s——playwright 默认 15s 太短
+    test.setTimeout(60_000);
     const res = await request.get('/api/mods/search?page=1&pageSize=3&sort=popular&range=week', {
       headers: { Authorization: `Bearer ${modsToken}` },
     });
