@@ -12,6 +12,7 @@ import type {
   IBroadcaster,
   ActiveOperation,
   WorkshopFileId,
+  IWorkshopApplyService,
 } from '@unturned-manager/shared';
 import { ServerState } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
@@ -40,6 +41,7 @@ export class ServerManager implements IServerManager {
     private a2sClient: IA2SClient,
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
+    private workshopApply?: IWorkshopApplyService,
   ) {
     this.loadServersFromDb();
 
@@ -428,6 +430,12 @@ export class ServerManager implements IServerManager {
       }
       this.transition(serverId, ServerState.STOPPED);
       this.rconManager.disconnect(serverId);
+
+      // ⑦.5 staging → content 移动（acf 合并 + File_IDs 同步 + 回滚）
+      if (this.workshopApply) {
+        announce('moving');
+        await this.workshopApply.applyStaged(serverId);
+      }
 
       // ⑧ 重新拉起
       await this.startInternal(serverId);

@@ -16,8 +16,8 @@ const U3DS_APPID = '1110390';
 /** content 目录（U3DS 实际加载的 mod 位置） */
 const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
 
-/** WorkshopDownloadConfig.json 相对路径 */
-const WORKSHOP_CONFIG_REL = path.join('Workshop', 'WorkshopDownloadConfig.json');
+/** WorkshopDownloadConfig.json 相对 install_dir 的路径（注意：在 Servers/<ID>/Server/ 下，不在 Workshop/ 下） */
+const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverId, 'Server', 'WorkshopDownloadConfig.json');
 
 /**
  * Mod 删除服务——acf + content + File_IDs 三处同步
@@ -41,7 +41,7 @@ export class WorkshopDeleteService implements IWorkshopDeleteService {
     // 备份 WorkshopDownloadConfig.json（File_IDs 写前备份）
     let configBackupPath: string | null = null;
     try {
-      configBackupPath = await this.configService.backup(serverId, WORKSHOP_CONFIG_REL);
+      configBackupPath = await this.configService.backup(serverId, WORKSHOP_CONFIG_REL(serverId));
     } catch (err) {
       // Config 不存在时无法备份（首次删除），跳过
       logger.info({ serverId }, 'WorkshopDownloadConfig.json 不存在，跳过备份');
@@ -97,7 +97,7 @@ export class WorkshopDeleteService implements IWorkshopDeleteService {
       }
       if (configBackupPath !== null) {
         try {
-          await this.configService.rollback(serverId, WORKSHOP_CONFIG_REL, configBackupPath);
+          await this.configService.rollback(serverId, WORKSHOP_CONFIG_REL(serverId), configBackupPath);
         } catch (rollbackErr) {
           logger.error({ rollbackErr, serverId }, 'WorkshopDownloadConfig.json 回滚失败');
         }

@@ -5,6 +5,9 @@ import {
   type IFilesService,
   type ISteamCmdManager,
   type IWorkshopMetadataService,
+  type IWorkshopAcfService,
+  type IWorkshopApplyService,
+  type IWorkshopDeleteService,
   type ILogStreamer,
   type IRconManager,
   type IA2SClient,
@@ -24,6 +27,9 @@ import { ConfigService } from './modules/config/ConfigService.js';
 import { FilesService } from './modules/files/FilesService.js';
 import { SteamCmdManager } from './modules/steamcmd/SteamCmdManager.js';
 import { WorkshopMetadataService } from './modules/workshop/WorkshopMetadataService.js';
+import { WorkshopAcfService } from './modules/workshop/WorkshopAcfService.js';
+import { WorkshopApplyService } from './modules/workshop/WorkshopApplyService.js';
+import { WorkshopDeleteService } from './modules/workshop/WorkshopDeleteService.js';
 import { LogStreamer } from './modules/logs/LogStreamer.js';
 import { wsBroadcaster } from './ws/gateway.js';
 
@@ -36,6 +42,9 @@ export interface AppContainer {
   filesService: IFilesService;
   steamCmdManager: ISteamCmdManager;
   workshopMeta: IWorkshopMetadataService;
+  workshopAcf: IWorkshopAcfService;
+  workshopApply: IWorkshopApplyService;
+  workshopDelete: IWorkshopDeleteService;
   logStreamer: ILogStreamer;
   rconManager: IRconManager;
   a2sClient: IA2SClient;
@@ -44,7 +53,7 @@ export interface AppContainer {
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
-  // ── 基础设施层 ───────────────────────────────────────
+  // ── 基础设施层 ──────────────────────────────────────
   const fileLock = new FileLockProvider();
   const a2sClient = new A2SClient();
   const rconManager = new RconManager();
@@ -58,11 +67,14 @@ export function buildContainer(db: Database.Database): AppContainer {
   const filesService = new FilesService(fileLock, db);
   const steamCmdManager = new SteamCmdManager(db, processSupervisor, broadcaster);
   const workshopMeta = new WorkshopMetadataService(db);
+  const workshopAcf = new WorkshopAcfService(db, configService);
+  const workshopApply = new WorkshopApplyService(db, workshopAcf, configService, broadcaster);
+  const workshopDelete = new WorkshopDeleteService(db, workshopAcf, configService);
   const logStreamer = new LogStreamer(broadcaster, processSupervisor, db);
 
   // ServerManager（聚合根）
   const serverManager = new ServerManager(
-    db, processSupervisor, rconManager, a2sClient, configService, broadcaster,
+    db, processSupervisor, rconManager, a2sClient, configService, broadcaster, workshopApply,
   );
 
   // AuthService
@@ -75,6 +87,9 @@ export function buildContainer(db: Database.Database): AppContainer {
     filesService,
     steamCmdManager,
     workshopMeta,
+    workshopAcf,
+    workshopApply,
+    workshopDelete,
     logStreamer,
     rconManager,
     a2sClient,

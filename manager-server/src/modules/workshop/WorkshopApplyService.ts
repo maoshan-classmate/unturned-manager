@@ -23,8 +23,8 @@ const STAGING_CONTENT_SUBDIR = path.join('Workshop', 'staging', 'steamapps', 'wo
 /** content acf 内容目录（U3DS 启动读取） */
 const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
 
-/** WorkshopDownloadConfig.json 相对路径 */
-const WORKSHOP_CONFIG_REL = path.join('Workshop', 'WorkshopDownloadConfig.json');
+/** WorkshopDownloadConfig.json 相对 install_dir 的路径（注意：在 Servers/<ID>/Server/ 下，不在 Workshop/ 下） */
+const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Servers', serverId, 'Server', 'WorkshopDownloadConfig.json');
 
 /**
  * apply 流水线服务——在 ServerManager.applyModChanges 流水线内、U3DS 已 STOPPED 时调用
@@ -50,7 +50,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
 
   async applyStaged(serverId: ServerId): Promise<void> {
     // ── ① 备份 WorkshopDownloadConfig.json ──
-    const configBackupPath = await this.configService.backup(serverId, WORKSHOP_CONFIG_REL);
+    const configBackupPath = await this.configService.backup(serverId, WORKSHOP_CONFIG_REL(serverId));
 
     // ── ② 备份 acf（仅当 acf 存在时；新装时 acf 可能还不存在）──
     let acfBackupPath: string | null = null;
@@ -117,7 +117,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
         }
       }
       try {
-        await this.configService.rollback(serverId, WORKSHOP_CONFIG_REL, configBackupPath);
+        await this.configService.rollback(serverId, WORKSHOP_CONFIG_REL(serverId), configBackupPath);
       } catch (rollbackErr) {
         logger.error({ rollbackErr, serverId }, 'WorkshopDownloadConfig.json 回滚失败');
       }

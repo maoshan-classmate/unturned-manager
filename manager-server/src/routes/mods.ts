@@ -1,24 +1,230 @@
 import { Router } from 'express';
-import type { IServerManager } from '@unturned-manager/shared';
-import { ApplyModsSchema } from '@unturned-manager/shared';
+import {
+  ModSearchQuerySchema,
+  ModDownloadRequestSchema,
+  ModBatchDetailsRequestSchema,
+  ModApplyRequestSchema,
+  type IServerManager,
+  type IWorkshopMetadataService,
+  type IWorkshopAcfService,
+  type IWorkshopDeleteService,
+  type ISteamCmdManager,
+  type ServerId,
+  type WorkshopFileId,
+} from '@unturned-manager/shared';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
-export function createModsRouter(serverManager: IServerManager): Router {
-  const router = Router();
+/**
+ * 模组管理路由（v2.2 — 8 端点）
+ *
+ * 路径：/api/servers/:id/mods
+ * - GET    /search          浏览/搜索 Steam 工坊
+ * - GET    /:fileId         单个 Mod 详情
+ * - POST   /batch-details   批量补元数据
+ * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全）
+ * - POST   /download        下载到 staging（同步等待 SteamCMD 退出）
+ * - POST   /apply           应用 Mod 变更 + 重启流水线
+ * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
+ * - GET    /acf             读 acf 列表（真源）
+ */
+export function createModsRouter(
+  serverManager: IServerManager,
+  workshopMeta: IWorkshopMetadataService,
+  acfService: IWorkshopAcfService,
+  deleteService: IWorkshopDeleteService,
+  steamCmd: ISteamCmdManager,
+): Router {
+  const router = Router({ mergeParams: true });
   router.use(authenticateToken);
 
-  router.post(
-    '/:id/apply',
-    validate(ApplyModsSchema),
+  // ── 工具：从 serverId 查 installDir ────────────────────
+  const resolveInstallDir = async (serverId: string): Promise<string> => {
+    const servers = await serverManager.listServers();
+    const cfg = servers.find((s) => s.id === serverId);
+    if (!cfg) {
+      res_status_404(serverId);
+    }
+    return cfg!.installDir;
+  };
+  function res_status_404(_serverId: string): never {
+    throw Object.assign(new Error('Server not found'), { code: 'not_found', status: 404 });
+  }
+
+  // ── 1. GET /search ───────────────────────────────────
+  router.get(
+    '/mods/search',
+    validate(ModSearchQuerySchema, 'query'),
     asyncHandler(async (req, res) => {
-      const body = req.body as { fileIds: string[] };
-      await serverManager.applyModChanges(
-        req.params.id as never,
-        body.fileIds as never,
-      );
-      res.status(202).json({ data: { message: 'Mod 变更正在应用，进度由 WS mod_apply_progress 推送' } });
+      const { q, page, pageSize, sort, range, type } = req.query as unknown as {
+        q: string; page: number; pageSize: number;
+        sort: 'popular' | 'rated' | 'published' | 'updated' | 'subscribed' | 'relevance';
+        range: 'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all';
+        type: 'text' | 'id';
+      };
+      const serverId = req.params.id as ServerId;
+      // serverId 只需存在校验
+      await resolveInstallDir(serverId);
+      const result = await workshopMeta.browseMods(q, sort, range, type, page, pageSize);
+      res.json({
+        data: {
+          total: result.total,
+          page: result.page,
+          pageSize: result.pageSize,
+          rows: result.mods,
+        },
+      });
+    }),
+  );
+
+  // ── 2. GET /:fileId ──────────────────────────────────
+  router.get(
+    '/mods/:fileId(\\d+)',
+    asyncHandler(async (req, res) => {
+      const fileId = req.params.fileId as WorkshopFileId;
+      const mod = await workshopMeta.getModDetails(fileId);
+      if (!mod) {
+        res.status(404).json({ error: { code: 'not_found', message: 'Mod 未找到' } });
+        return;
+      }
+      res.json({ data: mod });
+    }),
+  );
+
+  // ── 3. POST /batch-details ───────────────────────────
+  router.post(
+    '/mods/batch-details',
+    validate(ModBatchDetailsRequestSchema),
+    asyncHandler(async (req, res) => {
+      const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
+      const mods = await workshopMeta.batchGetDetails(fileIds);
+      res.json({ data: mods });
+    }),
+  );
+
+  // ── 4. GET /downloaded ──────────────────────────────
+  router.get(
+    '/mods/downloaded',
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as ServerId;
+      await resolveInstallDir(serverId);
+      const items = await acfService.listItems(serverId);
+      const fileIds = items.map((i) => i.fileId);
+      const metas = fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
+      const metaMap = new Map(metas.map((m) => [m.fileId, m]));
+      const merged = items.map((item) => ({
+        fileId: item.fileId,
+        timeupdated: item.timeupdated,
+        size: item.size,
+        manifest: item.manifest,
+        title: metaMap.get(item.fileId)?.title,
+        author: metaMap.get(item.fileId)?.author,
+        authorName: metaMap.get(item.fileId)?.authorName,
+        previewUrl: metaMap.get(item.fileId)?.previewUrl,
+      }));
+      res.json({ data: merged });
+    }),
+  );
+
+  // ── 5. POST /download ────────────────────────────────
+  router.post(
+    '/mods/download',
+    validate(ModDownloadRequestSchema),
+    asyncHandler(async (req, res) => {
+      const { fileId } = req.body as { fileId: WorkshopFileId };
+      const serverId = req.params.id as ServerId;
+      const installDir = await resolveInstallDir(serverId);
+
+      // 先查 mod 元数据（实时，不缓存）拿 modTitle
+      let modTitle: string | undefined;
+      try {
+        const meta = await workshopMeta.getModDetails(fileId);
+        modTitle = meta?.title;
+      } catch {
+        // 元数据查不到不影响下载流程
+      }
+
+      // 调 SteamCMD 下载到 staging
+      try {
+        await steamCmd.downloadWorkshopItem(installDir, [fileId]);
+      } catch (err) {
+        res.status(502).json({
+          error: {
+            code: 'download_failed',
+            message: err instanceof Error ? err.message : 'SteamCMD 下载失败',
+          },
+        });
+        return;
+      }
+
+      // 读 staging acf 拿 size/timeupdated
+      const acfItem = await acfService.parseStagingItem(serverId, fileId);
+
+      res.json({
+        data: {
+          success: true,
+          fileId,
+          modTitle,
+          ...(acfItem ? { acfItem } : {}),
+        },
+      });
+    }),
+  );
+
+  // ── 6. POST /apply ───────────────────────────────────
+  router.post(
+    '/mods/apply',
+    validate(ModApplyRequestSchema),
+    asyncHandler(async (req, res) => {
+      const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
+      const serverId = req.params.id as ServerId;
+      // 委托 ServerManager.applyModChanges 走完整 SOP 流水线
+      // （含 RCON Save + Shutdown 30 + 等待退出 + 调 WorkshopApplyService.applyStaged + 重启 + A2S 轮询）
+      const promise = serverManager.applyModChanges(serverId, fileIds);
+      const operationId = `apply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      res.status(202).json({ data: { operationId, status: 'running' } });
+      // 异步执行（错误通过 audit + WS 广播）
+      void promise.catch(() => undefined);
+    }),
+  );
+
+  // ── 7. DELETE /:fileId ───────────────────────────────
+  router.delete(
+    '/mods/:fileId',
+    asyncHandler(async (req, res) => {
+      const fileId = req.params.fileId as WorkshopFileId;
+      const serverId = req.params.id as ServerId;
+      // 前置：U3DS 必须 STOPPED
+      const op = serverManager.getActiveOperation(serverId);
+      if (op.type !== 'none') {
+        res.status(409).json({
+          error: {
+            code: 'server_busy',
+            message: `服务端正在执行 ${op.type} 操作，无法删除 Mod`,
+          },
+        });
+        return;
+      }
+      const result = await deleteService.deleteMod(serverId, fileId);
+      res.json({ data: result });
+    }),
+  );
+
+  // ── 8. GET /acf ──────────────────────────────────────
+  router.get(
+    '/mods/acf',
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as ServerId;
+      await resolveInstallDir(serverId);
+      const items = await acfService.listItems(serverId);
+      res.json({
+        data: {
+          items,
+          acfPath: '', // 内部路径不暴露
+          parsedAt: new Date().toISOString(),
+        },
+      });
     }),
   );
 

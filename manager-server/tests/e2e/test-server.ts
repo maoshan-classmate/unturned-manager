@@ -7,18 +7,15 @@ import * as argon2 from 'argon2';
 import path from 'path';
 import fs from 'fs';
 
-const DATA_DIR = path.resolve('./data/e2e');
-fs.mkdirSync(DATA_DIR, { recursive: true });
-const DB_PATH = path.join(DATA_DIR, 'test.db');
-
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+// e2e 用内存 DB——保证每次启动干净（文件 DB 会残留上次测试数据导致唯一键冲突）
+// 手动调试如需持久化，可改回文件 DB
+const db = new Database(':memory:');
+db.pragma('journal_mode = MEMORY');
 db.exec(`
   CREATE TABLE IF NOT EXISTS servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, game_port INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'STOPPED', install_dir TEXT NOT NULL, rcon_port INTEGER, rcon_password_enc TEXT, owner_steam_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS refresh_tokens (jti TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS config_snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL, file_path TEXT NOT NULL, content TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
-  CREATE TABLE IF NOT EXISTS workshop_mods (file_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', preview_url TEXT, file_size INTEGER, updated_at_steam TEXT, cached_at TEXT NOT NULL DEFAULT (datetime('now')), raw_xml TEXT);
   CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT, action TEXT NOT NULL, actor TEXT NOT NULL DEFAULT 'admin', detail TEXT, ip_address TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_enc TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE INDEX IF NOT EXISTS idx_servers_state ON servers(state);
@@ -63,12 +60,18 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 
 // 健康检查
-app.get('/api/health', (_req, res) => { res.json({ status: 'ok', db: DB_PATH }); });
+app.get('/api/health', (_req, res) => { res.json({ status: 'ok', db: ':memory:' }); });
 
 // 全部路由
 app.use('/api/auth', createAuthRouter(container.authService));
 app.use('/api/servers', createServersRouter(container.serverManager));
-app.use('/api/servers', createModsRouter(container.serverManager));
+app.use('/api/servers/:id', createModsRouter(
+  container.serverManager,
+  container.workshopMeta,
+  container.workshopAcf,
+  container.workshopDelete,
+  container.steamCmdManager,
+));
 app.use('/api/servers', createRconRouter(container.rconManager));
 app.use('/api/servers', createConfigRouter(container.configService));
 app.use('/api/servers', createFilesRouter(container.filesService));

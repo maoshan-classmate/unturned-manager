@@ -29,6 +29,7 @@ Thumbs.db
 .playwright-mcp/
 manager-server/test-results/
 manager-web/test-results/
+manager-server/playwright-report/
 
 # Backups (server-side auto-backups, never tracked)
 manager-server/backups/

@@ -73,7 +73,13 @@ app.get('/api/health', (_req, res) => {
 // API 路由
 app.use('/api/auth', createAuthRouter(container.authService));
 app.use('/api/servers', createServersRouter(container.serverManager));
-app.use('/api/servers', createModsRouter(container.serverManager));
+app.use('/api/servers/:id', createModsRouter(
+  container.serverManager,
+  container.workshopMeta,
+  container.workshopAcf,
+  container.workshopDelete,
+  container.steamCmdManager,
+));
 app.use('/api/servers', createRconRouter(container.rconManager));
 app.use('/api/servers', createConfigRouter(container.configService));
 app.use('/api/servers', createFilesRouter(container.filesService));
