@@ -66,17 +66,21 @@ export function ServerSetupPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    // 纯前端本地删除——后端 DELETE /servers/:id 尚未实现,先做 UI 效果闭环。
-    // 后端实现后改为调用 apiClient.delete(`/servers/${deleteTarget}`) 并保留 refresh()。
-    removeServer(deleteTarget);
-    toast.success(`实例「${deleteTarget}」已删除`);
-    setDeleteTarget(null);
-    // 若删除当前选中实例,跳转到首个剩余实例
-    if (deleteTarget === currentId) {
-      const next = servers.filter((s) => s.id !== deleteTarget)[0];
-      navigate(next ? `/${next.id}/server-setup` : '/_default/server-setup');
+    try {
+      // 真实删除:DELETE /servers/:id + 内部 refresh(ADR-0003 B2 目录扫描真源)
+      await removeServer(deleteTarget);
+      toast.success(`实例「${deleteTarget}」已删除`);
+      // 若删除当前选中实例,跳转到首个剩余实例
+      if (deleteTarget === currentId) {
+        const next = servers.filter((s) => s.id !== deleteTarget)[0];
+        navigate(next ? `/${next.id}/server-setup` : '/_default/server-setup');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除实例失败');
+    } finally {
+      setDeleteTarget(null);
+      setDeleting(false);
     }
-    setDeleting(false);
   };
 
   // ── 当前 ServerID 的启动命令 ──

@@ -5,7 +5,7 @@ import { Save, X, Plus } from 'lucide-react';
 import { Dialog } from '../shared/Dialog.js';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
-import type { ServerInfo } from '@/hooks/useServer';
+import type { CreateServerPayload } from '@/hooks/useServer';
 
 interface CreateServerForm {
   id: string;
@@ -14,18 +14,28 @@ interface CreateServerForm {
   ownerSteamId: string;
   installDir: string;
   rconPassword?: string;
+  openModCredential?: string;
 }
 
 /**
- * 创建新实例弹窗——6 字段表单 + 取消/添加。
- * 走 react-hook-form(项目铁律)。
- * 纯前端本地效果:提交后把新实例数据回传给父组件,不调用任何后端接口。
- * 后端「扫描/创建 Servers/<id> 目录」实现后,再改为调用真实创建接口。
+ * 创建新实例弹窗——7 字段表单 + 取消/创建。
+ * 走 react-hook-form(项目铁律)。提交经 onCreated 回调接真实 POST /servers(ADR-0003 B2)。
+ *
+ * @param props - 组件属性
+ * @param props.open - 弹窗是否打开
+ * @param props.onClose - 关闭回调
+ * @param props.onCreated - 提交回调,接收创建负载并异步创建;失败抛错由本组件 toast
+ * @returns 创建实例弹窗 React 元素
+ *
+ * @example
+ * ```tsx
+ * <CreateServerDialog open={open} onClose={close} onCreated={addServer} />
+ * ```
  */
 export function CreateServerDialog({ open, onClose, onCreated }: {
   open: boolean;
   onClose: () => void;
-  onCreated?: (server: ServerInfo) => void;
+  onCreated?: (server: CreateServerPayload) => Promise<void>;
 }) {
   const {
     register,
@@ -40,23 +50,28 @@ export function CreateServerDialog({ open, onClose, onCreated }: {
       ownerSteamId: '76561198000000000',
       installDir: '/opt/unturned',
       rconPassword: '',
+      openModCredential: '',
     },
   });
 
-  const onSubmit = (data: CreateServerForm) => {
-    // 纯前端本地新建——构造实例数据回传给父组件,不调后端、不写 DB。
-    const newServer: ServerInfo = {
-      id: data.id,
-      name: data.name || data.id,
-      gamePort: Number(data.gamePort),
-      ownerSteamId: data.ownerSteamId,
-      installDir: data.installDir,
-      state: 'STOPPED',
-    };
-    onCreated?.(newServer);
-    toast.success(`实例「${data.id}」已创建`);
-    reset();
-    onClose();
+  const onSubmit = async (data: CreateServerForm) => {
+    if (!onCreated) { toast.error('创建通道未就绪'); return; }
+    try {
+      await onCreated({
+        id: data.id,
+        name: data.name || data.id,
+        gamePort: Number(data.gamePort),
+        ownerSteamId: data.ownerSteamId,
+        installDir: data.installDir,
+        rconPassword: data.rconPassword || undefined,
+        openModCredential: data.openModCredential || undefined,
+      });
+      toast.success(`实例「${data.id}」已创建`);
+      reset();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建实例失败');
+    }
   };
 
   return (
@@ -117,6 +132,16 @@ export function CreateServerDialog({ open, onClose, onCreated }: {
               placeholder="留空则自动生成"
               className="h-9 text-sm"
             />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm text-slate-400 mb-1">OpenMod RCON 凭证(可选)</label>
+            <Input
+              type="password"
+              {...register('openModCredential')}
+              placeholder="SteamID:密码"
+              className="h-9 text-sm font-mono"
+            />
+            <p className="text-[11px] text-slate-500 mt-0.5">格式「SteamID:密码」,留空则不启用 OpenMod RCON</p>
           </div>
         </div>
 

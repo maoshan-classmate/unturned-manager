@@ -1,32 +1,60 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../api/client.js';
 
+/** 服务器实例信息——GET /servers 响应形状（后端 ServerConfig，state 在服务端内存不返回） */
 export interface ServerInfo {
+  /** ServerID，对应 Servers/<ServerID> 目录名 */
   id: string;
+  /** 显示名称 */
   name: string;
+  /** 游戏端口（A2S 查询端口 = gamePort + 1） */
   gamePort: number;
+  /** 服务器 Owner 的 SteamID64 */
   ownerSteamId: string;
+  /** U3DS 安装根目录 */
   installDir: string;
+  /** 运行时状态（面板本地维护，非后端持久化字段） */
   state?: string;
+}
+
+/** 创建实例请求体——POST /servers 契约（RCON 凭证走后端 K-V 加密存储） */
+export interface CreateServerPayload extends Omit<ServerInfo, 'state'> {
+  /** RocketMod Telnet RCON 裸密码（可选，留空后端自动生成） */
+  rconPassword?: string;
+  /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
+  openModCredential?: string;
 }
 
 interface UseServerReturn {
   servers: ServerInfo[];
   loading: boolean;
   error: string | null;
-  refresh: () => void;
-  /** 纯前端本地新增——后端创建实例目录接口尚未实现,先做 UI 效果闭环 */
-  addServer: (server: ServerInfo) => void;
-  /** 纯前端本地移除——后端 DELETE /servers/:id 尚未实现,用于删除 UI 效果闭环 */
-  removeServer: (id: string) => void;
+  /** 重拉实例列表（返回 Promise，调用方可 await） */
+  refresh: () => Promise<void>;
+  /** 调 POST /servers 创建实例，成功后重拉列表（真源=后端目录扫描） */
+  addServer: (server: CreateServerPayload) => Promise<void>;
+  /** 调 DELETE /servers/:id 删除实例，成功后重拉列表 */
+  removeServer: (id: string) => Promise<void>;
 }
 
+/**
+ * 服务器实例列表 hook。
+ * 挂载时拉取一次 + 手动 refresh——不轮询；增删走真实后端 API（ADR-0003 B2）。
+ *
+ * @returns 实例列表状态 + { refresh, addServer, removeServer }
+ *
+ * @example
+ * ```tsx
+ * const { servers, refresh, addServer, removeServer } = useServer();
+ * await addServer({ id: 'MyServer', name: '...', gamePort: 27015, ... });
+ * ```
+ */
 export function useServer(): UseServerReturn {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchServers = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
       const { data } = await apiClient.get<{ data: ServerInfo[] }>('/servers');
       setServers(data.data);
@@ -39,22 +67,23 @@ export function useServer(): UseServerReturn {
     }
   }, []);
 
-  // 实例列表只挂载时拉取一次 + 手动 refresh——不轮询。
-  // 理由:本地增删(纯前端效果)不该被轮询的"后端真相"覆盖;
-  // 状态(state)实时变化将来由 WebSocket 推送(后端 ServerManager.onStateChange),不走轮询。
+  // 实例列表只挂载时拉取一次——增删后由 addServer/removeServer 内部 refresh，
+  // 避免轮询覆盖本地操作；状态实时变化将来由 WebSocket 推送（后端 onStateChange）。
   useEffect(() => {
-    fetchServers();
-  }, [fetchServers]);
+    void refresh();
+  }, [refresh]);
 
-  const addServer = useCallback((server: ServerInfo) => {
-    setServers((prev) => [server, ...prev]);
-  }, []);
+  const addServer = useCallback(async (server: CreateServerPayload) => {
+    await apiClient.post('/servers', server);
+    await refresh();
+  }, [refresh]);
 
-  const removeServer = useCallback((id: string) => {
-    setServers((prev) => prev.filter((s) => s.id !== id));
-  }, []);
+  const removeServer = useCallback(async (id: string) => {
+    await apiClient.delete(`/servers/${id}`);
+    await refresh();
+  }, [refresh]);
 
-  return { servers, loading, error, refresh: fetchServers, addServer, removeServer };
+  return { servers, loading, error, refresh, addServer, removeServer };
 }
 
 /**

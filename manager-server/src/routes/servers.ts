@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { IServerManager } from '@unturned-manager/shared';
-import { CreateServerSchema, ConfigureServerSchema } from '@unturned-manager/shared';
+import { CreateServerSchema, ConfigureServerSchema, DeleteServerSchema } from '@unturned-manager/shared';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -61,6 +61,7 @@ export function createServersRouter(serverManager: IServerManager): Router {
 
   router.delete(
     '/:id',
+    validate(DeleteServerSchema, 'params'),
     asyncHandler(async (req, res) => {
       await serverManager.removeServer(req.params.id as never);
       res.json({ data: { message: '服务端已删除' } });

@@ -223,4 +223,39 @@ test.describe('unturned-manager E2E 冒烟测试', () => {
     // 视觉回归:实拍截图,让 CI 能 diff 颜色变化(撞色问题)
     await page.screenshot({ path: 'test-results/server-setup-snap.png', fullPage: false });
   });
+
+  // ADR-0003 B2 T7：创建→删除实例真链路（POST /servers → 列表出现 → DELETE → 消失）
+  // 依赖后端真实写目录（.test-install/Servers/<id>）+ K-V 凭证；每次用唯一 ServerID 避免幂等 409
+  test('创建→删除实例真链路（后端目录真源）', async ({ page }) => {
+    // 登录（沿用现有冒烟用例）
+    await page.goto('/');
+    await page.fill('#login-username', 'admin');
+    await page.fill('#login-password', '123456');
+    await page.getByRole('button', { name: /登录|Sign/i }).first().click();
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/_default/server-setup');
+
+    // 打开创建弹窗
+    await page.getByRole('button', { name: /新建/ }).first().click();
+    await expect(page.getByText('创建新实例', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+    // 填表——唯一 ServerID，其余字段用表单默认值
+    const serverId = `e2e-cd-${Date.now()}`;
+    await page.fill('input[placeholder="MyServer"]', serverId);
+    await page.getByRole('button', { name: /创建/ }).click();
+
+    // 创建成功：侧栏出现新实例（后端目录创建 + K-V 后 refresh 拉回）
+    await expect(page.locator('aside').getByText(serverId)).toBeVisible({ timeout: 10_000 });
+
+    // 删除——hover 侧栏该行触发垃圾桶按钮（opacity-0 → 100）
+    await page.locator(`a[href="/${serverId}/server-setup"]`).hover();
+    await page.getByRole('button', { name: `删除实例 ${serverId}` }).click();
+    // ConfirmDialog 二次确认（label 精确 "删除"）
+    await expect(page.getByText('删除实例', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('button', { name: /^删除$/ }).click();
+
+    // 删除成功：实例从侧栏消失（DELETE + refresh）
+    await expect(page.locator('aside').getByText(serverId)).toBeHidden({ timeout: 10_000 });
+  });
 });

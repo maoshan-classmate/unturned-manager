@@ -32,6 +32,10 @@ export const RconExecuteSchema = z.object({
 
 // ─── Server lifecycle ──────────────────────────────────
 
+export const DeleteServerSchema = z.object({
+  id: z.string().min(1, 'ServerID 不能为空'),
+});
+
 export const StopServerSchema = z.object({
   reason: z.string().optional(),
 });
