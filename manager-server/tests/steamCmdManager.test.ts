@@ -160,10 +160,11 @@ describe("SteamCmdManager — BUG-1 修复: checkUpdate 解析", () => {
     expect(result.lastChecked).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("checkUpdate 当输出无 buildid/name 时降级返回 null 和 unknown", async () => {
+  it("checkUpdate 当 3 套命令序列都拿不到 buildid 时抛 AppError(steamcmd-check-failed)", async () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
     const exec = mockAdapter();
-    exec.mockResolvedValueOnce({ stdout: "no useful output", stderr: "" });
+    // 3 套 fallback 全部返回无 buildid 的输出 → 循环耗尽 → 抛错（对齐 GSM3 fetchAppBranches 全失败 throw）
+    exec.mockResolvedValue({ stdout: "no useful output", stderr: "" });
 
     const manager = new SteamCmdManager(
       fakeProcessSupervisor,
@@ -172,10 +173,13 @@ describe("SteamCmdManager — BUG-1 修复: checkUpdate 解析", () => {
       () => [],
       exec,
     );
-    const result = await manager.checkUpdate();
 
-    expect(result.currentBuildId).toBeNull();
-    expect(result.latestVersion).toBe("unknown");
+    await expect(manager.checkUpdate()).rejects.toMatchObject({
+      code: "steamcmd-check-failed",
+      status: 500,
+    });
+    // 3 套命令序列各跑一次 runscript
+    expect(exec).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -224,7 +228,7 @@ describe("SteamCmdManager — 目录探测（Linux 实机 BUG-1/9 根因）", ()
     }
   });
 
-  it("checkUpdate 当 steamCmdPath 是目录时用目录内 steamcmd.sh 执行（不抛 EACCES）", async () => {
+  it("checkUpdate 当 steamCmdPath 是目录时用目录内 steamcmd.sh 执行（runscript 文件驱动，不抛 EACCES）", async () => {
     const dir = makeSteamCmdDir();
     try {
       const exec = mockAdapter();
@@ -246,8 +250,10 @@ describe("SteamCmdManager — 目录探测（Linux 实机 BUG-1/9 根因）", ()
       expect(result.currentBuildId).toBe("12345678");
       const [cmd, args] = exec.mock.calls[0];
       expect(cmd).toBe(path.join(dir, "steamcmd.sh"));
-      expect(args).toContain("+app_info_print");
-      // 断言没有把字面引号塞进 force_install_dir 参数
+      // runscript 文件驱动（对齐 GSM3 fetchAppBranches）：命令写进 .scf 文件，不再塞 execFile args
+      expect(args[0]).toBe("+runscript");
+      expect(args[1] as string).toMatch(/\.scf$/);
+      // 断言没有把字面引号塞进命令行
       expect(args.some((a: string) => a.includes('"'))).toBe(false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
+import https from "https";
+import { createWriteStream } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import * as tar from "tar";
 import type {
   ISteamCmdManager,
   IProcessSupervisor,
@@ -488,12 +491,16 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 检测 SteamCMD 自身版本（B-1 修复路径）。
-   * 抄 GSM3 `steamcmd +app_info_print` 解析 buildid/name 模式。
+   * 检查 U3DS（AppID 1110390）当前 buildid/name（B-1 修复路径）。
+   * 抄 GSM3 `fetchAppBranches:444-511`：runscript 文件驱动 + 多套命令序列 fallback。
+   * 冷启动 steamcmd 首次 app_info_request 常拿不到 appinfo（实测输出为空），GSM3 试 3 套序列；
+   * 本实现同样 3 套——buildid 解析为空或进程报错则换下一套，全部失败才抛 AppError（前端 toast 真实错误，
+   * 不再误报「已是最新版本」）。
    *
-   * @param installDir - 可选：U3DS installDir（用于 SteamCMD 上下文，强制 +force_install_dir）
-   * @returns 解析后的版本信息
+   * @param installDir - 可选：临时 runscript/install 目录（默认 /tmp/steamcmd-check）
+   * @returns 解析后的版本信息——{ currentBuildId, latestVersion, lastChecked }
    * @throws {AppError} code=steamcmd-not-found, status=404 当 SteamCMD 未安装
+   * @throws {AppError} code=steamcmd-check-failed, status=500 当 3 套命令序列全部拿不到 buildid
    */
   async checkUpdate(installDir?: string): Promise<{
     currentBuildId: string | null;
@@ -505,35 +512,76 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 404);
     }
 
-    // 抄 GSM3 fetchAppBranches：+app_info_request → +app_info_update → +app_info_print 拿最新 buildid。
-    // 只 app_info_print 不先 request/update，冷启动时拿不到 appinfo（实测输出为空）。
-    // force_install_dir 拆开传避免字面引号——execFile 不走 shell，引号不会被剥离（BUG-1 次生问题）。
     const tmpDir = installDir ?? "/tmp/steamcmd-check";
-    const args = [
-      "+force_install_dir",
-      tmpDir,
-      "+login",
-      "anonymous",
-      "+app_info_request",
-      U3DS_APPID,
-      "+app_info_update",
-      "1",
-      "+app_info_print",
-      U3DS_APPID,
-      "+logoff",
-      "+quit",
+    const attempts: string[][] = [
+      [
+        "login anonymous",
+        `app_info_request ${U3DS_APPID}`,
+        "app_info_update 1",
+        `app_info_print ${U3DS_APPID}`,
+        "logoff",
+        "quit",
+      ],
+      [
+        "login anonymous",
+        `app_info_request ${U3DS_APPID}`,
+        "login anonymous",
+        `app_info_print ${U3DS_APPID}`,
+        `app_info_print ${U3DS_APPID}`,
+        "logoff",
+        "quit",
+      ],
+      [
+        "login anonymous",
+        "app_info_update 1",
+        `app_info_print ${U3DS_APPID}`,
+        "logoff",
+        "quit",
+      ],
     ];
 
-    const { stdout } = await this.execFileAdapter(exePath, args, {
-      timeout: 60_000,
-    });
-    const buildIdMatch = stdout.match(/buildid[\s"]+(\d+)/);
-    const nameMatch = stdout.match(/name[\s"]+([^"\n]+)/);
-    return {
-      currentBuildId: buildIdMatch?.[1] ?? null,
-      latestVersion: nameMatch?.[1]?.trim() ?? "unknown",
-      lastChecked: new Date().toISOString(),
-    };
+    await fs.promises.mkdir(tmpDir, { recursive: true });
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts.length; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+      }
+      const scriptPath = path.join(tmpDir, `.steamcmd-check-${attempt}.scf`);
+      try {
+        await fs.promises.writeFile(
+          scriptPath,
+          [...attempts[attempt]!, ""].join("\n"),
+          { mode: 0o600 },
+        );
+        const { stdout } = await this.execFileAdapter(
+          exePath,
+          ["+runscript", scriptPath],
+          { timeout: 60_000 },
+        );
+        const buildIdMatch = stdout.match(/buildid[\s"]+(\d+)/);
+        const nameMatch = stdout.match(/name[\s"]+([^"\n]+)/);
+        const currentBuildId = buildIdMatch?.[1] ?? null;
+        if (!currentBuildId) {
+          lastError = new Error("app_info_print 未返回有效 buildid");
+          continue;
+        }
+        return {
+          currentBuildId,
+          latestVersion: nameMatch?.[1]?.trim() ?? "unknown",
+          lastChecked: new Date().toISOString(),
+        };
+      } catch (err) {
+        lastError = err;
+      } finally {
+        await fs.promises.unlink(scriptPath).catch(() => undefined);
+      }
+    }
+
+    throw new AppError(
+      "steamcmd-check-failed",
+      lastError instanceof Error ? lastError.message : "检查更新失败",
+      500,
+    );
   }
 
   /**
@@ -580,26 +628,53 @@ export class SteamCmdManager implements ISteamCmdManager {
       }
     }
 
-    // 2. 拉新（GSM3 走 multi-URL fallback；本项目延用 execFileAdapter）
+    // 2. 拉新——Node https 下载（对齐 GSM3 installOnline:163-235 / downloadFile:262-298）。
+    //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下（BUG-1 重装 curl:77 根因）。
+    //    multi-URL fallback 保留（GSM3 Dockerfile:250-251 同款：akamai 主源 + media.steampowered.com 备源）。
     await fs.promises.mkdir(targetDir, { recursive: true });
     const tarPath = path.join(targetDir, "steamcmd_linux.tar.gz");
     this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 开始下载");
-    // 用 adapter 调 curl（避免引入额外文件依赖）
-    await this.execFileAdapter(
-      "curl",
-      [
-        "-fsSL",
-        "-o",
-        tarPath,
-        "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz",
-      ],
-      { timeout: 120_000 },
-    );
+    const downloadUrls = [
+      "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz",
+      "https://media.steampowered.com/installer/steamcmd_linux.tar.gz",
+    ];
+    let lastDownloadError: unknown;
+    for (const url of downloadUrls) {
+      try {
+        await this.downloadFile(url, tarPath, (percent) => {
+          this.broadcastProgress("installing", percent, "downloading");
+        });
+        lastDownloadError = undefined;
+        break;
+      } catch (err) {
+        lastDownloadError = err;
+        this.loggerUpdate().warn({ err, url }, "SteamCMD 下载源失败，尝试下一个");
+      }
+    }
+    if (lastDownloadError) {
+      this.broadcastProgress("failed", 0, "failed");
+      throw new AppError(
+        "steamcmd-download-failed",
+        `SteamCMD 下载失败: ${
+          lastDownloadError instanceof Error
+            ? lastDownloadError.message
+            : String(lastDownloadError)
+        }`,
+        500,
+      );
+    }
 
-    // 3. 解压（用 adapter 调 system tar）
-    await this.execFileAdapter("tar", ["-xzf", tarPath, "-C", targetDir], {
-      timeout: 60_000,
-    });
+    // 3. 解压——tar npm 库（对齐 GSM3 extractTarGz:312-330），不依赖系统 tar。
+    try {
+      await tar.extract({ file: tarPath, cwd: targetDir });
+    } catch (err) {
+      this.broadcastProgress("failed", 0, "failed");
+      throw new AppError(
+        "steamcmd-extract-failed",
+        `SteamCMD 解压失败: ${err instanceof Error ? err.message : String(err)}`,
+        500,
+      );
+    }
     await fs.promises.unlink(tarPath).catch(() => undefined);
 
     // 4. 修复 steamcmd.sh 可执行
@@ -702,6 +777,61 @@ export class SteamCmdManager implements ISteamCmdManager {
     } catch {
       /* noop */
     }
+  }
+
+  /**
+   * 用 Node 内置 https 下载文件（对齐 GSM3 downloadFile:262-298）。
+   * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载
+   * （BUG-1 重装 curl:77 的根因在 runtime 缺 ca-certificates，走 Node https 从根上规避）。
+   *
+   * @param url - 下载 URL
+   * @param filePath - 落盘路径
+   * @param onProgress - 进度回调（0-100，content-length 未知时不回调）
+   * @returns Promise<void>，下载完成 resolve
+   * @throws {Error} HTTP 非 200 或网络错误；失败时删除半成品文件
+   *
+   * @example
+   * ```typescript
+   * await this.downloadFile(url, "/opt/steamcmd/steamcmd_linux.tar.gz", (p) => {});
+   * ```
+   */
+  private async downloadFile(
+    url: string,
+    filePath: string,
+    onProgress?: (percent: number) => void,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const file = createWriteStream(filePath);
+      https
+        .get(url, (response) => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`下载失败: HTTP ${response.statusCode}`));
+            file.destroy();
+            return;
+          }
+          const total = parseInt(
+            response.headers["content-length"] || "0",
+            10,
+          );
+          let downloaded = 0;
+          response.on("data", (chunk) => {
+            downloaded += chunk.length;
+            if (total > 0 && onProgress) {
+              onProgress(Math.round((downloaded / total) * 100));
+            }
+          });
+          response.pipe(file);
+          file.on("finish", () => {
+            file.close();
+            resolve();
+          });
+          file.on("error", (err) => {
+            fs.promises.unlink(filePath).catch(() => undefined);
+            reject(err);
+          });
+        })
+        .on("error", reject);
+    });
   }
 
   /** 避免每行 logger 字段同名冲突 */

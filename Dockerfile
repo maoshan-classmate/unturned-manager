@@ -107,21 +107,12 @@ COPY manager-web/ manager-web/
 RUN npm run build -w manager-web
 
 # ─── Stage 3: 运行时 ────────────────────────────────────
-FROM node:20-slim
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# ★ BUG-10：runtime 同样换清华源
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' \
-    /etc/apt/sources.list.d/debian.sources 2>/dev/null \
- || sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' \
-    /etc/apt/sources.list
-
-# 健康检查依赖 curl（slim 镜像不自带）
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+# ★ BUG-FIX（2026-08-10）：runtime 直接继承 base（对齐 GSM3 单镜像继承链，Dockerfile:239）。
+#   完整 i386 运行链 + /lib/ld-linux.so.2 顶层加载器符号链接 + mono + SteamCMD 全部由 base 的
+#   dpkg/apt 正确建立——杜绝此前「跨 stage COPY /usr/lib/i386-linux-gnu 搬运库文件却漏掉加载器
+#   符号链接」导致的 steamcmd 32 位二进制 "cannot execute: required file not found"
+#   （Linux 实机 BUG 1/2/5/6/9 总根）。base 已含 curl + ca-certificates（BUG-1 重装 curl:77 根因）。
+FROM base AS runtime
 
 # 默认 env——敏感值（JWT_SECRET/ENCRYPTION_KEY/ADMIN_PASSWORD）由 docker-compose 注入
 ENV NODE_ENV=production \
@@ -136,19 +127,11 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# 运行时共享依赖（i386 + Mono + Unity + SteamCMD）
-COPY --from=base /usr/lib/i386-linux-gnu /usr/lib/i386-linux-gnu
-COPY --from=base /usr/lib/x86_64-linux-gnu/libgdiplus* /usr/lib/x86_64-linux-gnu/
-COPY --from=base /opt/steamcmd /opt/steamcmd
 # ★ BUG-4：SteamCMD bind mount 初始化用——镜像内置引导副本。
 #   compose 挂 ./steamcmd:/opt/steamcmd 时空宿主目录会遮蔽镜像 SteamCMD，
 #   entrypoint 启动时从这个 bootstrap 目录 cp -an 补缺（见 docker-entrypoint.sh）。
-COPY --from=base /opt/steamcmd /opt/steamcmd-bootstrap
-COPY --from=base /root/.steam /root/.steam
-# ★ BUG-3 联动：复制 mono 到 runtime（不然 U3DS 启不起来）
-COPY --from=base /usr/bin/mono /usr/bin/mono
-COPY --from=base /usr/lib/mono /usr/lib/mono
-COPY --from=base /usr/share/mono /usr/share/mono
+#   FROM base 继承的 /opt/steamcmd + /root/.steam 由 base 的 wget+tar+ln 一次建好。
+RUN cp -r /opt/steamcmd /opt/steamcmd-bootstrap
 
 # Panel 运行文件
 COPY --from=builder /app/node_modules ./node_modules
