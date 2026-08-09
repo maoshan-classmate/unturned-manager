@@ -479,13 +479,39 @@ export class SteamCmdManager implements ISteamCmdManager {
       } as never);
     });
 
-    // 后台收尾：等待退出 → 清临时脚本 → 广播 completed/failed → 释放互斥锁
+    // 后台收尾：等待退出 → 验证内容落盘 → 清临时脚本 → 广播 completed/failed → 释放互斥锁
     void this.processSupervisor
       .waitForExit(jobId as never, DOWNLOAD_TIMEOUT_MS)
       .then(async (downloadExitCode) => {
         if (downloadExitCode !== 0 && downloadExitCode != null) {
           throw new Error(
             `SteamCMD 下载进程异常退出 (code ${downloadExitCode})`,
+          );
+        }
+        // ★ BUG-5/6（第四版）：steamcmd 下载失败时**也可能 exit 0**——item 只进
+        //   WorkshopItemDetails 元数据缓存，WorkshopItemsInstalled 空、SizeOnDisk 0，
+        //   前端却收到 completed 误报「下载成功」。
+        //   只查 exitCode 不可靠：必须验证 content/<appid>/<id>/ 目录落盘且非空。
+        const missing: string[] = [];
+        for (const id of itemIds) {
+          const itemDir = path.join(
+            stagingDir,
+            "steamapps",
+            "workshop",
+            "content",
+            U3DS_APPID,
+            id,
+          );
+          try {
+            const files = await fs.promises.readdir(itemDir);
+            if (files.length === 0) missing.push(id);
+          } catch {
+            missing.push(id);
+          }
+        }
+        if (missing.length > 0) {
+          throw new Error(
+            `SteamCMD 下载未完成（staging 无实际内容，仅元数据缓存）: ${missing.join(", ")}`,
           );
         }
         try {
