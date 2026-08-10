@@ -7,9 +7,6 @@ export interface ServerConfig {
   gamePort: Port;
   ownerSteamId: SteamId64;
   installDir: string;
-  rconPassword?: string;
-  /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
-  openModCredential?: string;
   /**
    * U3DS 启动命令（ADR-0004 §6.1）。
    * Phase 2：后端用 detectStartScript 自动生成 `./ServerHelper.sh +InternetServer/<id> -ThreadedConsole`；

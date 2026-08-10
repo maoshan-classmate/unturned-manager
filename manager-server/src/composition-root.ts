@@ -9,7 +9,6 @@ import {
   type IWorkshopApplyService,
   type IWorkshopDeleteService,
   type ILogStreamer,
-  type IRconManager,
   type IProcessSupervisor,
   type IBroadcaster,
   type IFileLockProvider,
@@ -22,7 +21,6 @@ import { AuthService } from "./modules/auth/AuthService.js";
 import { FileLockProvider } from "./modules/filelock/FileLockProvider.js";
 import { ProcessSupervisor } from "./modules/process/ProcessSupervisor.js";
 import { PtyManager } from "./modules/process/PtyManager.js";
-import { RconManager } from "./modules/rcon/RconManager.js";
 import { ServerManager } from "./modules/server/ServerManager.js";
 import { ServerDiscovery } from "./modules/server/ServerDiscovery.js";
 import { ConfigService } from "./modules/config/ConfigService.js";
@@ -48,7 +46,6 @@ export interface AppContainer {
   workshopApply: IWorkshopApplyService;
   workshopDelete: IWorkshopDeleteService;
   logStreamer: ILogStreamer;
-  rconManager: IRconManager;
   broadcaster: IBroadcaster;
   processSupervisor: IProcessSupervisor;
   ptyManager: IPtyManager;
@@ -57,7 +54,6 @@ export interface AppContainer {
 export function buildContainer(db: Database.Database): AppContainer {
   // ── 基础设施层 ──────────────────────────────────────
   const fileLock = new FileLockProvider();
-  const rconManager = new RconManager();
   const processSupervisor = new ProcessSupervisor();
   // ★ ADR-0004 Phase 1：U3DS 是 TTY-only 进程——PTY 模拟让 U3DS 走 ANSI 色彩进度条
   // （GSM3 同款依赖）。ProcessSupervisor 保留作非 PTY spawn（SteamCMD execFile/进程）
@@ -92,11 +88,11 @@ export function buildContainer(db: Database.Database): AppContainer {
 
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
   // ★ ADR-0004 Phase 2：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
+  // ★ ADR-0004 Phase 6：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
   serverManager = new ServerManager(
     db,
     new ServerDiscovery(),
     ptyManager,
-    rconManager,
     configService,
     broadcaster,
     workshopApply,
@@ -116,7 +112,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     workshopApply,
     workshopDelete,
     logStreamer,
-    rconManager,
     broadcaster,
     processSupervisor,
     ptyManager,

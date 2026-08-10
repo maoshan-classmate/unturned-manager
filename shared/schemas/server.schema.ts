@@ -15,8 +15,6 @@ export const ServerConfigSchema = z.object({
   gamePort: z.number().int().min(1024).max(65535),
   ownerSteamId: z.string().regex(/^7656119\d{10}$/, "无效的 SteamID64"),
   installDir: z.string().min(1, "安装路径不能为空"),
-  rconPassword: z.string().optional(),
-  openModCredential: z.string().optional(),
 });
 
 export const CreateServerSchema = ServerConfigSchema;
@@ -29,21 +27,12 @@ export const ConfigureServerSchema = z.object({
     .regex(/^7656119\d{10}$/)
     .optional(),
   installDir: z.string().min(1).optional(),
-  rconPassword: z.string().optional(),
-  openModCredential: z.string().optional(),
   // ADR-0004 Phase 4：startCommand 走明文持久化；min(1) 防空串覆盖兜底模板，max(2048) 防恶意巨串
   startCommand: z
     .string()
     .min(1, "启动命令不能为空")
     .max(2048, "启动命令过长(>2KB)")
     .optional(),
-});
-
-// ─── RCON ───────────────────────────────────────────────
-
-export const RconExecuteSchema = z.object({
-  command: z.string().min(1, "命令不能为空"),
-  confirmed: z.boolean().optional(),
 });
 
 // ─── Server lifecycle ──────────────────────────────────

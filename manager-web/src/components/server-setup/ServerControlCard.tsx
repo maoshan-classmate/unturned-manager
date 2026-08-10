@@ -63,7 +63,7 @@ export function ServerControlCard({
   const dirty = draft !== commands;
   const startCommandDirty = startCommandDraft !== startCommand;
   const pending = pendingId === serverId;
-  const isRunning = serverState === "RUNNING" || serverState === "DEGRADED";
+  const isRunning = serverState === "RUNNING";
 
   const handleStart = async () => {
     setActionError(null);

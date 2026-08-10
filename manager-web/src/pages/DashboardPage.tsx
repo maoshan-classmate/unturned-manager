@@ -135,23 +135,20 @@ export function DashboardPage() {
     );
   }
 
-  // ── Server state helpers ──
+  // ── Server state helpers（ADR-0004 Phase 6：4 态，去 DEGRADED） ──
   const state = server.state ?? "STOPPED";
   const isRunning = state === "RUNNING";
-  const isDegraded = state === "DEGRADED";
   const isTransitioning = state === "STARTING" || state === "STOPPING";
   const stateLabel: Record<string, string> = {
     STOPPED: "已停止",
     STARTING: "启动中",
     RUNNING: "运行中",
-    DEGRADED: "降级运行",
     STOPPING: "停止中",
   };
   const stateColor: Record<string, string> = {
     STOPPED: "#64748B",
     STARTING: "#F59E0B",
     RUNNING: "#22C55E",
-    DEGRADED: "#F59E0B",
     STOPPING: "#F59E0B",
   };
 
@@ -237,7 +234,9 @@ export function DashboardPage() {
           icon={Server}
           label="服务器状态"
           value={stateLabel[state] ?? state}
-          status={isRunning ? "online" : isDegraded ? "warning" : "neutral"}
+          status={
+            isRunning ? "online" : isTransitioning ? "warning" : "neutral"
+          }
         />
         <StatCard
           icon={Users}

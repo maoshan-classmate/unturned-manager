@@ -6,7 +6,6 @@ import { detectStartScript } from "../src/modules/server/startScript.js";
 import {
   ServerState,
   type IPtyManager,
-  type IRconManager,
   type IConfigService,
   type IBroadcaster,
   type IServerDiscovery,
@@ -28,7 +27,7 @@ vi.mock("../src/modules/server/startScript.js", () => ({
 function makeDb(): Database.Database {
   const db = new Database(":memory:");
   db.pragma("journal_mode = MEMORY");
-  // ADR-0003 B2：只保留 settings 表（ServerManager 仅用于 RCON 凭证 K-V，不再读写 servers）
+  // ADR-0003 B2：只保留 settings 表（ServerManager 用于 settings K-V：startCommand 等）
   db.exec(`
     CREATE TABLE settings (
       key TEXT PRIMARY KEY, value_enc TEXT NOT NULL,
@@ -88,20 +87,6 @@ function makeMockPty(): PtyMock {
   };
 }
 
-function makeMockRcon(): IRconManager {
-  return {
-    register: vi.fn(),
-    unregister: vi.fn(),
-    connect: vi.fn(async () => {}),
-    disconnect: vi.fn(),
-    execute: vi.fn(async () => "OK"),
-    getProtocol: vi.fn(() => "unreachable" as never),
-    isReachable: vi.fn(() => true),
-    destroy: vi.fn(async () => {}),
-    onStateChange: vi.fn(),
-  };
-}
-
 function makeMockConfig(): IConfigService {
   return {
     readCommandsDat: vi.fn(async () => ({
@@ -148,12 +133,12 @@ function makeMockBroadcaster(): IBroadcaster & { events: ServerEvent[] } {
 function setup() {
   const db = makeDb();
   const pty = makeMockPty();
-  const rcon = makeMockRcon();
   const cfg = makeMockConfig();
   const bcast = makeMockBroadcaster();
   const discovery = makeMockDiscovery();
-  const mgr = new ServerManager(db as never, discovery, pty, rcon, cfg, bcast);
-  return { db, pty, rcon, cfg, bcast, discovery, mgr };
+  // ★ ADR-0004 Phase 6：RCON 通道已删除，构造签名少 1 个 rcon 参数
+  const mgr = new ServerManager(db as never, discovery, pty, cfg, bcast);
+  return { db, pty, cfg, bcast, discovery, mgr };
 }
 
 async function createServer(mgr: ServerManager, id: string) {
@@ -179,7 +164,6 @@ async function started(mgr: ServerManager, pty: PtyMock, id: string) {
 
 describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
   let pty: PtyMock;
-  let rcon: IRconManager;
   let cfg: IConfigService;
   let bcast: IBroadcaster & { events: ServerEvent[] };
   let mgr: ServerManager;
@@ -188,7 +172,6 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     vi.useFakeTimers();
     const s = setup();
     pty = s.pty;
-    rcon = s.rcon;
     cfg = s.cfg;
     bcast = s.bcast;
     mgr = s.mgr;
@@ -265,16 +248,14 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STOPPED);
   });
 
-  it("stop 流程：RCON Save+Shutdown → PTY ctrl+c + exit → waitExit → STOPPED", async () => {
+  it("stop 流程：PTY 写 Save+Shutdown + ctrl+c + exit → waitExit → STOPPED", async () => {
     await started(mgr, pty, "S1");
     await mgr.stop("S1" as ServerId, "unit-test");
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STOPPED);
-    expect(rcon.execute).toHaveBeenCalledWith("S1" as ServerId, "Save");
-    expect(rcon.execute).toHaveBeenCalledWith(
-      "S1" as ServerId,
-      expect.stringContaining("Shutdown 30"),
-    );
+    // ★ ADR-0004 Phase 6：Save + Shutdown 改为 PTY 拼字符串写入（owner-trust 模型）
     const writes = pty.writeCalls.map(([, d]) => d);
+    expect(writes).toContain("Save\r");
+    expect(writes).toContain('Shutdown 30 "unit-test"\r');
     expect(writes).toContain(""); // ctrl+c
     expect(writes).toContain("exit\r"); // 关永驻 bash
     expect(pty.waitExit).toHaveBeenCalledWith("S1" as ServerId, 30_000);
@@ -355,7 +336,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(pty.write).not.toHaveBeenCalled(); // 无空转 write
   });
 
-  it("applyModChanges：state 非 RUNNING/DEGRADED → 409", async () => {
+  it("applyModChanges：state 非 RUNNING → 409（ADR-0004 Phase 6 去 DEGRADED）", async () => {
     await createServer(mgr, "S1");
     // STOPPED 状态下调用 mod_apply 应抛 409
     await expect(
@@ -544,7 +525,7 @@ describe("ServerManager — startCommand 持久化（ADR-0004 Phase 4）", () =>
     );
   });
 
-  it("removeServer 同步清掉 startCommand K-V（RCON K-V 也确认没了）", async () => {
+  it("removeServer 同步清掉 startCommand K-V", async () => {
     const { db, mgr } = setup();
     await createServer(mgr, "P4");
     await mgr.configureServer("P4" as ServerId, {
@@ -556,11 +537,6 @@ describe("ServerManager — startCommand 持久化（ADR-0004 Phase 4）", () =>
       .prepare("SELECT value_enc FROM settings WHERE key = ?")
       .get("startCommand:P4");
     expect(row).toBeUndefined();
-    // RCON K-V 也确认没了（验证既有 deleteRconCredentials 不被破坏）
-    const rconRows = db
-      .prepare("SELECT 1 FROM settings WHERE key LIKE 'rcon:P4:%'")
-      .all();
-    expect(rconRows).toHaveLength(0);
   });
 
   it("重启模拟：loadServersFromDisk 从 K-V 恢复 startCommand 到 in-memory config", async () => {
@@ -587,7 +563,6 @@ describe("ServerManager — startCommand 持久化（ADR-0004 Phase 4）", () =>
       db as never,
       discovery,
       pty,
-      makeMockRcon(),
       makeMockConfig(),
       makeMockBroadcaster(),
     );

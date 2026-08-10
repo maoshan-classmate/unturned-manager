@@ -1,5 +1,5 @@
 import type { ServerId, SteamId64 } from "../types/branded.js";
-import type { ServerState, RconProtocol } from "../types/state.js";
+import type { ServerState } from "../types/state.js";
 
 // 泛化 WebSocket 连接类型——共享层不依赖 ws 库
 export interface WsConnection {
@@ -24,12 +24,6 @@ export type ServerEvent =
       serverId: ServerId;
       line: string;
       source: "stdout" | "file";
-    }
-  | {
-      type: "rcon_status";
-      serverId: ServerId;
-      protocol: RconProtocol;
-      reachable: boolean;
     }
   | {
       type: "player_join";

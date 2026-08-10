@@ -1,47 +1,54 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 // ─── 通用工具（P0 提取自各页面的重复代码）───────────────
 
 /** 文件大小格式化：B → KB → MB */
 export function formatSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (!bytes || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** ISO 日期 → YYYY-MM-DD */
 export function formatDate(iso: string): string {
-  try { return new Date(iso).toISOString().slice(0, 10) }
-  catch { return iso.slice(0, 10) }
+  try {
+    return new Date(iso).toISOString().slice(0, 10);
+  } catch {
+    return iso.slice(0, 10);
+  }
 }
 
-/** 服务端状态 → 中文标签 */
+/** 服务端状态 → 中文标签（ADR-0004 Phase 6：4 态，去 DEGRADED） */
 export function stateLabel(state: string): string {
   const labels: Record<string, string> = {
-    STOPPED: '已停止', STARTING: '启动中', RUNNING: '运行中',
-    DEGRADED: '降级运行', STOPPING: '停止中',
-  }
-  return labels[state] ?? state
+    STOPPED: "已停止",
+    STARTING: "启动中",
+    RUNNING: "运行中",
+    STOPPING: "停止中",
+  };
+  return labels[state] ?? state;
 }
 
-/** 服务端状态 → 颜色 */
+/** 服务端状态 → 颜色（ADR-0004 Phase 6：4 态，去 DEGRADED） */
 export function stateColor(state: string): string {
   const colors: Record<string, string> = {
-    STOPPED: '#64748B', STARTING: '#F59E0B', RUNNING: '#22C55E',
-    DEGRADED: '#F59E0B', STOPPING: '#F59E0B',
-  }
-  return colors[state] ?? '#64748B'
+    STOPPED: "#64748B",
+    STARTING: "#F59E0B",
+    RUNNING: "#22C55E",
+    STOPPING: "#F59E0B",
+  };
+  return colors[state] ?? "#64748B";
 }
 
 /** 统一错误消息提取 */
-export function errorMessage(err: unknown, fallback = '操作失败'): string {
-  return err instanceof Error ? err.message : fallback
+export function errorMessage(err: unknown, fallback = "操作失败"): string {
+  return err instanceof Error ? err.message : fallback;
 }
 
 // ─── Mod 工具（v2.2 新增）────────────────────────────
@@ -59,23 +66,25 @@ export function errorMessage(err: unknown, fallback = '操作失败'): string {
  * ```
  */
 export function stripBbcode(text: string): string {
-  if (!text) return ''
-  return text
-    // 0. 特殊处理 [img]url[/img]——整对移除（URL 是内容不是属性，纯文本场景不需要图片）
-    .replace(/\[img\]([\s\S]*?)\[\/img\]/gi, '')
-    // 1. 移除 [tag=value]...[/tag] 完整对（含值，如 [color=red]...[/color]）
-    .replace(/\[(\w+)(?:=[^\]]*)?\]([\s\S]*?)\[\/\1\]/g, '$2')
-    // 2. 移除孤立开/闭标签（[b]、[/i]、[EN] 等）
-    .replace(/\[\/?\w+(?:=[^\]]*)?\]/g, '')
-    // 3. 解码常见 HTML 实体
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    // 4. 折叠连续空白
-    .replace(/\s+/g, ' ')
-    .trim()
+  if (!text) return "";
+  return (
+    text
+      // 0. 特殊处理 [img]url[/img]——整对移除（URL 是内容不是属性，纯文本场景不需要图片）
+      .replace(/\[img\]([\s\S]*?)\[\/img\]/gi, "")
+      // 1. 移除 [tag=value]...[/tag] 完整对（含值，如 [color=red]...[/color]）
+      .replace(/\[(\w+)(?:=[^\]]*)?\]([\s\S]*?)\[\/\1\]/g, "$2")
+      // 2. 移除孤立开/闭标签（[b]、[/i]、[EN] 等）
+      .replace(/\[\/?\w+(?:=[^\]]*)?\]/g, "")
+      // 3. 解码常见 HTML 实体
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // 4. 折叠连续空白
+      .replace(/\s+/g, " ")
+      .trim()
+  );
 }
 
 /**
@@ -98,31 +107,31 @@ export function stripBbcode(text: string): string {
  * ```
  */
 export function formatModMeta(meta: {
-  author: string
-  authorName?: string
-  subscriptions?: number
-  fileId: string
+  author: string;
+  authorName?: string;
+  subscriptions?: number;
+  fileId: string;
 }): Array<{ icon: string; text: string; className: string }> {
   const items: Array<{ icon: string; text: string; className: string }> = [
     {
-      icon: 'User',
+      icon: "User",
       text: meta.authorName || meta.author,
-      className: 'text-slate-400 text-xs',
+      className: "text-slate-400 text-xs",
     },
-  ]
+  ];
   if (meta.subscriptions != null && meta.subscriptions > 0) {
     items.push({
-      icon: 'Users',
+      icon: "Users",
       text: `${formatCompactNumber(meta.subscriptions)} 订阅`,
-      className: 'text-slate-500 text-xs',
-    })
+      className: "text-slate-500 text-xs",
+    });
   }
   items.push({
-    icon: 'Hash',
+    icon: "Hash",
     text: meta.fileId,
-    className: 'text-slate-500 text-[11px] font-mono',
-  })
-  return items
+    className: "text-slate-500 text-[11px] font-mono",
+  });
+  return items;
 }
 
 /**
@@ -138,7 +147,7 @@ export function formatModMeta(meta: {
  * ```
  */
 export function formatCompactNumber(n: number): string {
-  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}亿`
-  if (n >= 10_000) return `${(n / 10_000).toFixed(1)}万`
-  return String(n)
+  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}亿`;
+  if (n >= 10_000) return `${(n / 10_000).toFixed(1)}万`;
+  return String(n);
 }

@@ -39,8 +39,9 @@ const PRESET_COMMANDS: PresetCommand[] = [
  *
  * ADR-0004 Phase 3：输出区从 <pre> 换 xterm.js <Terminal />——U3DS 的 ANSI 彩色
  * 日志天然渲染；终端里可直接键盘交互（onData → WS terminal_input → PTY stdin）。
- * 上方保留「预设命令 + 清空 + 服务器切换」，底部保留「输入框 + 发送」走结构化 RCON
- * 命令（危险指令二次确认保留）。
+ * 上方保留「预设命令 + 清空 + 服务器切换」，底部保留「输入框 + 发送」——所有命令
+ * 经 WS terminal_input 写入 PTY 终端（ADR-0004 Phase 6：RCON 通道已删，owner-trust
+ * 模型），危险指令由前端 ConfirmDialog 拦截（owner-trust 下无服务端 428 门控）。
  */
 export function ConsolePage() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -55,7 +56,7 @@ export function ConsolePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const commandHistory = useRef<string[]>([]);
 
-  // 发送命令（结构化 RCON 通道——sendCommand 走 /servers/:id/execute REST）
+  // 发送命令（ADR-0004 Phase 6：RCON 通道已删——sendCommand 经 WS terminal_input 写入 PTY）
   const handleSend = useCallback(
     async (cmd?: string) => {
       const command = (cmd ?? input).trim();
@@ -231,7 +232,7 @@ export function ConsolePage() {
             onKeyDown={handleKeyDown}
             className="flex-1 bg-transparent border-none outline-none text-xs font-mono"
             style={{ color: "#F1F5FB" }}
-            placeholder="输入 RCON 命令...（或直接在上方终端里敲）"
+            placeholder="输入命令...（写入服务器终端）"
             aria-label="控制台命令输入"
             spellCheck={false}
             autoComplete="off"

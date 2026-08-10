@@ -23,13 +23,8 @@ export interface ServerInfo {
   startCommand?: string;
 }
 
-/** 创建实例请求体——POST /servers 契约（RCON 凭证走后端 K-V 加密存储） */
-export interface CreateServerPayload extends Omit<ServerInfo, "state"> {
-  /** RocketMod Telnet RCON 裸密码（可选，留空后端自动生成） */
-  rconPassword?: string;
-  /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
-  openModCredential?: string;
-}
+/** 创建实例请求体——POST /servers 契约（ADR-0004 Phase 6：RCON 字段已删除） */
+export interface CreateServerPayload extends Omit<ServerInfo, "state"> {}
 
 interface UseServerReturn {
   servers: ServerInfo[];

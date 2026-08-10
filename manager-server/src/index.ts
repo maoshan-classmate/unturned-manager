@@ -40,10 +40,8 @@ import { createAuthRouter } from "./routes/auth.js";
 import { createServersRouter } from "./routes/servers.js";
 import { createModsRouter } from "./routes/mods.js";
 import { createModBrowseRouter } from "./routes/mod-browse.js";
-import { createRconRouter } from "./routes/rcon.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createFilesRouter } from "./routes/files.js";
-import { createPlayersRouter } from "./routes/players.js";
 import { createSteamCmdRouter } from "./routes/steamcmd.js";
 import { createWorkshopRouter } from "./routes/workshop.js";
 import { createSettingsRouter } from "./routes/settings.js";
@@ -115,10 +113,8 @@ app.use(
     container.configService,
   ),
 );
-app.use("/api/servers", createRconRouter(container.rconManager));
 app.use("/api/servers", createConfigRouter(container.configService));
 app.use("/api/servers", createFilesRouter(container.filesService));
-app.use("/api/servers", createPlayersRouter(container.rconManager));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
@@ -175,7 +171,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   try {
     await wsBroadcaster.destroy();
-    await container.rconManager.destroy();
     await container.processSupervisor.destroy();
     await container.ptyManager.destroy(); // ★ P0-1 修复：Phase 1 PtyManager 缺优雅关闭钩子
 

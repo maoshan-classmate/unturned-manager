@@ -1,7 +1,8 @@
 # E2E 验证清单（卡 D §5 — playwright）
 
-> 以下 9 条需在真实 U3DS + RCON + A2S 环境下运行（Sprint 5 实机验证）。
-> 对应 spec 文件（`d1-d9.spec.ts`）将在 Sprint 5 创建。
+> 以下 8 条需在真实 U3DS 环境下运行（Sprint 5 实机验证）。
+> ★ ADR-0004 Phase 6：RCON 通道已删除——命令统一走 PTY 终端 owner-trust 模型，A2S 亦不在状态机内。
+> 对应 spec 文件（`d1-d8.spec.ts`）将在 Sprint 5 创建。
 > 
 > **当前可用**：`api-e2e.spec.ts`——无需 U3DS，10 条 API 冒烟测试。
 > ```bash
@@ -11,14 +12,13 @@
 | # | 验收项 | 预期结果 | 前置条件 |
 |---|---|---|---|
 | D1 | Dashboard 启动按钮不再卡 STARTING（30s 后报错回滚） | `state_change: STOPPED→STARTING→RUNNING` | U3DS ServerHelper.sh 可用 |
-| D2 | Console 输入命令，输出实时出现 | WS `console_line` 事件在页面渲染 | LogStreamer 已接线 + RCON 可通 |
+| D2 | Console 输入命令，输出实时出现 | WS `console_line` 事件在页面渲染（命令经 `terminal_input` 入站） | LogStreamer 已接线 + PTY 终端可用 |
 | D3 | WS 重连后订阅不丢 | 断开 2s 后重连，再次收 console_line | WS subscribe 协议已实现 |
 | D4 | Config·Commands 读取正确、保存不报错 | GET/PUT 200，`known.Name/Port` 正确 | test-server 有默认 Commands.dat |
 | D5 | Config·Txt 读取正确、保存不报错 | GET/PUT 200，`sections.Browser` 有数据 | test-server 有 Config.txt |
 | D6 | Mods "应用变更" 真正触发重启流水线 | POST /apply → 202 → 等待 → 服务器重新 RUNNING | 至少 1 个 Workshop Mod 可下载 |
 | D7 | Files 上传 .unity3d 不被破坏 | 上传 5MB 文件 → 下载 → SHA256 一致 | multipart 端点可用 |
-| D8 | Players 表格非空（数据来自 GET /players） | 返回 `{ players: [...] }` + `fetchedAt` | U3DS 有玩家在线 |
-| D9 | Settings 改密码真正写到 DB | 改密码后旧密码失效，新密码可用 | DB 中有 users 行 |
+| D8 | Settings 改密码真正写到 DB | 改密码后旧密码失效，新密码可用 | DB 中有 users 行 |
 
 ## 冒烟测试脚本（无 U3DS 情况下验证 API）
 

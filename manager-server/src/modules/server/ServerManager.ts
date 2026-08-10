@@ -6,7 +6,6 @@ import type {
   IServerManager,
   IServerDiscovery,
   IPtyManager,
-  IRconManager,
   IConfigService,
   IBroadcaster,
   ActiveOperation,
@@ -14,7 +13,7 @@ import type {
   IWorkshopApplyService,
   CommandsDatRecord,
 } from "@unturned-manager/shared";
-import { ServerState, RconConnectionState } from "@unturned-manager/shared";
+import { ServerState } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
 import { AppError } from "../../utils/AppError.js";
 import { resolveInstallDir, resolveServerPath } from "./pathResolver.js";
@@ -23,9 +22,6 @@ import {
   ensureStartScriptExecutable,
 } from "./startScript.js";
 import {
-  getRconCredential,
-  setRconCredential,
-  deleteRconCredentials,
   getStartCommand,
   setStartCommand,
   deleteStartCommand,
@@ -59,9 +55,14 @@ interface RuntimeServerState {
  * 数据源变更：
  *   - 实例身份 = <installDir>/Servers/<id>/Server/Commands.dat 存在性（目录扫描，替代 DB servers 表）
  *   - 运行时状态 = in-memory（B2 §9.6：面板启动不吸附真实进程，一律 STOPPED）
- *   - RCON 凭证 = settings K-V（AES-GCM 加密，ADR-17 双协议分离）
+ *   - startCommand = settings K-V 明文（Phase 4）
  *
- * 状态机：STOPPED → STARTING → RUNNING；RUNNING → STOPPING → STOPPED；RUNNING ↔ DEGRADED。
+ * 状态机（ADR-0004 Phase 6：去 DEGRADED）：
+ *   STOPPED → STARTING → RUNNING → STOPPING → STOPPED
+ *   决定性状态由 PTY 进程存活驱动——bash 活 = RUNNING/STARTING/STOPPING，bash 死 = STOPPED，
+ *   中间无 DEGRADED 模糊态（GSM3 同款 owner-trust 模型）。
+ *
+ * Phase 6：RCON 通道删除，所有命令通过 PTY 终端 owner-trust 模型执行（§6.4）。
  */
 export class ServerManager implements IServerManager {
   private servers = new Map<ServerId, RuntimeServerState>();
@@ -70,24 +71,11 @@ export class ServerManager implements IServerManager {
     private db: Database.Database,
     private discovery: IServerDiscovery,
     private ptyManager: IPtyManager,
-    private rconManager: IRconManager,
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
     private workshopApply?: IWorkshopApplyService,
   ) {
     this.loadServersFromDisk();
-
-    // CLAUDE.md §4.7: DEGRADED 状态接线——RCON 断连 → 降级
-    this.rconManager.onStateChange((serverId, state) => {
-      if (state === RconConnectionState.DEGRADED) {
-        this.transition(serverId, ServerState.DEGRADED);
-      } else if (state === RconConnectionState.CONNECTED) {
-        const current = this.getState(serverId);
-        if (current === ServerState.DEGRADED) {
-          this.transition(serverId, ServerState.RUNNING);
-        }
-      }
-    });
 
     // ★ ADR-0004 Phase 2：崩溃检测从 processSupervisor.onCrash 挪到 PTY exit——
     // U3DS 走 PTY 后，bash 退出 = PTY 会话结束（bash 永驻，U3DS 崩溃时 bash 回提示符
@@ -114,8 +102,6 @@ export class ServerManager implements IServerManager {
           installDir: resolveInstallDir(),
         },
       });
-      this.restoreRcon(s.id);
-      // ADR-0004 Phase 4：从 settings K-V 恢复 startCommand（持久化跨重启）
       this.restoreStartCommand(s.id);
     }
     logger.info({ count: discovered.length }, "已从目录扫描加载服务器");
@@ -178,19 +164,6 @@ export class ServerManager implements IServerManager {
     };
     await this.configService.writeCommandsDat(config.id, record);
 
-    // RCON 凭证 → settings K-V（AES-GCM）
-    if (config.openModCredential) {
-      setRconCredential(
-        this.db,
-        config.id,
-        "openmod",
-        config.openModCredential,
-      );
-    }
-    if (config.rconPassword) {
-      setRconCredential(this.db, config.id, "rocketmod", config.rconPassword);
-    }
-
     // ADR-0004 Phase 4：startCommand 明文落库（仅在创建时显式传入时）。
     // 注：buildStartCommand 兜底生成留到 startPty 首次启动时按需执行（U3DS 未装时
     //      start 自然抛 409），不在 createServer 阶段探测——避免创建 → 启动语义混淆。
@@ -209,13 +182,12 @@ export class ServerManager implements IServerManager {
       config: normalized,
     });
 
-    this.restoreRcon(config.id);
     logger.info({ serverId: config.id }, "服务器已创建");
   }
 
   /**
-   * 更新实例配置。凭证变更 → settings K-V + 重新 register（B2 §3.3 缺口 2 修复）；
-   * 身份字段变更 → 写回 Commands.dat，保持目录真源同步。
+   * 更新实例配置。startCommand 变更 → settings K-V（明文）；身份字段变更 → 写回 Commands.dat。
+   * ★ ADR-0004 Phase 6：RCON 凭证字段已删（openModCredential / rconPassword 不再支持）。
    *
    * @throws {AppError} code=server-not-found, status=404 当实例不存在
    */
@@ -230,13 +202,6 @@ export class ServerManager implements IServerManager {
       installDir: resolveInstallDir(),
     };
 
-    // 凭证变更 → 落 K-V，随后 restoreRcon 重新 register
-    if (patch.openModCredential !== undefined) {
-      setRconCredential(this.db, serverId, "openmod", patch.openModCredential);
-    }
-    if (patch.rconPassword !== undefined) {
-      setRconCredential(this.db, serverId, "rocketmod", patch.rconPassword);
-    }
     // ADR-0004 Phase 4：startCommand patch 走明文 K-V（不加密）
     if (patch.startCommand !== undefined) {
       setStartCommand(this.db, serverId, patch.startCommand);
@@ -258,15 +223,11 @@ export class ServerManager implements IServerManager {
     }
 
     existing.config = updated;
-    if (patch.gamePort != null) {
-      // A2S 通道已删（ADR-0004 Phase 1）——端口变更无需 register
-    }
-    this.restoreRcon(serverId);
     logger.info({ serverId }, "服务器配置已更新");
   }
 
   /**
-   * 删除实例（B2 §3.6）：RUNNING 先优雅 stop → 删目录（幂等）→ 删 RCON 凭证 K-V → unregister。
+   * 删除实例（B2 §3.6）：RUNNING 先优雅 stop → 删目录（幂等）→ 删 startCommand K-V。
    * 目录不存在时幂等返回（不抛错）。
    *
    * @param serverId - 实例 ID
@@ -286,10 +247,8 @@ export class ServerManager implements IServerManager {
       /* 目录不存在——幂等返回 */
     }
 
-    deleteRconCredentials(this.db, serverId);
     // ADR-0004 Phase 4：同步清掉 startCommand K-V
     deleteStartCommand(this.db, serverId);
-    this.rconManager.unregister(serverId);
     this.servers.delete(serverId);
     logger.info({ serverId }, "服务器已删除");
   }
@@ -338,12 +297,6 @@ export class ServerManager implements IServerManager {
 
     try {
       const result = await this.startPty(serverId);
-      // 连接 RCON（保留，Phase 6 评估去留）
-      try {
-        await this.rconManager.connect(serverId);
-      } catch (err) {
-        logger.warn({ serverId, err }, "RCON 连接失败，服务仍在运行");
-      }
       return result;
     } catch (err) {
       logger.error({ serverId, err }, "启动失败");
@@ -404,7 +357,6 @@ export class ServerManager implements IServerManager {
     try {
       await this.stopPty(serverId, reason);
       this.transition(serverId, ServerState.STOPPED);
-      this.rconManager.disconnect(serverId);
     } finally {
       entry.activeOperation = { type: "none" };
     }
@@ -453,7 +405,6 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STOPPING);
     await this.stopPty(serverId, reason);
     this.transition(serverId, ServerState.STOPPED);
-    this.rconManager.disconnect(serverId);
   }
 
   /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。 */
@@ -463,12 +414,6 @@ export class ServerManager implements IServerManager {
 
     this.transition(serverId, ServerState.STARTING);
     await this.startPty(serverId);
-
-    try {
-      await this.rconManager.connect(serverId);
-    } catch {
-      /* noop */
-    }
   }
 
   /**
@@ -579,27 +524,20 @@ export class ServerManager implements IServerManager {
    *
    * 实机说明（review 风险-2）：U3DS 在前台运行时，③ 的 exit\r 字节进的是 U3DS 的 stdin
    * 而非 bash（终端输入送达前台进程组），会被 U3DS 当控制台命令忽略——因此优雅关闭的主力
-   * 是 ① RCON Shutdown 30 + ② ctrl+c，exit\r 只在 U3DS 已退出、bash 回提示符后才有机会命中。
-   * 真实停止耗时 ≈ RCON Shutdown 30 秒，waitExit 超时后 forceKill 收尾是常态路径而非兜底。
-   * 数据安全由 ① Save 先行保证；RCON 不可达时（isReachable false）走 ctrl+c 直杀，无 Save，
-   * 属「RCON 挂了无法安全关」的固有代价。
+   * 是 ① PTY 写 Save/Shutdown 命令 + ② ctrl+c，exit\r 只在 U3DS 已退出、bash 回提示符后才有机会命中。
+   * 真实停止耗时 ≈ Shutdown 30 秒，waitExit 超时后 forceKill 收尾是常态路径而非兜底。
+   * ★ ADR-0004 Phase 6：Save 与 Shutdown 改为 PTY 拼字符串写入（owner-trust 模式，等同 GSM3 形态）。
    */
   private async stopPty(serverId: ServerId, reason: string): Promise<void> {
     const entry = this.ensureServer(serverId);
     entry.stopRequested = true; // 防 onExit 误判崩溃重启
 
-    // ① RCON 优雅关闭（U3DS 已知可靠路径）
-    if (this.rconManager.isReachable(serverId)) {
-      try {
-        await this.rconManager.execute(serverId, "Save");
-      } catch {
-        /* RCON 可能已断开 */
-      }
-      try {
-        await this.rconManager.execute(serverId, `Shutdown 30 "${reason}"`);
-      } catch {
-        /* Shutdown 可能不受支持 */
-      }
+    // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径——Phase 6 替代原 RCON.execute）
+    try {
+      this.ptyManager.write(serverId, "Save\r");
+      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\r`);
+    } catch {
+      /* PTY 可能已死——fallthrough 到 ctrl+c 强杀 */
     }
 
     // ② PTY 写 ctrl+c（ADR-0004 §2.2）——U3DS 收到 SIGINT 退出
@@ -696,7 +634,6 @@ export class ServerManager implements IServerManager {
     // stopRequested 置位防 onExit 误判崩溃重启。
     entry.stopRequested = true;
     this.ptyManager.forceKill(serverId);
-    this.rconManager.disconnect(serverId);
     this.transition(serverId, ServerState.STOPPED);
     entry.activeOperation = { type: "none" };
   }
@@ -709,11 +646,11 @@ export class ServerManager implements IServerManager {
    * ② writeWorkshopFileIds 写新 ID
    * ③ RCON `Say` 公告即将重启
    * ④ 每 10s 广播一次倒计时（共 5 次：50→10 剩余）
-   * ⑤ RCON `Save`
-   * ⑥ RCON `Shutdown 10 "<原因>"`
+   * ⑤ PTY 写 `Save`（owner-trust，Phase 6 替代原 RCON.execute）
+   * ⑥ PTY 写 `Shutdown 10 "<原因>"`
    * ⑦ PTY waitExit 等 bash 退出（30s 超时则 forceKill 关 bash）
    * ⑧ spawn PTY bash + 1s 塞 startCommand（走 startInternal + RUNNING transition）
-   * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
+   * ⑨ PTY 写 `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
    *
    * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
    */
@@ -736,11 +673,8 @@ export class ServerManager implements IServerManager {
       modIds: modIds as string[],
     };
 
-    // 当前必须是 RUNNING（DEGRADED 也允许）才能 mod_apply
-    if (
-      entry.state !== ServerState.RUNNING &&
-      entry.state !== ServerState.DEGRADED
-    ) {
+    // 当前必须是 RUNNING 才能 mod_apply
+    if (entry.state !== ServerState.RUNNING) {
       entry.activeOperation = { type: "none" };
       throw new AppError(
         "server-not-running",
@@ -783,17 +717,15 @@ export class ServerManager implements IServerManager {
       announce("writing_config");
       await this.configService.writeWorkshopFileIds(serverId, modIds);
 
-      // ③ RCON Say 公告——只有 RCON 通了才发
-      if (this.rconManager.isReachable(serverId)) {
-        announce("broadcasting", 60);
-        try {
-          await this.rconManager.execute(
-            serverId,
-            'Say "服务器将在 60 秒后重启以应用 Mod 变更"',
-          );
-        } catch {
-          /* ignore */
-        }
+      // ③ PTY 写 Say 公告（owner-trust 模式——Phase 6 替代原 RCON.execute）
+      announce("broadcasting", 60);
+      try {
+        this.ptyManager.write(
+          serverId,
+          'Say "服务器将在 60 秒后重启以应用 Mod 变更"\r',
+        );
+      } catch {
+        /* ignore */
       }
 
       // ④ 5 次倒计时广播（10s 间隔）——不真正等，只是发事件
@@ -801,30 +733,23 @@ export class ServerManager implements IServerManager {
         announce("countdown", remaining);
       }
 
-      // ⑤ Save
-      if (this.rconManager.isReachable(serverId)) {
-        announce("saving");
-        try {
-          await this.rconManager.execute(serverId, "Save");
-        } catch {
-          /* ignore */
-        }
+      // ⑤ Save（PTY 写命令，owner-trust 模式——等效原 RCON.execute）
+      announce("saving");
+      try {
+        this.ptyManager.write(serverId, "Save\r");
+      } catch {
+        /* PTY 可能已死 */
       }
 
       // ⑥ Shutdown
       announce("shutting_down", 10);
-      if (this.rconManager.isReachable(serverId)) {
-        try {
-          await this.rconManager.execute(
-            serverId,
-            'Shutdown 10 "Mod 变更重启"',
-          );
-        } catch {
-          /* Shutdown 可能受限 */
-        }
+      try {
+        this.ptyManager.write(serverId, 'Shutdown 10 "Mod 变更重启"\r');
+      } catch {
+        /* PTY 可能受限 */
       }
 
-      // ⑦ 等进程退出（★ Phase 2：bash 永驻不自己退——RCON Shutdown 10 让 U3DS 优雅退出后
+      // ⑦ 等进程退出（★ Phase 2：bash 永驻不自己退——Shutdown 10 让 U3DS 优雅退出后
       // bash 回提示符仍在。等 bash 退出必然超时 → forceKill 关 bash。stopRequested 置位防
       // onExit 误判崩溃重启）
       announce("waiting_exit");
@@ -838,7 +763,6 @@ export class ServerManager implements IServerManager {
         await this.ptyManager.waitExit(serverId, 2_000);
       }
       this.transition(serverId, ServerState.STOPPED);
-      this.rconManager.disconnect(serverId);
 
       // ⑦.5 staging → content 移动（acf 合并 + File_IDs 同步 + 回滚）
       if (this.workshopApply) {
@@ -850,12 +774,10 @@ export class ServerManager implements IServerManager {
       await this.startInternal(serverId);
 
       // ⑨ 收尾
-      if (this.rconManager.isReachable(serverId)) {
-        try {
-          await this.rconManager.execute(serverId, 'Say "Mod 变更已应用"');
-        } catch {
-          /* ignore */
-        }
+      try {
+        this.ptyManager.write(serverId, 'Say "Mod 变更已应用"\r');
+      } catch {
+        /* ignore */
       }
       announce("completed");
       logger.info({ serverId, modCount: modIds.length }, "Mod 变更流水线完成");
@@ -913,24 +835,10 @@ export class ServerManager implements IServerManager {
     logger.info({ serverId, from, to }, "状态转换");
   }
 
-  /** 从 settings K-V 恢复 RCON 凭证并 register（B2 §3.3 缺口 1 修复——面板重启后凭证不丢） */
-  private restoreRcon(serverId: ServerId): void {
-    const cfg = this.servers.get(serverId)?.config;
-    if (!cfg) return;
-    this.rconManager.register(serverId, {
-      host: "127.0.0.1",
-      gamePort: cfg.gamePort,
-      openModCredential:
-        getRconCredential(this.db, serverId, "openmod") ?? undefined,
-      rocketModPassword:
-        getRconCredential(this.db, serverId, "rocketmod") ?? undefined,
-      ownerSteamId: cfg.ownerSteamId,
-    });
-  }
-
   /**
    * ADR-0004 Phase 4：从 settings K-V 恢复 startCommand 到 in-memory config。
-   * loadServersFromDisk 时调用（与 restoreRcon 对齐）——用户编辑过的 startCommand 跨重启保留。
+   * loadServersFromDisk 时调用——用户编辑过的 startCommand 跨重启保留。
+   * ★ Phase 6：RCON 通道已删除，对应 restoreRcon 不再需要。
    */
   private restoreStartCommand(serverId: ServerId): void {
     const entry = this.servers.get(serverId);
