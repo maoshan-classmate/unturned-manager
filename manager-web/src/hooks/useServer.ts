@@ -7,7 +7,7 @@ export interface ServerInfo {
   id: string;
   /** 显示名称 */
   name: string;
-  /** 游戏端口（A2S 查询端口 = gamePort + 1） */
+  /** 游戏端口（Unturned 用 gamePort，监听端口 = gamePort） */
   gamePort: number;
   /** 服务器 Owner 的 SteamID64 */
   ownerSteamId: string;

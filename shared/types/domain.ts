@@ -1,4 +1,4 @@
-import type { ServerId, SteamId64, WorkshopFileId, Port } from './branded.js';
+import type { ServerId, SteamId64, WorkshopFileId, Port } from "./branded.js";
 
 // 服务端实例配置
 export interface ServerConfig {
@@ -37,7 +37,7 @@ export interface ConfigEntry {
   value: string | null;
   comment: string | null;
   known: boolean;
-  type?: 'string' | 'bool' | 'int';
+  type?: "string" | "bool" | "int";
 }
 
 // WorkshopDownloadConfig.json
@@ -52,35 +52,26 @@ export interface WorkshopConfig {
   Shutdown_Kick_Message: string;
 }
 
-// A2S 查询结果
-export interface A2SInfo {
-  players: number;
-  maxPlayers: number;
-  map: string;
-  version: string;
-  latency: number;
-}
-
 // Workshop Mod 元数据
 // v2.2: 加 authorName 字段（GetPlayerSummaries 实时补全）
 export interface WorkshopModMeta {
   fileId: WorkshopFileId;
   title: string;
-  author: string;          // SteamID64 数字串
-  authorName?: string;     // 实时补全的作者昵称
+  author: string; // SteamID64 数字串
+  authorName?: string; // 实时补全的作者昵称
   description: string;
   previewUrl?: string;
   fileSize?: number;
   updatedAt?: string;
-  voteScore?: number;      // 0-5 星级（Steam vote_data.score * 5）
+  voteScore?: number; // 0-5 星级（Steam vote_data.score * 5）
   tags?: string[];
 }
 
 // acf 真源条目（VDF 解析结果）
 export interface WorkshopAcfItem {
   fileId: WorkshopFileId;
-  timeupdated: number;     // Unix 时间戳（秒）
-  size: number;            // 字节
+  timeupdated: number; // Unix 时间戳（秒）
+  size: number; // 字节
   manifest?: string;
 }
 
@@ -100,9 +91,9 @@ export interface FileEntry {
 }
 
 export interface FilePermissions {
-  owner: 'read' | 'write' | 'none';
-  group: 'read' | 'write' | 'none';
-  other: 'read' | 'write' | 'none';
+  owner: "read" | "write" | "none";
+  group: "read" | "write" | "none";
+  other: "read" | "write" | "none";
 }
 
 // SteamCMD 状态

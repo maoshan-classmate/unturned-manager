@@ -1,11 +1,11 @@
-import axios from 'axios';
+import axios from "axios";
 
 export const apiClient = axios.create({
-  baseURL: '/api',
-  // BUG-3/7 修复（第五版）：U3DS 启动 + A2S 就绪轮询后端要 30s+，老 10s 上限把 HTTP 提前掐断
+  baseURL: "/api",
+  // BUG-3/7 修复（第五版）：U3DS 启动 + PTY 就绪后端要 30s+，老 10s 上限把 HTTP 提前掐断
   // → 前端报 "timeout of 10000ms exceeded"。按路由分组，长任务（启动/install/update）单独拉长。
   timeout: 60000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
 });
 
 let accessToken: string | null = null;
@@ -32,12 +32,12 @@ export function getAccessToken(): string | null {
  */
 export function isAccessTokenExpired(token: string): boolean {
   try {
-    const part = token.split('.')[1];
+    const part = token.split(".")[1];
     if (!part) return true;
     // JWT payload 是 base64url → base64 解码
-    const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
     const payload = JSON.parse(atob(base64));
-    return typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now();
+    return typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now();
   } catch {
     return true; // 解码失败视为不可用，走刷新
   }
@@ -63,16 +63,16 @@ export function isAccessTokenExpired(token: string): boolean {
  */
 export async function ensureAccessToken(): Promise<string | null> {
   if (accessToken && !isAccessTokenExpired(accessToken)) return accessToken;
-  const refreshToken = localStorage.getItem('refreshToken');
+  const refreshToken = localStorage.getItem("refreshToken");
   if (!refreshToken) return null;
   try {
-    const { data } = await axios.post('/api/auth/refresh', { refreshToken });
+    const { data } = await axios.post("/api/auth/refresh", { refreshToken });
     setAccessToken(data.data.accessToken);
-    localStorage.setItem('refreshToken', data.data.refreshToken);
+    localStorage.setItem("refreshToken", data.data.refreshToken);
     return data.data.accessToken;
   } catch {
     setAccessToken(null);
-    localStorage.removeItem('refreshToken');
+    localStorage.removeItem("refreshToken");
     return null;
   }
 }
@@ -91,19 +91,19 @@ apiClient.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401 && accessToken) {
       try {
-        const { data } = await axios.post('/api/auth/refresh', {
-          refreshToken: localStorage.getItem('refreshToken'),
+        const { data } = await axios.post("/api/auth/refresh", {
+          refreshToken: localStorage.getItem("refreshToken"),
         });
         setAccessToken(data.data.accessToken);
-        localStorage.setItem('refreshToken', data.data.refreshToken);
+        localStorage.setItem("refreshToken", data.data.refreshToken);
 
         // 重试原请求
         error.config.headers.Authorization = `Bearer ${data.data.accessToken}`;
         return axios(error.config);
       } catch {
         setAccessToken(null);
-        localStorage.removeItem('refreshToken');
-        window.location.href = '/login';
+        localStorage.removeItem("refreshToken");
+        window.location.href = "/login";
       }
     }
     return Promise.reject(error);

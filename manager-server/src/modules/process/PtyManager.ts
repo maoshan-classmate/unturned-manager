@@ -153,6 +153,9 @@ export class PtyManager implements IPtyManager {
           logger.error({ err, serverId }, "PTY exit 回调异常");
         }
       }
+      // ★ P0-2 修复：自然 exit 后清理 callback Map，避免长寿命 PtyManager 累积闭包泄漏
+      this.exitCallbacks.delete(serverId);
+      this.dataCallbacks.delete(serverId);
     });
 
     return entry.pid;

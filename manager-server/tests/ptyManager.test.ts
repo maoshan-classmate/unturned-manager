@@ -355,6 +355,48 @@ describe("PtyManager — onExit 触发 flush tail + cleanup", () => {
       code: "pty-already-running",
     });
   });
+
+  it("★ P0-2 修复：自然 exit 后 callback Map 被清理（防长寿命内存泄漏）", async () => {
+    const mgr = new PtyManager();
+    // 模拟 10 次 start→exit 周期（不同 serverId）
+    for (let i = 0; i < 10; i++) {
+      const f = new FakePty();
+      spawnReturn = f;
+      const sid = `S${i}`;
+      await mgr.spawn(sid, "/bin/echo", []);
+      mgr.onData(sid, () => {});
+      mgr.onExit(sid, () => {});
+      f.emitExit(0);
+    }
+    // 关键断言：exitCallbacks/dataCallbacks Map 应为空（10 个 key 全部 delete）
+    const exitMap = (mgr as unknown as { exitCallbacks: Map<unknown, unknown> })
+      .exitCallbacks;
+    const dataMap = (mgr as unknown as { dataCallbacks: Map<unknown, unknown> })
+      .dataCallbacks;
+    expect(exitMap.size).toBe(0);
+    expect(dataMap.size).toBe(0);
+  });
+
+  it("★ P0-2 修复：exit 后旧 callback 引用已被清理（垃圾回收前提）", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    // 注册一个闭包
+    let cbRef: unknown = () => {};
+    mgr.onData("S1", () => {
+      cbRef = "should be unreachable";
+    });
+
+    fake.emitExit(0); // 触发清理
+
+    // 验证 dataCallbacks Map 里 S1 key 已被 delete
+    const dataMap = (mgr as unknown as { dataCallbacks: Map<unknown, unknown> })
+      .dataCallbacks;
+    expect(dataMap.has("S1")).toBe(false);
+    expect(cbRef).not.toBe("should be unreachable"); // callback 未被触发
+  });
 });
 
 describe("PtyManager — write / resize / lifecycle", () => {
