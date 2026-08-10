@@ -56,3 +56,22 @@ paths:
 - ServerManager constructor 订阅 `rconManager.onStateChange`
 - 连续 3 次 ping 失败 → `transition(DEGRADED)`
 - 恢复 → `transition(RUNNING)`
+
+## 安全门控与 PTY 终端（ADR-0004 addendum）
+
+ADR-0004 把实例控制改为持久 PTY 终端 + xterm.js 后，**命令通道分两类**，安全门控语义不同：
+
+### 结构化 RCON 接口（`POST /rcon/execute` 等）
+
+- 仍走 `rcon-srcds`（OpenMod Valve Source RCON）→ `net`（RocketMod Telnet 回落）
+- **保留完整安全门**：JWT role check / 危险指令 428 二次确认 / Owner 专属 / AES-GCM 凭证加密
+- 本文件上方所有规则（DEGRADED / 危险指令 / Owner 专属 / 凭证分离）**仅适用于此通道**
+
+### PTY 终端（GSM3 同款 owner-trust 模型）
+
+- 通过 WS `terminal_input` 事件把字符串直接写入 PTY stdin
+- **无角色检查、无 428 二次确认**——登录（JWT 有效）即可在终端执行任意命令
+- 单用户系统（CLAUDE.md §2）+ 终端是 owner 自己用 = owner-trust 模型成立
+- 若需要危险指令拦截，由前端控制卡片实现（Phase 4 后）
+
+⚠️ **不要**把 PTY 路径当 RCON 一样保护；**也不要**因为有了 PTY 就丢弃 RCON 安全门（结构化 API 仍受 RCON 保护）。

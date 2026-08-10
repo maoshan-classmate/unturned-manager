@@ -86,19 +86,17 @@ export class SteamCmdManager implements ISteamCmdManager {
           ["+version", "+quit"],
           { timeout: 10_000 },
         );
-        // SteamCMD v2 输出形如："Steam Console Client (Linux) Version 1719583862 - 2024-06-27 ... "
-        // 注意真实输出是小写 "version"，/i 大小写不敏感匹配（BUG-9 次生问题）。
-        // BUG-9（第四版）：steamcmd 输出末尾带交互提示 " - type 'quit' to exit --"，
-        // 若直接取 group 2 会把该尾巴吞进版本串。故 group 2 取 build date 时截断到第一个
-        // " - " 分隔或直接丢弃非日期片段（只保留 YYYY-MM-DD 之类）。
+        // SteamCMD v2 输出实测（BUG-9 第五版）：
+        //   "Steam Console Client (Linux) Version 1785799152 - type 'quit' to exit --"
+        // 末尾 " - type 'quit' to exit --" 是交互提示。
+        // 此前截断逻辑只剥 type 'quit'，残留 " - --"；改为：从 " - " 开始一刀切，
+        // 取 group 1（版本号）作为主值；group 2 仅在看起来像日期（YYYY-...）时拼接。
         const match = stdout.match(/Version\s+(\d+)(?:\s*-\s*([^\n]+))?/i);
         if (match) {
-          const datePart = match[2]
-            ?.split(" - ")[0]
-            ?.trim()
-            ?.replace(/type 'quit' to exit/i, "")
-            ?.trim();
-          version = datePart ? `${match[1]} (${datePart})` : match[1];
+          const raw = (match[2] ?? "").split(" - ")[0]?.trim() ?? "";
+          // 仅在像 build date（ISO 日期前缀 / "YYYY-MM-DD..."）时拼接，否则只显示版本号
+          const looksLikeDate = /^\d{4}-\d{2}-\d{2}/.test(raw);
+          version = looksLikeDate ? `${match[1]} (${raw})` : match[1];
         }
       } catch (err) {
         logger.warn({ err, exePath }, "SteamCMD 版本解析失败");

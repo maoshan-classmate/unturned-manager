@@ -59,6 +59,8 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 
 多个 ServerID 共用同一个 U3DS 安装目录，省 10GB×N 磁盘。
 
+> U3DS 实际启动脚本优先级：`ServerHelper.sh` > `ExampleServer.sh`。代码侧 `detectStartScript` 当前优先级与 SOP 不一致，需同步修（见 ADR-0004 §3.5）。
+
 **硬规则**：
 - 一个 ServerID 一个进程。多个 ServerID 共用同一个 U3DS 安装目录。
 - **不要再用老命令行的 `-port -map -pvp` 参数**——所有可配置项都走 `Commands.dat`。
@@ -120,7 +122,7 @@ Votify N 60 60 30 60 1
   → 等进程退出
   → 移动 staging 内容 → Workshop/steamapps/workshop/content/1110390/（进程已停，零冲突）
   → 再拉起新的
-  → 轮询 A2S_INFO 直到"服务端就绪"，超时 30 秒报错
+  → PTY 终端输出含 'Server is ready' / 'World saved' 类 ready 信号 + content 目录落盘 + acf 更新 = 成功。无 A2S 轮询（ADR-0004 §3.3）
   → 通过 WebSocket 广播"已恢复"事件给前端
 ```
 
@@ -134,6 +136,8 @@ RUNNING ↔ DEGRADED（RCON 失联但进程还在）
 ```
 
 `activeOperation` 字段防止"用户点自动重启同时点手动重启"的竞态。
+
+> 状态机完全由 PTY 进程的 spawn/exit 驱动，无 A2S 维度（ADR-0004 §3.3）。
 
 ## Steam Workshop Mod 元数据获取
 

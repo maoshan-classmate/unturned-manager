@@ -66,6 +66,36 @@ describe("SteamCmdManager — BUG-9 修复: getStatus version 字段", () => {
   it("getStatus 当 SteamCMD 已安装时 spawn +version 解析 version 字段", async () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
     const exec = mockAdapter();
+    // BUG-9（第五版）：steamcmd 实测输出末尾带 " - type 'quit' to exit --" 交互提示；
+    // 截断逻辑只剥到这里，残留的 " - --" 必须被丢弃——version 只显示数字 buildid。
+    exec.mockResolvedValueOnce({
+      stdout:
+        "Steam Console Client (Linux) Version 1785799152 - type 'quit' to exit --\n",
+      stderr: "",
+    });
+
+    const manager = new SteamCmdManager(
+      fakeProcessSupervisor,
+      fakeBroadcaster,
+      "/opt/steamcmd/steamcmd.sh",
+      () => [],
+      exec,
+    );
+    const status = await manager.getStatus();
+
+    expect(status.isInstalled).toBe(true);
+    expect(status.installPath).toBe("/opt/steamcmd/steamcmd.sh");
+    expect(status.version).toBe("1785799152");
+    expect(exec).toHaveBeenCalledWith(
+      "/opt/steamcmd/steamcmd.sh",
+      ["+version", "+quit"],
+      { timeout: 10_000 },
+    );
+  });
+
+  it("getStatus 当 steamcmd 输出带 build date 时仍拼进 version（YYYY-MM-DD 识别）", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const exec = mockAdapter();
     exec.mockResolvedValueOnce({
       stdout:
         "Steam Console Client (Linux) Version 1719583862 - 2024-06-27T00:00:00 UTC\n",
@@ -81,14 +111,7 @@ describe("SteamCmdManager — BUG-9 修复: getStatus version 字段", () => {
     );
     const status = await manager.getStatus();
 
-    expect(status.isInstalled).toBe(true);
-    expect(status.installPath).toBe("/opt/steamcmd/steamcmd.sh");
     expect(status.version).toBe("1719583862 (2024-06-27T00:00:00 UTC)");
-    expect(exec).toHaveBeenCalledWith(
-      "/opt/steamcmd/steamcmd.sh",
-      ["+version", "+quit"],
-      { timeout: 10_000 },
-    );
   });
 
   it("getStatus 当 steamcmd +version 解析失败时仍返回 isInstalled=true 但 version=undefined（兜底）", async () => {
@@ -198,9 +221,10 @@ describe("SteamCmdManager — 目录探测（Linux 实机 BUG-1/9 根因）", ()
     const dir = makeSteamCmdDir();
     try {
       const exec = mockAdapter();
+      // BUG-9（第五版）：steamcmd 实测末尾是 " - type 'quit' to exit --"
       exec.mockResolvedValueOnce({
         stdout:
-          "Steam Console Client (c) Valve Corporation -- version 1719583862\n",
+          "Steam Console Client (Linux) Version 1785799152 - type 'quit' to exit --\n",
         stderr: "",
       });
       const manager = new SteamCmdManager(
@@ -216,8 +240,8 @@ describe("SteamCmdManager — 目录探测（Linux 实机 BUG-1/9 根因）", ()
       expect(status.isInstalled).toBe(true);
       // installPath 返回配置的目录（对齐 GSM3 config.installPath 语义），不是解析后的可执行
       expect(status.installPath).toBe(dir);
-      // 真实输出是小写 "version" —— 大小写不敏感匹配，BUG-9 版本号必须展示
-      expect(status.version).toBe("1719583862");
+      // 真实输出是小写 "version" —— 大小写不敏感匹配，BUG-9 版本号必须展示（末尾 - -- 不吞）
+      expect(status.version).toBe("1785799152");
       expect(exec).toHaveBeenCalledWith(
         path.join(dir, "steamcmd.sh"),
         ["+version", "+quit"],

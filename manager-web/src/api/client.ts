@@ -2,7 +2,9 @@ import axios from 'axios';
 
 export const apiClient = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  // BUG-3/7 修复（第五版）：U3DS 启动 + A2S 就绪轮询后端要 30s+，老 10s 上限把 HTTP 提前掐断
+  // → 前端报 "timeout of 10000ms exceeded"。按路由分组，长任务（启动/install/update）单独拉长。
+  timeout: 60000,
   headers: { 'Content-Type': 'application/json' },
 });
 
