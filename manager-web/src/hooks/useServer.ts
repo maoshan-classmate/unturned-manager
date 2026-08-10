@@ -15,6 +15,8 @@ export interface ServerInfo {
   installDir: string;
   /** 运行时状态（面板本地维护，非后端持久化字段） */
   state?: string;
+  /** U3DS 启动命令（ADR-0004 Phase 4）——用户编辑后 PATCH /servers/:id 持久化；空 = 后端兜底模板 */
+  startCommand?: string;
 }
 
 /** 创建实例请求体——POST /servers 契约（RCON 凭证走后端 K-V 加密存储） */
@@ -35,6 +37,8 @@ interface UseServerReturn {
   addServer: (server: CreateServerPayload) => Promise<void>;
   /** 调 DELETE /servers/:id 删除实例，成功后重拉列表 */
   removeServer: (id: string) => Promise<void>;
+  /** PATCH /servers/:id 局部更新实例配置（ADR-0004 Phase 4——startCommand 等） */
+  updateServer: (id: string, patch: Partial<ServerInfo>) => Promise<void>;
 }
 
 /**
@@ -89,7 +93,23 @@ export function useServer(): UseServerReturn {
     [refresh],
   );
 
-  return { servers, loading, error, refresh, addServer, removeServer };
+  const updateServer = useCallback(
+    async (id: string, patch: Partial<ServerInfo>) => {
+      await apiClient.patch(`/servers/${id}`, patch);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return {
+    servers,
+    loading,
+    error,
+    refresh,
+    addServer,
+    removeServer,
+    updateServer,
+  };
 }
 
 /** 从 axios 错误提取后端中文 message（否则 e.message 是 axios 通用英文） */

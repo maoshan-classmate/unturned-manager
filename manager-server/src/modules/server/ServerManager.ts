@@ -26,6 +26,9 @@ import {
   getRconCredential,
   setRconCredential,
   deleteRconCredentials,
+  getStartCommand,
+  setStartCommand,
+  deleteStartCommand,
 } from "../settings/settingsStorage.js";
 
 // ─── 常量 ────────────────────────────────────────────
@@ -112,6 +115,8 @@ export class ServerManager implements IServerManager {
         },
       });
       this.restoreRcon(s.id);
+      // ADR-0004 Phase 4：从 settings K-V 恢复 startCommand（持久化跨重启）
+      this.restoreStartCommand(s.id);
     }
     logger.info({ count: discovered.length }, "已从目录扫描加载服务器");
   }
@@ -186,6 +191,13 @@ export class ServerManager implements IServerManager {
       setRconCredential(this.db, config.id, "rocketmod", config.rconPassword);
     }
 
+    // ADR-0004 Phase 4：startCommand 明文落库（仅在创建时显式传入时）。
+    // 注：buildStartCommand 兜底生成留到 startPty 首次启动时按需执行（U3DS 未装时
+    //      start 自然抛 409），不在 createServer 阶段探测——避免创建 → 启动语义混淆。
+    if (config.startCommand) {
+      setStartCommand(this.db, config.id, config.startCommand);
+    }
+
     // installDir 一律取全局（B2 §2.5：忽略客户端传入值，防多路径漂移）
     const normalized: ServerConfig = {
       ...config,
@@ -224,6 +236,10 @@ export class ServerManager implements IServerManager {
     }
     if (patch.rconPassword !== undefined) {
       setRconCredential(this.db, serverId, "rocketmod", patch.rconPassword);
+    }
+    // ADR-0004 Phase 4：startCommand patch 走明文 K-V（不加密）
+    if (patch.startCommand !== undefined) {
+      setStartCommand(this.db, serverId, patch.startCommand);
     }
 
     // 身份字段变更 → 写回 Commands.dat
@@ -271,6 +287,8 @@ export class ServerManager implements IServerManager {
     }
 
     deleteRconCredentials(this.db, serverId);
+    // ADR-0004 Phase 4：同步清掉 startCommand K-V
+    deleteStartCommand(this.db, serverId);
     this.rconManager.unregister(serverId);
     this.servers.delete(serverId);
     logger.info({ serverId }, "服务器已删除");
@@ -908,5 +926,18 @@ export class ServerManager implements IServerManager {
         getRconCredential(this.db, serverId, "rocketmod") ?? undefined,
       ownerSteamId: cfg.ownerSteamId,
     });
+  }
+
+  /**
+   * ADR-0004 Phase 4：从 settings K-V 恢复 startCommand 到 in-memory config。
+   * loadServersFromDisk 时调用（与 restoreRcon 对齐）——用户编辑过的 startCommand 跨重启保留。
+   */
+  private restoreStartCommand(serverId: ServerId): void {
+    const entry = this.servers.get(serverId);
+    if (!entry) return;
+    const persisted = getStartCommand(this.db, serverId);
+    if (persisted) {
+      entry.config = { ...entry.config, startCommand: persisted };
+    }
   }
 }

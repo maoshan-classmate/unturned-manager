@@ -477,3 +477,123 @@ describe("ServerManager — PTY 崩溃检测 + 5s 硬重启（ADR-0004 Phase 2�
     expect(vi.mocked(detectStartScript)).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── ADR-0004 Phase 4 ────────────────────────────────
+// 测试 startCommand 持久化：configureServer / loadServersFromDisk / removeServer 链路
+// 注：createServer 不主动调 buildStartCommand（U3DS 未装时 start 抛 409 的语义不
+//      应当阻断创建——保留边界）。用户首次 startCommand 只能通过 PATCH 走进去。
+describe("ServerManager — startCommand 持久化（ADR-0004 Phase 4）", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("configureServer 传 startCommand → 落 settings K-V + in-memory config 同步", async () => {
+    const { db, mgr } = setup();
+    await createServer(mgr, "P1");
+    await mgr.configureServer("P1" as ServerId, {
+      startCommand: "./custom.sh +InternetServer/P1 -ThreadedConsole",
+    });
+    // 1. K-V 落库（明文 value_enc）
+    const row = db
+      .prepare("SELECT value_enc FROM settings WHERE key = ?")
+      .get("startCommand:P1") as { value_enc: string };
+    expect(row.value_enc).toBe(
+      "./custom.sh +InternetServer/P1 -ThreadedConsole",
+    );
+    // 2. in-memory config 同步
+    const list = await mgr.listServers();
+    expect(list[0].startCommand).toBe(
+      "./custom.sh +InternetServer/P1 -ThreadedConsole",
+    );
+  });
+
+  it("createServer 显式传入 startCommand → 落 K-V", async () => {
+    const { db, mgr } = setup();
+    await mgr.createServer({
+      id: "P2" as ServerId,
+      name: "P2",
+      gamePort: 27015,
+      ownerSteamId: "76561198000000001",
+      installDir: "/opt/unturned",
+      startCommand: "./init.sh +InternetServer/P2 -ThreadedConsole",
+    });
+    const row = db
+      .prepare("SELECT value_enc FROM settings WHERE key = ?")
+      .get("startCommand:P2") as { value_enc: string };
+    expect(row.value_enc).toBe("./init.sh +InternetServer/P2 -ThreadedConsole");
+  });
+
+  it("configureServer 不传 startCommand → 不删旧值（PATCH 语义）", async () => {
+    const { db, mgr } = setup();
+    await createServer(mgr, "P3");
+    // 设一个命令
+    await mgr.configureServer("P3" as ServerId, {
+      startCommand: "./first.sh +InternetServer/P3 -ThreadedConsole",
+    });
+    // 再改名字，不传 startCommand
+    await mgr.configureServer("P3" as ServerId, { name: "新名字" });
+    // 旧命令应保留
+    const row = db
+      .prepare("SELECT value_enc FROM settings WHERE key = ?")
+      .get("startCommand:P3") as { value_enc: string };
+    expect(row.value_enc).toBe(
+      "./first.sh +InternetServer/P3 -ThreadedConsole",
+    );
+    const list = await mgr.listServers();
+    expect(list[0].name).toBe("新名字");
+    expect(list[0].startCommand).toBe(
+      "./first.sh +InternetServer/P3 -ThreadedConsole",
+    );
+  });
+
+  it("removeServer 同步清掉 startCommand K-V（RCON K-V 也确认没了）", async () => {
+    const { db, mgr } = setup();
+    await createServer(mgr, "P4");
+    await mgr.configureServer("P4" as ServerId, {
+      startCommand: "./to-be-deleted.sh +InternetServer/P4 -ThreadedConsole",
+    });
+    await mgr.removeServer("P4" as ServerId);
+    // startCommand K-V 没了
+    const row = db
+      .prepare("SELECT value_enc FROM settings WHERE key = ?")
+      .get("startCommand:P4");
+    expect(row).toBeUndefined();
+    // RCON K-V 也确认没了（验证既有 deleteRconCredentials 不被破坏）
+    const rconRows = db
+      .prepare("SELECT 1 FROM settings WHERE key LIKE 'rcon:P4:%'")
+      .all();
+    expect(rconRows).toHaveLength(0);
+  });
+
+  it("重启模拟：loadServersFromDisk 从 K-V 恢复 startCommand 到 in-memory config", async () => {
+    // 直接预置 K-V → 构造 ServerManager → 验证 config.startCommand 恢复
+    const db = makeDb();
+    db.prepare(
+      `INSERT INTO settings (key, value_enc, updated_at) VALUES (?, ?, datetime('now'))`,
+    ).run(
+      "startCommand:R1",
+      "./restored.sh +InternetServer/R1 -ThreadedConsole",
+    );
+    const discovery = {
+      scanSync: vi.fn(() => [
+        {
+          id: "R1" as ServerId,
+          name: "R1",
+          gamePort: 27015,
+          ownerSteamId: "76561198000000001",
+        },
+      ]),
+    };
+    const pty = makeMockPty();
+    const mgr = new ServerManager(
+      db as never,
+      discovery,
+      pty,
+      makeMockRcon(),
+      makeMockConfig(),
+      makeMockBroadcaster(),
+    );
+    const list = await mgr.listServers();
+    expect(list[0].startCommand).toBe(
+      "./restored.sh +InternetServer/R1 -ThreadedConsole",
+    );
+  });
+});

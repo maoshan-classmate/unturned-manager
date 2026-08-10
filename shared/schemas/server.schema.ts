@@ -31,6 +31,12 @@ export const ConfigureServerSchema = z.object({
   installDir: z.string().min(1).optional(),
   rconPassword: z.string().optional(),
   openModCredential: z.string().optional(),
+  // ADR-0004 Phase 4：startCommand 走明文持久化；min(1) 防空串覆盖兜底模板，max(2048) 防恶意巨串
+  startCommand: z
+    .string()
+    .min(1, "启动命令不能为空")
+    .max(2048, "启动命令过长(>2KB)")
+    .optional(),
 });
 
 // ─── RCON ───────────────────────────────────────────────
