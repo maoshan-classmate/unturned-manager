@@ -234,6 +234,41 @@ RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由
 
 每期独立可回滚，前端未动期间后端可独立验证。
 
+### Phase 0：所有 SteamCMD 长任务统一异步化（先做，PTY 之外的最后一波同步债）
+
+**目的**：让 `installU3DS` / `updateU3DS` / `reinstall` / `checkUpdate` / `downloadWorkshopItem` 全部异步（HTTP 立即返回 jobId，进度/完成/失败走 WS `steamcmd_progress`）。这是「HTTP 立即返回」抽象的最后一波落地——之前只有 `installU3DS`（commit f311e14）和 `downloadWorkshopItem`（commit f311e14）异步化了，`updateU3DS` / `reinstall` / `checkUpdate` 还停留在「同步等完成」状态。
+
+**改动清单**：
+
+- `SteamCmdManager.updateU3DS(installDir): Promise<string>`（返回 jobId）
+  - 当前形态：同步等 SteamCMD 退出（30min+）
+  - 改为：spawn 后立即 return jobId；后台 `waitForExit` → 广播 completed/failed；catch 错误 → 广播 failed（与 `installU3DS` 同形态，commit f311e14 已建立样板）
+- `SteamCmdManager.reinstall(installDir?): Promise<string>`（返回 jobId）
+  - 当前形态：同步下载 + 解压 + `+quit` 初始化（2-3min）
+  - 改为：spawn 后立即 return jobId；后台 `waitForExit` → 广播 completed/failed
+- `SteamCmdManager.checkUpdate(installDir?): Promise<string>`（返回 jobId）
+  - 当前形态：3 套 runscript fallback 跑 steamcmd（30s+）
+  - 改为：spawn 后立即 return jobId；后台 `waitForExit` → 拿到 buildid 后**通过 WS 广播一次「最新版本号」**（前端 toast 显示）；失败广播 failed
+- `routes/steamcmd.ts` 三处路由：同步 200 → **202** `{ data: { jobId } }`
+- 前端调用方（`SteamCmdCard`、`U3dsCard`）：调 update/reinstall/check-update 改订阅 `steamcmd_progress` 拿结果，**不再读 HTTP body**
+
+**前端 UX（用户原话：下载完再弹个窗）**：
+
+```
+用户点「更新 U3DS」
+  ↓
+HTTP 202 立即返回 { jobId }
+  ↓
+toast「U3DS 更新已提交」  ← 不是「完成」
+  ↓
+WS steamcmd_progress 实时推进度条
+  ↓
+完成 → toast「U3DS 更新完成」弹窗  ← 下载完再弹
+失败 → toast「U3DS 更新失败」+ 错误原因
+```
+
+**验证**：手动更新 / 重装 / 检查更新，**axios 不再 timeout**（30min 也不超时）；WS 推进度事件完整；前端 toast 按时机弹。
+
 ### Phase 1：PTY 抽象 + 删除 A2S 通道
 
 - `PtyManager` 模块：spawn/write/resize/kill，封装 node-pty
@@ -290,6 +325,8 @@ RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由
 - **多 tab 终端**：同一实例开多个终端（GSM3 支持）
 - 这些看 Phase 1-6 实测后用户反馈再排
 
+> 注：原「§5 风险表 axios timeout 仍有其他长任务」一行已删除——Phase 0 把 update/reinstall/check-update 也异步化后，**所有 SteamCMD 长任务都已 202 立即返回**，HTTP 路径上无 >10s 等待，axios timeout 风险归零。
+
 ---
 
 ## 5. 风险与回退
@@ -300,7 +337,6 @@ RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由
 | PTY 永久进程容器重建后丢失会话 | PTY 进程绑 session 生命周期；容器重建 = 用户重连 PTY（行为合理） |
 | 状态信息丢失（无 A2S 后玩家数 / 地图无面板展示） | 用户决策：「如果只是用于卡片展示，那就可以不需要」（§6.5）；想看玩家数进终端敲 `Players`，地图进终端敲 `Map` |
 | node-pty runtime 缺 PTY 设备权限 | node-pty Linux 上需要 `/dev/ptmx` + `/dev/pts`；Docker 默认 runtime 有这些设备权限，但需在 Phase 1 DoD 显式验证（`docker exec unturned-manager ls -la /dev/ptmx` + spawn bash 测试）。如缺权限需 `--privileged` 或 `--device /dev/ptmx` |
-| 其他路由仍可能超 10s（`/steamcmd/update` 30min / `/steamcmd/reinstall` 2-3min / `/steamcmd/check-update` 30s+） | install U3DS / download-workshop / start 都已异步化（HTTP 立即返回 jobId，无 axios timeout 风险）；剩余 update/reinstall/check-update 是同步设计选择（完成后才能告诉用户结果），不是 bug。如未来想改异步，单独讨论 |
 
 ---
 
