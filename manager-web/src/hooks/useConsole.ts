@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { apiClient, ensureAccessToken } from '../api/client.js';
+import { useState, useCallback, useRef, useEffect } from "react";
+import { apiClient, ensureAccessToken } from "../api/client.js";
 
-interface ConsoleLine {
+export interface ConsoleLine {
   id: number;
   text: string;
-  source: 'stdout' | 'file' | 'input';
+  source: "stdout" | "file" | "input";
   timestamp: number;
 }
 
@@ -13,6 +13,11 @@ interface UseConsoleReturn {
   sendCommand: (command: string, confirmed?: boolean) => Promise<string | null>;
   clearLines: () => void;
   connected: boolean;
+  /**
+   * ★ ADR-0004 Phase 3：往对应 serverId 的 PTY stdin 写原始输入（WS terminal_input）。
+   * xterm.js onData 的原始字节直接透传，不做命令解析（owner-trust，PTY 自回显）。
+   */
+  sendTerminalInput: (data: string) => void;
 }
 
 const MAX_LINES = 500;
@@ -45,7 +50,7 @@ export function useConsole(serverId: string): UseConsoleReturn {
       const token = await ensureAccessToken();
       if (!token || cancelled) return;
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(
         `${protocol}//${window.location.host}/ws?token=${token}`,
       );
@@ -68,14 +73,14 @@ export function useConsole(serverId: string): UseConsoleReturn {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'console_line' && msg.serverId === serverId) {
+          if (msg.type === "console_line" && msg.serverId === serverId) {
             setLines((prev) => {
               const next = [
                 ...prev,
                 {
                   id: nextId++,
                   text: msg.line,
-                  source: msg.source ?? 'stdout',
+                  source: msg.source ?? "stdout",
                   timestamp: Date.now(),
                 },
               ];
@@ -117,7 +122,7 @@ export function useConsole(serverId: string): UseConsoleReturn {
         {
           id: nextId++,
           text: `> ${command}`,
-          source: 'input',
+          source: "input",
           timestamp: Date.now(),
         },
       ]);
@@ -134,7 +139,7 @@ export function useConsole(serverId: string): UseConsoleReturn {
             {
               id: nextId++,
               text: data.data.output,
-              source: 'stdout',
+              source: "stdout",
               timestamp: Date.now(),
             },
           ]);
@@ -145,13 +150,13 @@ export function useConsole(serverId: string): UseConsoleReturn {
           response?: { data?: { error?: { code: string; message: string } } };
         };
         const errorMsg =
-          errorResponse.response?.data?.error?.message ?? '命令执行失败';
+          errorResponse.response?.data?.error?.message ?? "命令执行失败";
         setLines((prev) => [
           ...prev,
           {
             id: nextId++,
             text: `[错误] ${errorMsg}`,
-            source: 'stdout',
+            source: "stdout",
             timestamp: Date.now(),
           },
         ]);
@@ -165,7 +170,18 @@ export function useConsole(serverId: string): UseConsoleReturn {
     setLines([]);
   }, []);
 
-  return { lines, sendCommand, clearLines, connected };
+  // ★ ADR-0004 Phase 3：xterm.js onData 原始输入 → WS terminal_input → 后端 PTY stdin。
+  // WS 未连上/未 OPEN 时静默丢弃（终端输入本身尽力而为，PTY 自回显，丢一个字符不可恢复）。
+  const sendTerminalInput = useCallback(
+    (data: string) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN || !serverId) return;
+      ws.send(JSON.stringify({ type: "terminal_input", serverId, data }));
+    },
+    [serverId],
+  );
+
+  return { lines, sendCommand, clearLines, connected, sendTerminalInput };
 }
 
 /** 获取命令历史（用于 ↑↓ 翻页） */

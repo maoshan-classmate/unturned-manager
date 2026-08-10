@@ -12,6 +12,7 @@ import {
   type IServerDiscovery,
   type ServerEvent,
   type ServerId,
+  type PtyDataCallback,
   type PtyExitCallback,
 } from "@unturned-manager/shared";
 
@@ -47,16 +48,19 @@ function makeMockDiscovery(): IServerDiscovery {
 interface PtyMock extends IPtyManager {
   writeCalls: [string, string][];
   exitCallbacks: Map<string, PtyExitCallback>;
+  dataCallbacks: Map<string, PtyDataCallback>;
 }
 
 function makeMockPty(): PtyMock {
   const writeCalls: [string, string][] = [];
   const exitCallbacks = new Map<string, PtyExitCallback>();
+  const dataCallbacks = new Map<string, PtyDataCallback>();
   // 模拟真实 PtyManager：spawn 后 processes.set → running；测试手动 mockReturnValue 模拟 exit 清空
   let running = false;
   return {
     writeCalls,
     exitCallbacks,
+    dataCallbacks,
     spawn: vi.fn(async (_id, _file, _args, _opts) => {
       running = true;
       return 12345;
@@ -70,7 +74,9 @@ function makeMockPty(): PtyMock {
       running = false; // 模拟 exit 事件清 processes
     }),
     isRunning: vi.fn(() => running),
-    onData: vi.fn(),
+    onData: vi.fn((serverId: string, cb: PtyDataCallback) => {
+      dataCallbacks.set(serverId, cb); // 记录 data 回调，测试手动触发模拟 PTY stdout
+    }),
     onExit: vi.fn((serverId: string, cb: PtyExitCallback) => {
       exitCallbacks.set(serverId, cb);
     }),
@@ -307,6 +313,18 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     await mgr.forceStop("S1" as ServerId);
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STOPPED);
     expect(pty.forceKill).toHaveBeenCalled();
+  });
+
+  it("PTY stdout 经 onData 接线到 console_line 广播（P3-T2）", async () => {
+    await started(mgr, pty, "S1");
+    const onData = pty.dataCallbacks.get("S1");
+    expect(onData).toBeDefined(); // start 时已注册 PTY 输出接线
+    onData!("Server is ready");
+    onData!("[32mWorld saved[0m");
+    const consoleLines = bcast.events
+      .filter((e) => e.type === "console_line")
+      .map((e) => (e as { line: string }).line);
+    expect(consoleLines).toEqual(["Server is ready", "[32mWorld saved[0m"]);
   });
 
   it("过期 1s timer 不误写新会话（会话代际保护，BUG-2 review 修复）", async () => {

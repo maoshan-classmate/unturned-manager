@@ -127,6 +127,8 @@ app.use("/api/settings", createSettingsRouter(db));
 wsBroadcaster.init(
   server,
   container.authService as import("./modules/auth/AuthService.js").AuthService,
+  // ★ ADR-0004 Phase 3：terminal_input 事件需要 ptyManager 写 PTY stdin
+  container.ptyManager,
 );
 
 // ─── 前端静态托管（生产构建 + BrowserRouter SPA fallback）───

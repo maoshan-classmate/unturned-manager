@@ -484,6 +484,7 @@ export class ServerManager implements IServerManager {
       entry.stopRequested = false;
       pid = entry.ptyPid ?? 0;
       logger.info({ serverId, pid }, "PTY bash 已存在，直接塞启动命令");
+      this.pipePtyOutput(id); // 保险：onData 幂等（PtyManager exit 后清了 callbacks）
       this.ptyManager.write(id, `${startCommand}\r`);
       this.transition(serverId, ServerState.RUNNING);
     } else {
@@ -497,6 +498,10 @@ export class ServerManager implements IServerManager {
         { serverId, pid, installDir, startCommand },
         "PTY bash 已启动",
       );
+
+      // ★ ADR-0004 Phase 3：PTY stdout → console_line 广播（§2.4）。
+      // U3DS 的 ANSI 彩色日志经此推给前端 xterm.js（xterm 原生渲染 ANSI）。
+      this.pipePtyOutput(id);
 
       // 崩溃检测接线：bash 退出 → STOPPED + 崩溃重启判定。
       // stopRequested 置位（主动 stop/forceStop）时跳过重启。
@@ -528,6 +533,22 @@ export class ServerManager implements IServerManager {
     }
 
     return { terminalSessionId: id, pid };
+  }
+
+  /**
+   * 把 serverId 的 PTY stdout 接线到 console_line 广播（ADR-0004 §2.4 Phase 3）。
+   * U3DS 的 ANSI 彩色日志经此推给前端 xterm.js；PtyManager.exit 已自动清 callbacks，
+   * 每次 spawn 重新注册。幂等调用安全（重复注册仅多一次广播，PtyManager 行为一致）。
+   */
+  private pipePtyOutput(serverId: ServerId): void {
+    this.ptyManager.onData(serverId, (line: string) => {
+      this.broadcaster.broadcast({
+        type: "console_line",
+        serverId,
+        line,
+        source: "stdout",
+      });
+    });
   }
 
   /**
