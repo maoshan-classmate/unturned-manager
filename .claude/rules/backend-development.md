@@ -42,7 +42,7 @@ manager-server/src/
 
 - 每个模块是一个 `class`，实现 `shared/contracts/` 中对应的 `I*` 接口
 - 依赖通过 constructor 注入，**禁止**在模块内调用 `getDb()` 或引用全局单例
-- 有状态模块（如 RconManager）必须实现 `destroy()` 方法
+- 有状态模块（如 PtyManager）必须实现 `destroy()` 方法
 - 使用 `// ─── 常量 ───` / `// ─── 实现 ───` 分区注释保持可读性
 - 模块间通信通过接口，**禁止**跨模块直接 import 具体类
 
@@ -140,21 +140,17 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
 
 ```typescript
 /**
- * 通过 RCON 向服务端发送命令并等待响应。
- * 自动探测 OpenMod，失败则回退 RocketMod Telnet。
+ * 向指定 PTY 终端写入数据（ADR-0004 Phase 6：RCON 通道已删，PTY 终端是唯一命令通道）。
+ * 同步写入后立即返回——U3DS 响应经 WS console_line 异步回显。
  *
- * @param serverId - 服务端实例 ID
- * @param command - RCON 命令（不含换行）
- * @param options - 可选配置
- * @param options.timeout - 超时毫秒，默认 5000
- * @param options.confirmed - 危险命令二次确认，默认 false
- * @returns 服务端返回的原始文本
- * @throws {AppError} RCON 连接或认证失败时抛出，code 为 'rcon-connection' 或 'rcon-auth'
+ * @param serverId - PTY key（ServerId 或 jobId）
+ * @param data - 原始字符串；不自动加 \r，需要命令被 bash 解析时调用方自行拼上
+ *   （如 `'Save\r'`）。node-pty 原样写入 stdin。
  *
  * @example
  * ```typescript
- * const players = await rcon.sendCommand('MyServer', 'Players');
+ * ptyManager.write('MyServer', 'Players\r');
  * ```
  */
-async sendCommand(serverId: string, command: string, options?: RconOptions): Promise<string> { ... }
+write(serverId: PtyKey, data: string): void { ... }
 ```

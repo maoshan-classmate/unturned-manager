@@ -6,7 +6,7 @@
 2. `docs/architecture/architecture-spec.md`（后端模块边界）
 3. `docs/architecture/design-system-mapping.md`（前端设计映射）
 4. `claudedocs/reference_config_files.md`（配置文件字段权威表）
-5. `claudedocs/reference_console_commands.md`（RCON 命令参考）
+5. `claudedocs/reference_console_commands.md`（服务端控制台命令参考——经 PTY 终端输入）
 6. `claudedocs/research_verification_tracker.md`（未验证项清单）
 
 ## 提交规范
@@ -64,7 +64,7 @@ subagent 发现问题的处理方式：
 
 - [ ] 在 `shared/schemas/` 里加 Zod schema（如涉及 API 边界）
 - [ ] 如动了数据库 schema，加迁移脚本
-- [ ] RCON 助手**用录制回放来测**（不是连真服务）
+- [ ] PTY 命令链路（ServerManager 的 Save/Shutdown/Say 写终端）**用单测断言 PTY writes**（不是连真服务）
 - [ ] UI 组件加 Storybook 或截图测试
 - [ ] 如加了新的字段/命令，去更新 `claudedocs/` 里对应的参考文档
 

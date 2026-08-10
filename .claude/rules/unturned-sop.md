@@ -115,8 +115,8 @@ Votify N 60 60 30 60 1
 ```
 用户确认修改 Mod 列表（staging 下载已在不停服阶段完成）
   → 备份 WorkshopDownloadConfig.json → 原子写新文件
-  → RCON "Save"（强制刷玩家数据到磁盘）
-  → RCON "Shutdown 30 <重启原因>"（30 秒优雅关服）
+  → 经 PTY 终端写入 "Save"（强制刷玩家数据到磁盘）
+  → 经 PTY 终端写入 "Shutdown 30 <重启原因>"（30 秒优雅关服）
   → 等进程退出
   → 移动 staging 内容 → Workshop/steamapps/workshop/content/1110390/（进程已停，零冲突）
   → 再拉起新的
@@ -129,13 +129,12 @@ Votify N 60 60 30 60 1
 ```
 STOPPED → STARTING → RUNNING
 RUNNING → STOPPING → STOPPED
-RUNNING ↔ DEGRADED（RCON 失联但进程还在）
 任何状态 → STOPPED（强制停止，kill -9 兜底）
 ```
 
 `activeOperation` 字段防止"用户点自动重启同时点手动重启"的竞态。
 
-> 状态机完全由 PTY 进程的 spawn/exit 驱动，无 A2S 维度（ADR-0004 §3.3）。
+> 状态机完全由 PTY 进程的 spawn/exit 驱动，无 A2S / RCON / DEGRADED 维度（ADR-0004 §3.3 + Phase 6）。
 
 ## Steam Workshop Mod 元数据获取
 
@@ -146,5 +145,5 @@ RUNNING ↔ DEGRADED（RCON 失联但进程还在）
 ## 实时控制台
 
 - 后端 tail 两路：日志文件 `Servers/<ID>/Logs/*.log` + spawn 子进程 stdout
-- 通过 `ws` 推给浏览器，**单向**（发指令走单独的 RCON 链路）
-- **不能提供**前端直接执行任意命令的接口
+- 通过 `ws` **双向**：出站 `console_line` 推送输出 + 入站 `terminal_input` 写入 PTY stdin（ADR-0004 Phase 3）
+- 前端命令经 WS `terminal_input` 直达 PTY 终端——owner-trust 模型（登录即可执行任意命令，ADR-0004 Phase 6 删 RCON 后为唯一通道）；危险指令由前端卡片拦截

@@ -1,9 +1,16 @@
 ---
-paths:
-  - "manager-server/src/modules/rcon/**"
+paths: [] # 已退役（ADR-0004 Phase 6）——无加载路径，仅历史参考
 ---
 
-# RCON 通道规范
+> ## ⛔ 已退役（ADR-0004 Phase 6，2026-08-11）
+>
+> RCON 通道已整体删除：`rcon-srcds` 依赖、`RconManager` 模块、`/rcon` `/players` 路由、
+> `PlayersPage` 全部移除。命令统一走 **PTY 持久终端 owner-trust 模型**（`rcon-protocol.md` 已无加载路径）。
+>
+> 本文件仅作**历史参考**保留——若未来要恢复 RCON（用户拍板「RCON 后续要拓展以后再说」），
+> 按本文档原样重建；当前开发不要引用其中的 RCON 通道规则，改以 `unturned-sop.md` 的 PTY 流水线为准。
+
+# RCON 通道规范（历史参考）
 
 ## 链路
 
@@ -58,6 +65,10 @@ paths:
 - 恢复 → `transition(RUNNING)`
 
 ## 安全门控与 PTY 终端（ADR-0004 addendum）
+
+> ⛔ **本节为 Phase 3 时代的 PTY/RCON 分工记录，历史参考**——Phase 6 已删 RCON 通道，
+> 下列「结构化 RCON 接口仍保留完整安全门」的指示已失效（`POST /rcon/execute` 已删除）。
+> 当前唯一命令通道是 PTY 终端 owner-trust 模型；危险指令由前端卡片拦截。
 
 ADR-0004 把实例控制改为持久 PTY 终端 + xterm.js 后，**命令通道分两类**，安全门控语义不同：
 

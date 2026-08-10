@@ -66,13 +66,14 @@
 | better-sqlite3 API | https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md | Node.js SQLite3 绑定（同步 API） |
 | SQLite 官方文档 | https://www.sqlite.org/docs.html | SQL 语法和特性参考 |
 
-### 2.3 RCON & 游戏通信
+### 2.3 PTY 终端 & 游戏通信
+
+> ADR-0004 Phase 6：RCON/A2S 通道已删，命令统一走 PTY 持久终端 owner-trust 模型。
 
 | 资源 | 链接 | 说明 |
 |---|---|---|
-| rcon-srcds (npm) | https://www.npmjs.com/package/rcon-srcds | Valve Source RCON 客户端（OpenMod 通道） |
-| valve-server-query (npm) | https://www.npmjs.com/package/@fabricio-191/valve-server-query | A2S 查询协议（玩家列表、服务端信息） |
-| Node.js `net` 模块 | https://nodejs.org/docs/latest-v20.x/api/net.html | TCP 连接（RocketMod Telnet RCON 回落用） |
+| node-pty (npm) | https://www.npmjs.com/package/node-pty | PTY 模拟终端（U3DS 需要 isatty 才输出彩色进度条） |
+| xterm.js | https://xtermjs.org/ | 前端终端渲染（输出流 + onData 键盘输入） |
 
 ### 2.4 配置解析
 

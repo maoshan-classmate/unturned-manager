@@ -8,7 +8,7 @@
 ## 1. 项目身份
 
 Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。  
-**不是**通用游戏面板、不是 Pterodactyl/Pelican/AMP 克隆、不是远程 Agent 架构——用「共享卷 + RCON」在进程内和服务端通信。
+**不是**通用游戏面板、不是 Pterodactyl/Pelican/AMP 克隆、不是远程 Agent 架构——用「共享卷 + PTY 持久终端」在进程内和服务端通信。
 
 ### 术语钉死表
 
@@ -18,8 +18,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | **U3-SDK** | 官方 Unity 客户端源码（`.research/U3-SDK`），**绝对不能编译来当服务端用** |
 | **ServerID** | `Servers/` 下的子目录，代表一个服务端实例 |
 | **GSM** | `GameServerManager`（`.research/GameServerManager`），只参考技术栈 |
-| **RCON** | 远程控制协议，往服务端发命令的通道 |
-| **A2S** | Valve 服务器在线状态查询协议 |
+| **PTY 终端** | 持久 bash + xterm.js 双向链路——发命令到服务端的唯一通道（ADR-0004 取代 RCON/A2S） |
 | **GSLT** | Game Server Login Token，AppID `304930` 申请 |
 | **SteamID64** | 玩家 17 位数字 ID（`7656119...`） |
 
@@ -27,9 +26,9 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 
 ## 2. 架构方向
 
-- **通信**：共享卷 + RCON（OpenMod 优先，RocketMod Telnet 回落），不走 Agent 边车
+- **通信**：共享卷 + 持久 PTY 终端（bash 常驻、WS `terminal_input` 双向链路），不走 Agent 边车
 - **多实例**：同一 U3DS 安装目录挂多个 ServerID，不是一个服一个容器（省 10GB×N）
-- **状态机**：`STOPPED → STARTING → RUNNING → DEGRADED/STOPPING → STOPPED`
+- **状态机**：`STOPPED → STARTING → RUNNING → STOPPING → STOPPED`（PTY 进程存活驱动，无 DEGRADED——ADR-0004 Phase 6 删 RCON/A2S 维度）
 - **认证**：单用户 JWT + Argon2id，数据库预留 `users` 表
 - **设计源头**：`docs/architecture/design-system-mapping.md`（真 Figma 拉取），不用 PNG 猜
 
@@ -39,7 +38,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 |---|---|
 | **前端** | React 18 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui（基于 @base-ui/react）+ Motion (framer-motion v13) + @tanstack/react-table + recharts + lucide-react |
 | **后端** | Node.js 20 + Express 4 + TypeScript + `ws` + better-sqlite3 + pino |
-| **游戏集成** | `rcon-srcds`（OpenMod Valve Source RCON）→ `net`（RocketMod Telnet 回落）+ `@fabricio-191/valve-server-query`（A2S）+ `fast-xml-parser` + `js-yaml` |
+| **游戏集成** | 持久 PTY bash（`node-pty` + `ws` 双向，xterm.js 前端渲染）——ADR-0004 取代 RCON/A2S 通道；`fast-xml-parser` + `js-yaml` |
 | **API 契约** | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0，前后端共用 |
 | **部署** | Docker Compose（panel + U3DS 同主机、共享卷、同 bridge 网络）；Caddy/nginx 反向代理 TLS 终结 |
 
@@ -61,7 +60,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | @.claude/rules/frontend-development.md | `manager-web/**` | 前端开发规范（样式/表单/状态/JSDoc） |
 | @.claude/rules/backend-development.md | `manager-server/**` | 后端开发规范（模块/错误/校验/JSDoc） |
 | @.claude/rules/unturned-sop.md | `manager-server/src/modules/**` | 开服 SOP（目录布局/配置/状态机/重启流水线） |
-| @.claude/rules/rcon-protocol.md | `manager-server/src/modules/rcon/**` | RCON 双协议凭证分离 + 安全门控 |
+| @.claude/rules/rcon-protocol.md | ~~已退役~~（ADR-0004 Phase 6 删 RCON 通道，仅历史参考） | RCON 双协议凭证分离 + 安全门控 |
 | @.claude/rules/development.md | 全局 | 验证门槛/PR 5 件套/完成定义 |
 | @.claude/rules/communication.md | 全局 | 沟通规则（问/不问）+ Serena 记忆纪律 |
 
@@ -72,7 +71,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | `docs/architecture/architecture-spec.md` | 后端模块实现前 |
 | `docs/architecture/design-system-mapping.md` | 前端组件实现前 |
 | `claudedocs/reference_config_files.md` | 涉及配置文件读写 |
-| `claudedocs/reference_console_commands.md` | 涉及 RCON 命令 |
+| `claudedocs/reference_console_commands.md` | 涉及服务端控制台命令（PTY 终端输入） |
 | `claudedocs/research_verification_tracker.md` | 承诺"能跑"之前 |
 | `docs/external-resources.md` | 需要查外部官方文档链接（Steam WebAPI / Node.js / React / Tailwind 等） |
 
@@ -136,4 +135,4 @@ D:/unturned-manager/
 
 ---
 
-*最近修订：2026-08-08——合并 tech-stack 信息、新增 3 个规范文件、rules 增至 9 个、新增 §6 git commit 文档过时检测、移除 agent hook、hook exit 0 改为 JSON 输出、新增 Vite proxy 端口约束。*
+*最近修订：2026-08-11——ADR-0004 Phase 6 删 RCON/A2S 通道，通信改「共享卷 + PTY 终端」、状态机去 DEGRADED 改 4 态、rcon-protocol.md 退役标记；游戏集成层更新。*

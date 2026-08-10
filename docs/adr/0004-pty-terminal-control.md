@@ -1,6 +1,6 @@
 # ADR-0004: 实例控制改为持久 PTY 终端 + xterm.js
 
-- **状态**：草案（待用户拍板）
+- **状态**：已接受（Phase 0-6 全部落地，2026-08-11）
 - **日期**：2026-08-10
 - **背景**：BUG 3/7「启动超时/失败」的根本性纠偏
 
@@ -312,11 +312,14 @@ WS steamcmd_progress 实时推进度条
 
 ### Phase 6：RCON 通道降级或删除
 
-- 评估 RCON 是否仍必要
-- 候选 1：保留为 fallback（PTY 不可用时用）
-- 候选 2：彻底删除（与 GSM3 完全一致）
-- 决策依据：Phase 3 实测后，看前端有没有「PTY 关闭后还想 Save」的用例
-- 验证：明确保留或删除的边界
+> ✅ **已完成（commit `76584bc`，2026-08-11）**——用户拍板候选 2「彻底删除」：
+> 删 `rcon-srcds` 依赖、`RconManager` 模块、`/rcon` `/players` 路由、`PlayersPage`、`shared/contracts/rcon.ts`，
+> 命令统一走 PTY 终端 owner-trust 模型。`rcon-protocol.md` 加退役标记仅作历史参考。
+
+- ~~评估 RCON 是否仍必要~~ → 用户决策：「RCON 后续要拓展以后再说，先保证基本开服功能能实现」
+- ~~候选 1：保留为 fallback~~ → 不选——与 GSM3 完全一致，不为未验证场景留复杂度
+- 候选 2：彻底删除 → **选定**（前端无「PTY 关闭后还想 Save」用例——命令全走终端）
+- 验证：删除后 typecheck + 全测（后端 170 单测 + 前端 29 单测）绿，e2e checklist 移除 RCON 验收项
 
 ### 未来 Phase（待评估）
 

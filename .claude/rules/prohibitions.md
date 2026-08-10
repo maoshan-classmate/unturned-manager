@@ -4,12 +4,12 @@
 
 | 禁用项 | 理由 |
 |---|---|
-| Socket.IO | 钉死用 `ws`，更轻、和 `rcon-srcds` 更合拍 |
+| Socket.IO | 钉死用 `ws`，更轻、和 PTY/WS 双向链路更合拍 |
 | MySQL / Postgres / SQL Server | SQLite 够了，多用户将来再加 |
-| Agent / 边车容器 | 违反共享卷+RCON 决策 |
+| Agent / 边车容器 | 违反共享卷+PTY 终端决策 |
 | Docker-in-Docker | SteamCMD 不走 DinD |
 | MongoDB | MVP 不用 Redis |
-| pushrax 的 `node-rcon` | 2021 年没维护了，用 `rcon-srcds` |
+| RCON 库（`rcon-srcds` / pushrax `node-rcon`） | ADR-0004 Phase 6 已删 RCON 通道，命令走 PTY 终端 owner-trust；恢复需先写 ADR |
 | TypeScript `any` | 除非迫不得已并加本地注释说明原因 |
 
 ## 禁用模式（带理由）
@@ -23,7 +23,7 @@
 | 给每个服起一个 U3DS 容器 | 违反多 ServerID 共装决策（省 10GB/服） |
 | 承诺"无停机换 Mod" | 热重载不存在，参 U3-SDK/Issues/#1794 |
 | 自动跑 `rocket reload` | OpenMod reload 仅作可选，RocketMod reload 直接禁用 |
-| 明文存密码 | 用户用 Argon2id；RCON 凭证用 AES-GCM 落库 |
+| 明文存密码 | 用户密码用 Argon2id 落库 |
 
 ## 绝对不能
 
@@ -31,7 +31,7 @@
 - U3-SDK 文件**绝对不能导入、编译、复制到本项目源码树**
 - U3-SDK **只能当 schema 参考用**——`WorkshopDownloadConfig.cs` 是唯一可查阅的文件
 - `.claude/` **绝对不能提交个人 token**
-- 打印日志时**绝不能**带 RCON 密码部分
+- 打印日志时**绝不能**带凭证/密钥部分（密码、token、GSLT、Steam WebAPI Key 等）
 
 ## GSM 可抄白名单（颗粒度细化）
 
