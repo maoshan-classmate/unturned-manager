@@ -1,4 +1,5 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import https from "https";
 import { createWriteStream } from "fs";
@@ -122,7 +123,11 @@ export class SteamCmdManager implements ISteamCmdManager {
     // SteamCMD 安装通常由 docker 镜像自带；面板只做状态展示
     const status = await this.getStatus();
     if (!status.isInstalled) {
-      throw new Error("SteamCMD 未安装。请使用包含 SteamCMD 的镜像。");
+      throw new AppError(
+        "steamcmd-not-found",
+        "SteamCMD 未安装。请使用包含 SteamCMD 的镜像。",
+        500,
+      );
     }
   }
 
@@ -186,12 +191,12 @@ export class SteamCmdManager implements ISteamCmdManager {
     await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
 
     callbacks?.onStatusChange?.("spawned");
-    this.broadcastProgressWithJobId(jobId, "installing", 0, "spawned");
+    this.broadcastProgressWithJobId(jobId, 0, "spawned");
 
     // 3. spawn（失败同步抛 → route 转 500；锁在此释放）
     try {
       const pid = await this.processSupervisor.spawn(
-        jobId as never,
+        jobId,
         exePath,
         ["+runscript", scriptPath],
         path.dirname(exePath),
@@ -202,7 +207,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       );
     } catch (err) {
       callbacks?.onStatusChange?.("failed");
-      this.broadcastProgressWithJobId(jobId, "failed", 0, "failed");
+      this.broadcastProgressWithJobId(jobId, 0, "failed");
       this.activeJobs.delete(installDir);
       try {
         await fs.promises.unlink(scriptPath);
@@ -213,7 +218,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
 
     // 4. 解析 stdout + 进度回调（抄 GSM3: 两条通道：callback + WS 广播）
-    this.processSupervisor.onStdout(jobId as never, (line: string) => {
+    this.processSupervisor.onStdout(jobId, (line: string) => {
       const { stage, percent } = this.parseProgressLine(line);
       callbacks?.onProgress?.(percent ?? 0);
       callbacks?.onStatusChange?.(stage);
@@ -222,14 +227,14 @@ export class SteamCmdManager implements ISteamCmdManager {
         jobId,
         stage,
         percent,
-      } as never);
+      });
     });
 
     // 5. 后台收尾（BUG-2 异步化）：等待退出 → 清临时脚本 → 验证启动脚本 → 广播 completed/failed → 释放锁
     void (async () => {
       try {
         const installExitCode = await this.processSupervisor.waitForExit(
-          jobId as never,
+          jobId,
           UPDATE_TIMEOUT_MS,
         );
         // BUG-3/7：steamcmd 下载失败（exitCode≠0）报真实错误，
@@ -257,14 +262,14 @@ export class SteamCmdManager implements ISteamCmdManager {
         }
 
         callbacks?.onStatusChange?.("completed");
-        this.broadcastProgressWithJobId(jobId, "completed", 100, "completed");
+        this.broadcastProgressWithJobId(jobId, 100, "completed");
         this.loggerUpdate().info(
           { installDir, script },
           "SteamCMD install 完成",
         );
       } catch (err) {
         callbacks?.onStatusChange?.("failed");
-        this.broadcastProgressWithJobId(jobId, "failed", 0, "failed");
+        this.broadcastProgressWithJobId(jobId, 0, "failed");
         this.loggerUpdate().error({ err, installDir }, "SteamCMD install 失败");
       } finally {
         this.activeJobs.delete(installDir);
@@ -274,10 +279,11 @@ export class SteamCmdManager implements ISteamCmdManager {
     return jobId;
   }
 
-  /** BUG-2 修复：广播带 jobId 的进度事件（多任务并发隔离） */
+  /** BUG-2 修复：广播带 jobId 的进度事件（多任务并发隔离）。
+   *  review 修复（P2-1）：删死参数 stage——方法体只广播 label，原第一个 stage 参数完全被忽略，
+   *  调用者易误把 "completed"/"failed" 传进 stage 位导致广播错 stage。签名收敛为 (jobId, percent, label)。 */
   private broadcastProgressWithJobId(
     jobId: string,
-    stage: string,
     percent: number | undefined,
     label: string,
   ): void {
@@ -287,22 +293,24 @@ export class SteamCmdManager implements ISteamCmdManager {
         jobId,
         stage: label,
         ...(percent != null ? { percent } : {}),
-      } as never);
+      });
     } catch {
       /* noop */
     }
   }
 
   /**
-   * 更新 U3DS 二进制——卡 C 真 spawn 实现。
+   * 更新 U3DS 二进制（Phase 0 异步化——ADR-0004 §4 Phase 0）。
    *
-   * 1. 检查所有 U3DS 实例 STOPPED（schema 含状态列）
-   * 2. spawn `steamcmd +force_install_dir <dir> +login anonymous +app_update 1110390 validate +quit`
-   * 3. 解析 stdout 行，调 broadcaster.broadcast({type:'steamcmd_progress'})
-   * 4. 等待进程退出；失败 throw
+   * 异步启动：spawn 后立即返回 jobId，不等待 SteamCMD 退出。进度/完成/失败经 WS
+   * `steamcmd_progress`（带 jobId）广播。前端订阅完成后弹 toast「U3DS 更新完成」。
+   *
+   * @param installDir - U3DS 安装根目录
+   * @returns jobId（`steamcmd-update-<installDir>`），前端用它关联 WS 进度事件
+   * @throws {AppError} code=servers-active/steamcmd-busy/steamcmd-not-found（spawn 前同步抛）
    */
-  async updateU3DS(installDir: string): Promise<void> {
-    // 前置检查：任何活跃实例必须 STOPPED（架构 spec §1.4；DB state 列已删 → 内存态探活）
+  async updateU3DS(installDir: string): Promise<string> {
+    // 前置检查（同步抛，不进异步路径）
     const activeIds = this.activeProbe();
     if (activeIds.length > 0) {
       throw new AppError(
@@ -321,31 +329,31 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     const exePath = this.getExePath();
     if (!exePath) {
-      throw new Error("SteamCMD 未安装");
+      throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 500);
     }
 
     this.activeJobs.add(installDir);
+    const jobId = `steamcmd-update-${installDir}`;
+
+    // runscript + spawn（与 installU3DS 同形态）
+    const scriptContent = [
+      "@ShutdownOnFailedCommand 1",
+      "@NoPromptForPassword 1",
+      `force_install_dir "${installDir}"`,
+      "login anonymous",
+      `app_update ${U3DS_APPID} validate`,
+      "quit",
+    ].join("\n");
+    const scriptPath = path.join(installDir, ".steamcmd-update.scf");
+
     try {
-      // 方案借鉴 GSM3（research_gsm3_steamcmd_unturned_2026-08-08.md §2.2）：
-      // 先生成 runscript 文件，再 spawn `+runscript`，避免命令行转义问题
-      const scriptContent = [
-        "@ShutdownOnFailedCommand 1",
-        "@NoPromptForPassword 1",
-        `force_install_dir "${installDir}"`,
-        "login anonymous",
-        `app_update ${U3DS_APPID} validate`,
-        "quit",
-      ].join("\n");
-      const scriptPath = path.join(installDir, ".steamcmd-update.scf");
       await fs.promises.mkdir(installDir, { recursive: true });
       await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
 
-      const jobId = `steamcmd-update-${installDir}`;
-      this.broadcastProgressWithJobId(jobId, "installing", 0, "spawned");
+      this.broadcastProgressWithJobId(jobId, 0, "spawned");
 
-      // 进程 serverId 套用 installDir 路径（permit 用 installDir 作 ID，对齐内部约定）
       const pid = await this.processSupervisor.spawn(
-        jobId as never,
+        jobId,
         exePath,
         ["+runscript", scriptPath],
         path.dirname(exePath),
@@ -356,47 +364,58 @@ export class SteamCmdManager implements ISteamCmdManager {
         "SteamCMD update 进程已 spawn",
       );
 
-      // 解析 stdout（卡 C #2：进度广播 + BUG-2：补 jobId）
-      this.processSupervisor.onStdout(jobId as never, (line: string) => {
-        const broadcast = this.parseProgressLine(line);
+      // 解析 stdout 推进度
+      this.processSupervisor.onStdout(jobId, (line: string) => {
+        const { stage, percent } = this.parseProgressLine(line);
         this.broadcaster.broadcast({
           type: "steamcmd_progress",
           jobId,
-          stage: broadcast.stage,
-          percent: broadcast.percent,
-        } as never);
+          stage,
+          percent,
+        });
       });
 
-      // 等待退出
-      try {
-        const updateExitCode = await this.processSupervisor.waitForExit(
-          jobId as never,
-          UPDATE_TIMEOUT_MS,
-        );
-        if (updateExitCode !== 0 && updateExitCode != null) {
-          throw new Error(`SteamCMD 更新进程异常退出 (code ${updateExitCode})`);
-        }
-      } finally {
-        // 清理 runscript 临时文件（35 分钟内 GSM3 自动清理——我们立即清）
+      // 后台收尾：等退出 → 清临时脚本 → 广播 completed/failed → 释放锁
+      void (async () => {
         try {
-          await fs.promises.unlink(scriptPath);
-        } catch {
-          /* noop */
+          const updateExitCode = await this.processSupervisor.waitForExit(
+            jobId,
+            UPDATE_TIMEOUT_MS,
+          );
+          if (updateExitCode !== 0 && updateExitCode != null) {
+            throw new Error(
+              `SteamCMD 更新进程异常退出 (code ${updateExitCode})`,
+            );
+          }
+          this.broadcastProgressWithJobId(jobId, 100, "completed");
+          this.loggerUpdate().info({ installDir }, "SteamCMD update 完成");
+        } catch (err) {
+          this.broadcastProgressWithJobId(jobId, 0, "failed");
+          this.loggerUpdate().error(
+            { err, installDir },
+            "SteamCMD update 失败",
+          );
+        } finally {
+          try {
+            await fs.promises.unlink(scriptPath);
+          } catch {
+            /* noop */
+          }
+          this.activeJobs.delete(installDir);
         }
-      }
+      })();
 
-      this.broadcastProgressWithJobId(jobId, "completed", 100, "completed");
-      this.loggerUpdate().info({ installDir }, "SteamCMD update 完成");
+      return jobId;
     } catch (err) {
-      this.broadcastProgressWithJobId(
-        `steamcmd-update-${installDir}`,
-        "failed",
-        0,
-        "failed",
-      );
-      throw err;
-    } finally {
+      // spawn 失败同步抛（route 转 500）；锁在此释放
       this.activeJobs.delete(installDir);
+      try {
+        await fs.promises.unlink(scriptPath);
+      } catch {
+        /* noop */
+      }
+      this.broadcastProgressWithJobId(jobId, 0, "failed");
+      throw err;
     }
   }
 
@@ -416,13 +435,23 @@ export class SteamCmdManager implements ISteamCmdManager {
     serverId?: string,
   ): Promise<string> {
     if (!itemIds.length) return "";
+    // review 修复（P2-4）：裸 new Error → AppError（busy=409 / not-found=500），
+    // 路由才能区分错误类型（mods.ts 的 502 包装不再吞掉 409 语义）
     if (this.activeJobs.has(installDir)) {
-      throw new Error("该 installDir 已有 SteamCMD 任务在跑");
+      throw new AppError(
+        "steamcmd-busy",
+        "该 installDir 已有 SteamCMD 任务在跑",
+        409,
+      );
     }
     const exePath = this.getExePath();
     if (!exePath) {
-      throw new Error("SteamCMD 未安装");
+      throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 500);
     }
+
+    // ★ review 修复（P2-3）：加锁提前到任何 await 之前（原实现在 mkdir/writeFile 之后才 add）——
+    //   TOCTOU：两个并发请求同时通过 busy 检查 → 都 spawn SteamCMD 写同一 staging。
+    this.activeJobs.add(installDir);
 
     // ★ BUG-5/6（第四版根因）：staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
     //   U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描（workshopAcfService.ts:24）与
@@ -441,23 +470,28 @@ export class SteamCmdManager implements ISteamCmdManager {
       "quit",
     ].join("\n");
     const scriptPath = path.join(stagingDir, ".steamcmd-download.scf");
-    await fs.promises.mkdir(stagingDir, { recursive: true });
-    await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
+    try {
+      await fs.promises.mkdir(stagingDir, { recursive: true });
+      await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
+    } catch (err) {
+      // mkdir/writeFile 失败：释放锁并同步抛（route 转 500），不留悬挂锁
+      this.activeJobs.delete(installDir);
+      throw err;
+    }
 
     const jobId = `steamcmd-download-${installDir}`;
-    this.activeJobs.add(installDir);
-    this.broadcastProgressWithJobId(jobId, "downloading", 0, "spawned");
+    this.broadcastProgressWithJobId(jobId, 0, "spawned");
 
     // spawn 失败（如 steamcmd 缺依赖）同步抛，route 层转 502；锁在此释放
     try {
       await this.processSupervisor.spawn(
-        jobId as never,
+        jobId,
         exePath,
         ["+runscript", scriptPath],
         path.dirname(exePath),
       );
     } catch (err) {
-      this.broadcastProgressWithJobId(jobId, "failed", 0, "failed");
+      this.broadcastProgressWithJobId(jobId, 0, "failed");
       this.activeJobs.delete(installDir);
       try {
         await fs.promises.unlink(scriptPath);
@@ -467,19 +501,19 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw err;
     }
 
-    this.processSupervisor.onStdout(jobId as never, (line: string) => {
+    this.processSupervisor.onStdout(jobId, (line: string) => {
       const { stage, percent } = this.parseProgressLine(line);
       this.broadcaster.broadcast({
         type: "steamcmd_progress",
         jobId,
         stage,
         percent,
-      } as never);
+      });
     });
 
     // 后台收尾：等待退出 → 验证内容落盘 → 清临时脚本 → 广播 completed/failed → 释放互斥锁
     void this.processSupervisor
-      .waitForExit(jobId as never, DOWNLOAD_TIMEOUT_MS)
+      .waitForExit(jobId, DOWNLOAD_TIMEOUT_MS)
       .then(async (downloadExitCode) => {
         if (downloadExitCode !== 0 && downloadExitCode != null) {
           throw new Error(
@@ -517,10 +551,10 @@ export class SteamCmdManager implements ISteamCmdManager {
         } catch {
           /* noop */
         }
-        this.broadcastProgressWithJobId(jobId, "completed", 100, "completed");
+        this.broadcastProgressWithJobId(jobId, 100, "completed");
       })
       .catch(() => {
-        this.broadcastProgressWithJobId(jobId, "failed", 0, "failed");
+        this.broadcastProgressWithJobId(jobId, 0, "failed");
       })
       .finally(() => {
         this.activeJobs.delete(installDir);
@@ -530,28 +564,47 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 检查 U3DS（AppID 1110390）当前 buildid/name（B-1 修复路径）。
+   * 检查 U3DS（AppID 1110390）当前 buildid/name（Phase 0 异步化——ADR-0004 §4 Phase 0）。
    * 抄 GSM3 `fetchAppBranches:444-511`：runscript 文件驱动 + 多套命令序列 fallback。
    * 冷启动 steamcmd 首次 app_info_request 常拿不到 appinfo（实测输出为空），GSM3 试 3 套序列；
-   * 本实现同样 3 套——buildid 解析为空或进程报错则换下一套，全部失败才抛 AppError（前端 toast 真实错误，
-   * 不再误报「已是最新版本」）。
+   * 本实现同样 3 套——buildid 解析为空或进程报错则换下一套，全部失败才广播 failed。
+   *
+   * **异步启动**：HTTP 立即返回 jobId，结果通过 WS `steamcmd_progress`（带 jobId）广播。
+   * stage='completed' 携带 latestVersion 字段，前端订阅后弹 toast「U3DS 最新版本: xxx」。
    *
    * @param installDir - 可选：临时 runscript/install 目录（默认 /tmp/steamcmd-check）
-   * @returns 解析后的版本信息——{ currentBuildId, latestVersion, lastChecked }
+   * @returns jobId（`steamcmd-check-<installDir>`），前端用它关联 WS 进度事件
    * @throws {AppError} code=steamcmd-not-found, status=404 当 SteamCMD 未安装
-   * @throws {AppError} code=steamcmd-check-failed, status=500 当 3 套命令序列全部拿不到 buildid
    */
-  async checkUpdate(installDir?: string): Promise<{
-    currentBuildId: string | null;
-    latestVersion: string;
-    lastChecked: string;
-  }> {
+  async checkUpdate(installDir?: string): Promise<string> {
     const exePath = this.getExePath();
     if (!exePath) {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 404);
     }
 
-    const tmpDir = installDir ?? "/tmp/steamcmd-check";
+    // review 修复：jobId 用 installDir 隔离（前端按 installPath 订阅），但 runscript 写系统
+    // tmp 目录——原来 tmpDir=installDir 会把 .scf 临时脚本写进 U3DS 安装目录（污染）。
+    const lockKey = installDir ?? "default";
+    if (this.activeJobs.has(lockKey)) {
+      throw new AppError("steamcmd-busy", "已有一个检查更新任务在跑", 409);
+    }
+    this.activeJobs.add(lockKey);
+
+    const jobId = `steamcmd-check-${lockKey}`;
+    const jobDir = path.join(os.tmpdir(), "steamcmd-check");
+
+    // ★ review 修复（P1-2）：mkdir 移到广播/后台启动之前 + try/catch 释放锁——
+    //   原来 add 锁后 mkdir 在 try/finally 之外，/tmp 满或权限异常时函数 reject 但
+    //   lockKey 永久残留 → 后续所有 check-update 都 409 steamcmd-busy，且无 failed 广播。
+    try {
+      await fs.promises.mkdir(jobDir, { recursive: true });
+    } catch (err) {
+      this.activeJobs.delete(lockKey);
+      throw err;
+    }
+
+    this.broadcastProgressWithJobId(jobId, 0, "spawned");
+
     const attempts: string[][] = [
       [
         "login anonymous",
@@ -579,58 +632,83 @@ export class SteamCmdManager implements ISteamCmdManager {
       ],
     ];
 
-    await fs.promises.mkdir(tmpDir, { recursive: true });
-    let lastError: unknown;
-    for (let attempt = 0; attempt < attempts.length; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 750));
-      }
-      const scriptPath = path.join(tmpDir, `.steamcmd-check-${attempt}.scf`);
+    // 后台：3 套 fallback 顺序跑，拿到 buildid → 广播 completed（含 latestVersion）
+    void (async () => {
+      let lastError: unknown;
       try {
-        await fs.promises.writeFile(
-          scriptPath,
-          [...attempts[attempt]!, ""].join("\n"),
-          { mode: 0o600 },
-        );
-        const { stdout } = await this.execFileAdapter(
-          exePath,
-          ["+runscript", scriptPath],
-          { timeout: 60_000 },
-        );
-        const buildIdMatch = stdout.match(/buildid[\s"]+(\d+)/);
-        const nameMatch = stdout.match(/name[\s"]+([^"\n]+)/);
-        const currentBuildId = buildIdMatch?.[1] ?? null;
-        if (!currentBuildId) {
-          lastError = new Error("app_info_print 未返回有效 buildid");
-          continue;
+        for (let attempt = 0; attempt < attempts.length; attempt++) {
+          if (attempt > 0) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+          }
+          const scriptPath = path.join(
+            jobDir,
+            `${encodeURIComponent(lockKey)}-${attempt}.scf`,
+          );
+          try {
+            await fs.promises.writeFile(
+              scriptPath,
+              [...attempts[attempt]!, ""].join("\n"),
+              { mode: 0o600 },
+            );
+            const { stdout } = await this.execFileAdapter(
+              exePath,
+              ["+runscript", scriptPath],
+              { timeout: 60_000 },
+            );
+            const buildIdMatch = stdout.match(/buildid[\s"]+(\d+)/);
+            const nameMatch = stdout.match(/name[\s"]+([^"\n]+)/);
+            const currentBuildId = buildIdMatch?.[1] ?? null;
+            if (!currentBuildId) {
+              lastError = new Error("app_info_print 未返回有效 buildid");
+              continue;
+            }
+            // 成功：广播 completed 携带 latestVersion，前端 toast 显示。
+            // review 修复：版本号取 buildid（如 "12345678"），不用 name——name 是服务名
+            // （"Unturned Dedicated Server"），显示它没有意义。
+            this.broadcaster.broadcast({
+              type: "steamcmd_progress",
+              jobId,
+              stage: "completed",
+              percent: 100,
+              latestVersion:
+                buildIdMatch?.[1] ?? nameMatch?.[1]?.trim() ?? "unknown",
+            });
+            return;
+          } catch (err) {
+            lastError = err;
+          } finally {
+            await fs.promises.unlink(scriptPath).catch(() => undefined);
+          }
         }
-        return {
-          currentBuildId,
-          latestVersion: nameMatch?.[1]?.trim() ?? "unknown",
-          lastChecked: new Date().toISOString(),
-        };
+        throw new AppError(
+          "steamcmd-check-failed",
+          lastError instanceof Error ? lastError.message : "检查更新失败",
+          500,
+        );
       } catch (err) {
-        lastError = err;
+        this.broadcastProgressWithJobId(jobId, 0, "failed");
+        this.loggerUpdate().error({ err, jobDir }, "SteamCMD checkUpdate 失败");
       } finally {
-        await fs.promises.unlink(scriptPath).catch(() => undefined);
+        this.activeJobs.delete(lockKey);
       }
-    }
+    })();
 
-    throw new AppError(
-      "steamcmd-check-failed",
-      lastError instanceof Error ? lastError.message : "检查更新失败",
-      500,
-    );
+    return jobId;
   }
 
   /**
-   * 重装 SteamCMD（B-1 附 修复路径）。
-   * 抄 GSM3 `installOnline` 模式：删旧 + 拉新 + run +quit 初始化。
-   * 进度通过 steamcmd_progress 广播。
+   * 重装 SteamCMD（Phase 0 异步化——ADR-0004 §4 Phase 0）。
+   * 抄 GSM3 `installOnline` 模式：删旧 + 拉新 + +quit 初始化。
+   * **异步启动**：HTTP 立即返回 jobId，下载/解压/初始化在后台串行跑，进度/完成/失败经 WS 广播。
+   *
+   * 注意：前 3 步（清理/下载/解压）必须顺序在 `+quit` 初始化前完成——所以**后台串行执行**，
+   * 不能简单 spawn 出去。spawn 只在最后 `+quit` 初始化时使用。
    *
    * @param installDir - SteamCMD 安装目录（默认用探测到的路径）
+   * @returns jobId（`steamcmd-reinstall-<installDir>`），前端用它关联 WS 进度事件
+   * @throws {AppError} code=steamcmd-not-found（同步抛——前置探测失败）
    */
-  async reinstall(installDir?: string): Promise<void> {
+  async reinstall(installDir?: string): Promise<string> {
     const rawTarget = installDir ?? this.steamCmdPath ?? this.findSteamCmd();
     if (!rawTarget) {
       throw new AppError(
@@ -647,94 +725,127 @@ export class SteamCmdManager implements ISteamCmdManager {
       /* 目录尚不存在（重装会 mkdir），保持原值 */
     }
 
-    // 1. 清理旧文件（保留 sdk 符号链接）
-    const dirsToClean = ["linux32", "linux64", "package", "steamapps", "logs"];
-    for (const dir of dirsToClean) {
-      try {
-        await fs.promises.rm(path.join(targetDir, dir), {
-          recursive: true,
-          force: true,
-        });
-      } catch {
-        /* noop */
-      }
+    // review 修复：reinstall 与其他 SteamCMD 方法一致加 activeJobs 锁（key=targetDir），
+    // 防并发重装同一目录 → 删/下/解压互相踩踏
+    if (this.activeJobs.has(targetDir)) {
+      throw new AppError("steamcmd-busy", "该目录已有 SteamCMD 任务在跑", 409);
     }
-    for (const f of ["steamcmd.sh", "steamcmd", "steamerrorreporter"]) {
-      try {
-        await fs.promises.unlink(path.join(targetDir, f));
-      } catch {
-        /* noop */
-      }
-    }
+    this.activeJobs.add(targetDir);
 
-    // 2. 拉新——Node https 下载（对齐 GSM3 installOnline:163-235 / downloadFile:262-298）。
-    //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下（BUG-1 重装 curl:77 根因）。
-    //    multi-URL fallback 保留（GSM3 Dockerfile:250-251 同款：akamai 主源 + media.steampowered.com 备源）。
-    await fs.promises.mkdir(targetDir, { recursive: true });
-    const tarPath = path.join(targetDir, "steamcmd_linux.tar.gz");
-    this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 开始下载");
-    const downloadUrls = [
-      "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz",
-      "https://media.steampowered.com/installer/steamcmd_linux.tar.gz",
-    ];
-    let lastDownloadError: unknown;
-    for (const url of downloadUrls) {
+    // ★ review 修复（P1-1）：jobId 必须用 **rawTarget**（getStatus().installPath 的原值），
+    //   不能用归一后的 targetDir——前端 SteamCmdCard 按 `steamcmd-reinstall-${status.installPath}`
+    //   订阅。Debian 布局 /usr/games/steamcmd 是脚本（isFile=true）→ targetDir=/usr/games，
+    //   若 jobId 用 targetDir 则广播 `steamcmd-reinstall-/usr/games`，前端监听
+    //   `steamcmd-reinstall-/usr/games/steamcmd` → 永不匹配：重装完成 toast 永不弹、loading 卡死。
+    //   归一只用于锁与删/下/解压操作（都是目录语义）。
+    const jobId = `steamcmd-reinstall-${rawTarget}`;
+
+    // 立即广播「已提交」，HTTP 立即返回 jobId
+    this.broadcastProgressWithJobId(jobId, 0, "spawned");
+
+    // 后台串行：清理 → 下载 → 解压 → +quit 初始化 → 广播 completed/failed
+    void (async () => {
       try {
-        await this.downloadFile(url, tarPath, (percent) => {
-          this.broadcastProgress("installing", percent, "downloading");
-        });
-        lastDownloadError = undefined;
-        break;
+        // 1. 清理旧文件（保留 sdk 符号链接）
+        const dirsToClean = [
+          "linux32",
+          "linux64",
+          "package",
+          "steamapps",
+          "logs",
+        ];
+        for (const dir of dirsToClean) {
+          try {
+            await fs.promises.rm(path.join(targetDir, dir), {
+              recursive: true,
+              force: true,
+            });
+          } catch {
+            /* noop */
+          }
+        }
+        for (const f of ["steamcmd.sh", "steamcmd", "steamerrorreporter"]) {
+          try {
+            await fs.promises.unlink(path.join(targetDir, f));
+          } catch {
+            /* noop */
+          }
+        }
+
+        // 2. 拉新——Node https 下载（对齐 GSM3 installOnline:163-235 / downloadFile:262-298）。
+        //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下（BUG-1 重装 curl:77 根因）。
+        //    multi-URL fallback 保留（GSM3 Dockerfile:250-251 同款：akamai 主源 + media.steampowered.com 备源）。
+        await fs.promises.mkdir(targetDir, { recursive: true });
+        const tarPath = path.join(targetDir, "steamcmd_linux.tar.gz");
+        this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 开始下载");
+        const downloadUrls = [
+          "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz",
+          "https://media.steampowered.com/installer/steamcmd_linux.tar.gz",
+        ];
+        let lastDownloadError: unknown;
+        for (const url of downloadUrls) {
+          try {
+            await this.downloadFile(url, tarPath, (percent) => {
+              this.broadcastProgressWithJobId(jobId, percent, "downloading");
+            });
+            lastDownloadError = undefined;
+            break;
+          } catch (err) {
+            lastDownloadError = err;
+            this.loggerUpdate().warn(
+              { err, url },
+              "SteamCMD 下载源失败，尝试下一个",
+            );
+          }
+        }
+        if (lastDownloadError) {
+          throw new AppError(
+            "steamcmd-download-failed",
+            `SteamCMD 下载失败: ${
+              lastDownloadError instanceof Error
+                ? lastDownloadError.message
+                : String(lastDownloadError)
+            }`,
+            500,
+          );
+        }
+
+        // 3. 解压——tar npm 库（对齐 GSM3 extractTarGz:312-330），不依赖系统 tar。
+        await tar.extract({ file: tarPath, cwd: targetDir });
+        await fs.promises.unlink(tarPath).catch(() => undefined);
+
+        // 4. 修复 steamcmd.sh 可执行
+        await fs.promises
+          .chmod(path.join(targetDir, "steamcmd.sh"), 0o755)
+          .catch(() => undefined);
+
+        // 5. +quit 初始化（SteamCMD 首次跑会下载 steamclient.so）—— 长任务
+        const exePath = path.join(targetDir, "steamcmd.sh");
+        this.broadcastProgressWithJobId(jobId, 50, "spawned");
+        try {
+          // 这里仍走 execFileAdapter 因为 +quit 是一次性执行并等返回（不是长驻进程）
+          await this.execFileAdapter(exePath, ["+quit"], { timeout: 120_000 });
+        } catch (err) {
+          this.loggerUpdate().warn(
+            { err },
+            "SteamCMD 初始化 +quit 失败（可能允许后续手动重试）",
+          );
+        }
+
+        this.broadcastProgressWithJobId(jobId, 100, "completed");
+        this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 完成");
       } catch (err) {
-        lastDownloadError = err;
-        this.loggerUpdate().warn({ err, url }, "SteamCMD 下载源失败，尝试下一个");
-      }
-    }
-    if (lastDownloadError) {
-      this.broadcastProgress("failed", 0, "failed");
-      throw new AppError(
-        "steamcmd-download-failed",
-        `SteamCMD 下载失败: ${
-          lastDownloadError instanceof Error
-            ? lastDownloadError.message
-            : String(lastDownloadError)
-        }`,
-        500,
-      );
-    }
-
-    // 3. 解压——tar npm 库（对齐 GSM3 extractTarGz:312-330），不依赖系统 tar。
-    try {
-      await tar.extract({ file: tarPath, cwd: targetDir });
-    } catch (err) {
-      this.broadcastProgress("failed", 0, "failed");
-      throw new AppError(
-        "steamcmd-extract-failed",
-        `SteamCMD 解压失败: ${err instanceof Error ? err.message : String(err)}`,
-        500,
-      );
-    }
-    await fs.promises.unlink(tarPath).catch(() => undefined);
-
-    // 4. 修复 steamcmd.sh 可执行
-    await fs.promises
-      .chmod(path.join(targetDir, "steamcmd.sh"), 0o755)
-      .catch(() => undefined);
-
-    // 5. +quit 初始化（SteamCMD 首次跑会下载 steamclient.so）
-    const exePath = path.join(targetDir, "steamcmd.sh");
-    this.broadcastProgress("installing", 50, "spawned");
-    await this.execFileAdapter(exePath, ["+quit"], { timeout: 120_000 }).catch(
-      (err: unknown) => {
-        this.loggerUpdate().warn(
-          { err },
-          "SteamCMD 初始化 +quit 失败（可能允许后续手动重试）",
+        this.broadcastProgressWithJobId(jobId, 0, "failed");
+        this.loggerUpdate().error(
+          { err, targetDir },
+          "SteamCMD reinstall 失败",
         );
-      },
-    );
+      } finally {
+        this.activeJobs.delete(targetDir);
+      }
+    })();
 
-    this.broadcastProgress("completed", 100, "completed");
-    this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 完成");
+    return jobId;
   }
 
   // ── 内部 ──────────────────────────────────────────────
@@ -820,22 +931,6 @@ export class SteamCmdManager implements ISteamCmdManager {
     return Math.min(100, Math.round((done / total) * 100));
   }
 
-  private broadcastProgress(
-    stage: string,
-    percent: number | undefined,
-    label: string,
-  ): void {
-    try {
-      this.broadcaster.broadcast({
-        type: "steamcmd_progress",
-        stage: label,
-        ...(percent != null ? { percent } : {}),
-      } as never);
-    } catch {
-      /* noop */
-    }
-  }
-
   /**
    * 用 Node 内置 https 下载文件（对齐 GSM3 downloadFile:262-298）。
    * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载
@@ -866,10 +961,7 @@ export class SteamCmdManager implements ISteamCmdManager {
             file.destroy();
             return;
           }
-          const total = parseInt(
-            response.headers["content-length"] || "0",
-            10,
-          );
+          const total = parseInt(response.headers["content-length"] || "0", 10);
           let downloaded = 0;
           response.on("data", (chunk) => {
             downloaded += chunk.length;

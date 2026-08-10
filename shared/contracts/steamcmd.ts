@@ -1,21 +1,20 @@
 import type { SteamCmdStatus } from "../types/domain.js";
 
-/** SteamCMD 更新检查结果（抄 GSM3 steamcmd.ts:34-62 SSE 路线同源结构） */
-export interface SteamCmdUpdateInfo {
-  /** 当前本地 SteamCMD 报告的 buildid（来自 app_info_print 解析） */
-  currentBuildId: string | null;
-  /** SteamCMD 自己报出的版本字符串（来自 app_info_print 的 name 字段） */
-  latestVersion: string;
-  /** 检查时间（ISO 8601） */
-  lastChecked: string;
-}
-
 export interface ISteamCmdManager {
   getStatus(): Promise<SteamCmdStatus>;
   /** 运行时设置 SteamCMD 安装目录（前端路径编辑 dialog；内存态，重启回落 STEAMCMD_DIR env） */
   setInstallPath(installPath: string): void;
   install(installDir: string): Promise<void>;
-  updateU3DS(installDir: string): Promise<void>;
+  /**
+   * 更新 U3DS 二进制（Phase 0 异步化）。
+   * spawn 后立即返回 jobId，不等待 SteamCMD 退出——进度/完成/失败经 WS `steamcmd_progress`（带 jobId）广播。
+   * 同步等 30min 是 BUG-3/7「启动 timeout」的同类问题：HTTP 长响应触发 axios 10s 上限。
+   *
+   * @param installDir - U3DS 安装根目录
+   * @returns jobId（`steamcmd-update-<installDir>`），前端用它关联 WS 进度事件
+   * @throws {AppError} code=servers-active/steamcmd-busy/steamcmd-not-found（spawn 前同步抛）
+   */
+  updateU3DS(installDir: string): Promise<string>;
   /**
    * 下载 Workshop Mod 到 staging 目录（异步启动，BUG-5/6 修复）。
    * spawn 后立即返回 jobId（不等待 SteamCMD 退出），进度/完成/失败经 WS `steamcmd_progress` 广播。
@@ -35,10 +34,25 @@ export interface ISteamCmdManager {
     itemIds: string[],
     serverId?: string,
   ): Promise<string>;
-  /** 检测 SteamCMD 自身版本（不涉及 U3DS）；B-1 路径：app_info_print 1110390 解析 */
-  checkUpdate(installDir?: string): Promise<SteamCmdUpdateInfo>;
-  /** 重装 SteamCMD：删旧 + 拉新 + +quit 初始化（GSM3 installOnline 模式） */
-  reinstall(installDir?: string): Promise<void>;
+  /**
+   * 检查 U3DS（AppID 1110390）当前 buildid/name（Phase 0 异步化）。
+   * spawn 后立即返回 jobId，结果通过 WS `steamcmd_progress`（带 jobId）广播。
+   * 兼容老调用方（保留 SteamCmdUpdateInfo 形态，但**结果通过 WS 推**——前端不再等 HTTP body）。
+   *
+   * @param installDir - 可选：临时 runscript/install 目录（默认 /tmp/steamcmd-check）
+   * @returns jobId（`steamcmd-check-<installDir>`），前端用它关联 WS 进度事件
+   * @throws {AppError} code=steamcmd-not-found, status=404 当 SteamCMD 未安装
+   */
+  checkUpdate(installDir?: string): Promise<string>;
+  /**
+   * 重装 SteamCMD（Phase 0 异步化）：删旧 + 拉新 + +quit 初始化。
+   * spawn 后立即返回 jobId，进度/完成/失败经 WS `steamcmd_progress` 广播。
+   *
+   * @param installDir - SteamCMD 安装目录（默认用探测到的路径）
+   * @returns jobId（`steamcmd-reinstall-<installDir>`），前端用它关联 WS 进度事件
+   * @throws {AppError} code=steamcmd-not-found（spawn 前同步抛）
+   */
+  reinstall(installDir?: string): Promise<string>;
   /**
    * 安装 U3DS 二进制（BUG-3/7 修复入口，BUG-2 异步化）。
    * 引导式：必须由前端用户在 U3dsCard 点击「安装 U3DS」按钮触发，**不**自动。

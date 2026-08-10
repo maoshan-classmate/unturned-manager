@@ -1,5 +1,5 @@
-import type { ServerId, SteamId64 } from '../types/branded.js';
-import type { ServerState, RconProtocol } from '../types/state.js';
+import type { ServerId, SteamId64 } from "../types/branded.js";
+import type { ServerState, RconProtocol } from "../types/state.js";
 
 // 泛化 WebSocket 连接类型——共享层不依赖 ws 库
 export interface WsConnection {
@@ -13,14 +13,53 @@ export const WsReadyState = {
 } as const;
 
 export type ServerEvent =
-  | { type: 'state_change'; serverId: ServerId; from: ServerState; to: ServerState }
-  | { type: 'console_line'; serverId: ServerId; line: string; source: 'stdout' | 'file' }
-  | { type: 'rcon_status'; serverId: ServerId; protocol: RconProtocol; reachable: boolean }
-  | { type: 'player_join'; serverId: ServerId; playerName: string; steamId: SteamId64 }
-  | { type: 'player_leave'; serverId: ServerId; playerName: string; steamId: SteamId64 }
-  | { type: 'mod_apply_progress'; serverId: ServerId; stage: string; remainingSeconds?: number }
-  | { type: 'file_changed'; serverId: ServerId; path: string }
-  | { type: 'steamcmd_progress'; stage: string; percent?: number };
+  | {
+      type: "state_change";
+      serverId: ServerId;
+      from: ServerState;
+      to: ServerState;
+    }
+  | {
+      type: "console_line";
+      serverId: ServerId;
+      line: string;
+      source: "stdout" | "file";
+    }
+  | {
+      type: "rcon_status";
+      serverId: ServerId;
+      protocol: RconProtocol;
+      reachable: boolean;
+    }
+  | {
+      type: "player_join";
+      serverId: ServerId;
+      playerName: string;
+      steamId: SteamId64;
+    }
+  | {
+      type: "player_leave";
+      serverId: ServerId;
+      playerName: string;
+      steamId: SteamId64;
+    }
+  | {
+      type: "mod_apply_progress";
+      serverId: ServerId;
+      stage: string;
+      remainingSeconds?: number;
+    }
+  | { type: "file_changed"; serverId: ServerId; path: string }
+  // Phase 0 异步化：jobId 关联单个 SteamCMD 长任务（前端按 jobId 过滤订阅）；
+  // latestVersion 是 check-update completed 事件携带的 U3DS buildid。此前缺失导致
+  // SteamCmdManager 被迫 `as never`——契约补齐后删掉全部类型强转（P1-3 review 修复）。
+  | {
+      type: "steamcmd_progress";
+      stage: string;
+      percent?: number;
+      jobId?: string;
+      latestVersion?: string;
+    };
 
 export interface IBroadcaster {
   broadcast(event: ServerEvent): void;

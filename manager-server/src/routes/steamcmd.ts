@@ -49,16 +49,16 @@ export function createSteamCmdRouter(
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir: string };
       try {
-        await steamCmdManager.updateU3DS(installDir);
+        // Phase 0 异步化：updateU3DS spawn 后立即返回 jobId，HTTP 202 不再等 30min
+        const jobId = await steamCmdManager.updateU3DS(installDir);
         res.status(202).json({
           data: {
+            jobId,
             message: "U3DS 更新已启动，进度由 WS steamcmd_progress 推送",
           },
         });
       } catch (err) {
-        if (err instanceof Error && err.message.includes("运行")) {
-          throw new AppError("operation_conflict", err.message, 409);
-        }
+        if (err instanceof AppError) throw err;
         throw err;
       }
     }),
@@ -73,28 +73,38 @@ export function createSteamCmdRouter(
         installDir: string;
         itemIds: string[];
       };
-      await steamCmdManager.downloadWorkshopItem(installDir, itemIds);
-      res.status(202).json({ data: { message: "Mod 下载已启动" } });
+      // review 修复（P2-4）：与另外 4 个异步端点一致返回 jobId——原实现丢弃返回值，
+      // 未来调用方无法按 jobId 精确订阅 WS 进度/完成/失败
+      const jobId = await steamCmdManager.downloadWorkshopItem(
+        installDir,
+        itemIds,
+      );
+      res.status(202).json({
+        data: { jobId, message: "Mod 下载已启动" },
+      });
     }),
   );
 
   // ── B-1 修复：检查更新 + 重装 ─────────────────────────
   // 抄 GSM3 routes/steamcmd.ts:34-130 端点形态（响应结构对齐本项目 { data } 包装）
+  // Phase 0 异步化：checkUpdate spawn 后立即返回 jobId，结果通过 WS `steamcmd_progress`
+  // 携带 latestVersion 字段广播（前端订阅后弹 toast「U3DS 最新版本: xxx」）
   router.post(
     "/check-update",
     validate(CheckUpdateSchema),
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir?: string };
       try {
-        const info = await steamCmdManager.checkUpdate(installDir);
-        res.json({ data: info });
+        const jobId = await steamCmdManager.checkUpdate(installDir);
+        res.status(202).json({
+          data: {
+            jobId,
+            message: "U3DS 检查更新已启动，结果由 WS steamcmd_progress 推送",
+          },
+        });
       } catch (err) {
         if (err instanceof AppError) throw err;
-        throw new AppError(
-          "steamcmd-check-failed",
-          err instanceof Error ? err.message : "检查更新失败",
-          500,
-        );
+        throw err;
       }
     }),
   );
@@ -132,19 +142,17 @@ export function createSteamCmdRouter(
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir?: string };
       try {
-        await steamCmdManager.reinstall(installDir);
+        // Phase 0 异步化：reinstall 改为立即返回 jobId，下载/解压/初始化在后台跑
+        const jobId = await steamCmdManager.reinstall(installDir);
         res.status(202).json({
           data: {
+            jobId,
             message: "SteamCMD 重装已启动，进度由 WS steamcmd_progress 推送",
           },
         });
       } catch (err) {
         if (err instanceof AppError) throw err;
-        throw new AppError(
-          "steamcmd-reinstall-failed",
-          err instanceof Error ? err.message : "重装失败",
-          500,
-        );
+        throw err;
       }
     }),
   );

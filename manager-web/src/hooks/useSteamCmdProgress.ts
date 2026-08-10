@@ -1,17 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { ensureAccessToken } from '../api/client.js';
+import { useState, useEffect, useRef } from "react";
+import { ensureAccessToken } from "../api/client.js";
 
 /**
  * SteamCMD 进度事件（来自 WS server 广播）
  * @property stage - 阶段标识：'downloading' | 'validating' | 'installed' | 'update complete' | 'failed' | 'completed' | 'spawned' | install/update 的阶段
  * @property percent - 进度 0-100（可选）
- * @property jobId - 任务 ID（区分多任务并发：'steamcmd-install-<dir>' | 'steamcmd-update-<dir>' | 'steamcmd-download-<dir>'）
+ * @property jobId - 任务 ID（区分多任务并发：'steamcmd-install-<dir>' | 'steamcmd-update-<dir>' | 'steamcmd-download-<dir>' | 'steamcmd-reinstall-<dir>' | 'steamcmd-check-<dir>'）
+ * @property latestVersion - check-update 完成时携带的 U3DS 版本号（仅 check-update 的 completed 事件）
  * @property timestamp - 接收时间
  */
 export interface SteamCmdProgress {
   stage: string;
   percent?: number;
   jobId?: string;
+  latestVersion?: string;
   timestamp: string;
 }
 
@@ -39,8 +41,10 @@ interface UseSteamCmdProgressOptions {
  * const progress = useSteamCmdProgress();
  * ```
  */
-export function useSteamCmdProgress(options: UseSteamCmdProgressOptions = {}): SteamCmdProgress | null {
-  const { jobId, wsPath = '/ws' } = options;
+export function useSteamCmdProgress(
+  options: UseSteamCmdProgressOptions = {},
+): SteamCmdProgress | null {
+  const { jobId, wsPath = "/ws" } = options;
   const [progress, setProgress] = useState<SteamCmdProgress | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,20 +59,28 @@ export function useSteamCmdProgress(options: UseSteamCmdProgressOptions = {}): S
       const token = await ensureAccessToken();
       if (!token || cancelledRef.current) return;
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}${wsPath}?token=${token}`);
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}${wsPath}?token=${token}`,
+      );
       wsRef.current = ws;
 
       ws.onopen = () => {
         retryDelay.current = 1000;
         // 订阅所有事件（gateway 默认 null = 接收所有类型，gateway.ts:67-69）
-        ws.send(JSON.stringify({ type: 'subscribe', serverIds: [], eventTypes: null }));
+        ws.send(
+          JSON.stringify({
+            type: "subscribe",
+            serverIds: [],
+            eventTypes: null,
+          }),
+        );
       };
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type !== 'steamcmd_progress') return;
+          if (msg.type !== "steamcmd_progress") return;
           // jobId 过滤（可选）
           if (jobId && msg.jobId !== jobId) return;
 
@@ -76,6 +88,7 @@ export function useSteamCmdProgress(options: UseSteamCmdProgressOptions = {}): S
             stage: msg.stage,
             percent: msg.percent,
             jobId: msg.jobId,
+            ...(msg.latestVersion ? { latestVersion: msg.latestVersion } : {}),
             timestamp: new Date().toISOString(),
           });
         } catch {

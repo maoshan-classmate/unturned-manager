@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Server, Download, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Server,
+  Download,
+  ShieldCheck,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { Card } from "../shared/Card.js";
 import { Button } from "../ui/button.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
@@ -113,10 +119,17 @@ export function U3dsCard({ status }: U3dsCardProps) {
     setUpdating(true);
     setUpdateConfirmOpen(false);
     try {
-      await apiClient.post("/steamcmd/update", {
-        installDir: data.installPath,
-      });
-      toast.success("U3DS 更新已提交");
+      // Phase 0：HTTP 立即返回 jobId，进度/完成/失败由 WS steamcmd_progress 接管
+      const res = await apiClient.post<{ data: { jobId?: string } }>(
+        "/steamcmd/update",
+        { installDir: data.installPath },
+      );
+      if (!res.data.data?.jobId) {
+        toast.error("更新启动失败", { id: "u3ds-update" });
+        setUpdating(false);
+        return;
+      }
+      toast.loading("U3DS 更新已提交…", { id: "u3ds-update" });
     } catch (err: unknown) {
       const msg = (
         err as { response?: { data?: { error?: { message?: string } } } }
@@ -128,24 +141,46 @@ export function U3dsCard({ status }: U3dsCardProps) {
 
   // BUG-1（第四版）：check-update 查的是 U3DS（AppID 1110390）buildid，不是 SteamCMD 自身版本。
   // 按钮放 U3DS 卡片（Unturned 专用服务器）而非 SteamCMD 卡片——语义对齐。
+  // Phase 0：check-update 改异步——HTTP 立即返回 jobId，结果（latestVersion）通过 WS steamcmd_progress 广播，
+  // 前端订阅后弹 toast「U3DS 最新版本: xxx」。
+  const checkProgress = useSteamCmdProgress({
+    jobId: `steamcmd-check-${data.installPath}`,
+  });
+  useEffect(() => {
+    if (!checkProgress || !checking) return;
+    if (checkProgress.stage === "completed") {
+      toast.success(
+        checkProgress.latestVersion
+          ? `U3DS 最新版本:${checkProgress.latestVersion}`
+          : "U3DS 已是最新版本",
+        { id: "u3ds-check" },
+      );
+      setChecking(false);
+    } else if (checkProgress.stage === "failed") {
+      toast.error("检查 U3DS 更新失败", { id: "u3ds-check" });
+      setChecking(false);
+    }
+  }, [checkProgress, checking]);
+
   const handleCheckUpdate = async () => {
     setChecking(true);
     try {
-      const res = await apiClient.post<{ data: { latestVersion?: string } }>(
+      const res = await apiClient.post<{ data: { jobId?: string } }>(
         "/steamcmd/check-update",
         { installDir: data.installPath },
       );
-      toast.success(
-        res.data.data?.latestVersion
-          ? `U3DS 最新版本:${res.data.data.latestVersion}`
-          : "U3DS 已是最新版本",
-      );
+      const { jobId } = res.data.data ?? {};
+      if (!jobId) {
+        toast.error("检查更新启动失败", { id: "u3ds-check" });
+        setChecking(false);
+        return;
+      }
+      toast.loading("U3DS 检查更新中…", { id: "u3ds-check" });
     } catch (err: unknown) {
       const msg = (
         err as { response?: { data?: { error?: { message?: string } } } }
       )?.response?.data?.error?.message;
-      toast.error(msg ?? "检查 U3DS 更新失败");
-    } finally {
+      toast.error(msg ?? "检查 U3DS 更新失败", { id: "u3ds-check" });
       setChecking(false);
     }
   };
