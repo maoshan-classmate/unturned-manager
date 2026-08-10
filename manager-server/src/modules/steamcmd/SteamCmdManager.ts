@@ -55,8 +55,31 @@ const DOWNLOAD_TIMEOUT_MS = 60 * 60 * 1000;
 // ─── 实现 ────────────────────────────────────────────────
 
 export class SteamCmdManager implements ISteamCmdManager {
-  /** 当前正在跑的 steamcmd 子进程 serverId 集合（防竞态） */
+  /** 当前正在跑的 steamcmd 子进程写目录集合（防同一目录并发写入竞态） */
   private activeJobs = new Set<string>();
+
+  /**
+   * 计算 activeJobs 锁 key——语义「SteamCMD 进程会写入的目录」。
+   *
+   * review 修复（P2-2 锁 key 统一）：之前 5 个方法各自取「最自然的字符串」做 key，
+   * 缺乏统一语义边界，导致 downloadWorkshopItem 同 installDir 不同 serverId 误互斥
+   * （实写 stagingDir 不同——`/opt/unturned/Servers/A/Workshop/staging` vs
+   * `/opt/unturned/Servers/B/Workshop/staging`，本可并发）。
+   *
+   * 锁的**真实边界**是「SteamCMD 进程写入的目录」——并发写同一目录才互斥。
+   *
+   * @param writeDir - 该方法内部 SteamCMD 进程将写入的目录
+   * @returns 锁 key 字符串（用 fs.realpathSync 归一解析软链接等，同一物理目录拿到同一 key）
+   */
+  private resolveLockKey(writeDir: string): string {
+    try {
+      // realpathSync 解析软链接/../，确保 `/opt/unturned/./` 与 `/opt/unturned` 同 key
+      // 目录可能尚未存在（重装首次调用），用 try/catch 回落原字符串
+      return fs.realpathSync(writeDir);
+    } catch {
+      return path.resolve(writeDir);
+    }
+  }
 
   /**
    * @param processSupervisor - 进程编排
@@ -161,7 +184,9 @@ export class SteamCmdManager implements ISteamCmdManager {
         409,
       );
     }
-    if (this.activeJobs.has(installDir)) {
+    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录
+    const lockKey = this.resolveLockKey(installDir);
+    if (this.activeJobs.has(lockKey)) {
       throw new AppError(
         "steamcmd-busy",
         "该 installDir 已有 SteamCMD 任务在跑",
@@ -174,7 +199,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 500);
     }
 
-    this.activeJobs.add(installDir);
+    this.activeJobs.add(lockKey);
     const jobId = `steamcmd-install-${installDir}`;
 
     // 2. 生成 runscript（与 updateU3DS 同模板，去 validate）
@@ -208,7 +233,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     } catch (err) {
       callbacks?.onStatusChange?.("failed");
       this.broadcastProgressWithJobId(jobId, 0, "failed");
-      this.activeJobs.delete(installDir);
+      this.activeJobs.delete(lockKey);
       try {
         await fs.promises.unlink(scriptPath);
       } catch {
@@ -272,7 +297,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         this.broadcastProgressWithJobId(jobId, 0, "failed");
         this.loggerUpdate().error({ err, installDir }, "SteamCMD install 失败");
       } finally {
-        this.activeJobs.delete(installDir);
+        this.activeJobs.delete(lockKey);
       }
     })();
 
@@ -319,7 +344,9 @@ export class SteamCmdManager implements ISteamCmdManager {
         409,
       );
     }
-    if (this.activeJobs.has(installDir)) {
+    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录
+    const lockKey = this.resolveLockKey(installDir);
+    if (this.activeJobs.has(lockKey)) {
       throw new AppError(
         "steamcmd-busy",
         "该 installDir 已有 SteamCMD 任务在跑",
@@ -332,7 +359,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 500);
     }
 
-    this.activeJobs.add(installDir);
+    this.activeJobs.add(lockKey);
     const jobId = `steamcmd-update-${installDir}`;
 
     // runscript + spawn（与 installU3DS 同形态）
@@ -401,14 +428,14 @@ export class SteamCmdManager implements ISteamCmdManager {
           } catch {
             /* noop */
           }
-          this.activeJobs.delete(installDir);
+          this.activeJobs.delete(lockKey);
         }
       })();
 
       return jobId;
     } catch (err) {
       // spawn 失败同步抛（route 转 500）；锁在此释放
-      this.activeJobs.delete(installDir);
+      this.activeJobs.delete(lockKey);
       try {
         await fs.promises.unlink(scriptPath);
       } catch {
@@ -435,12 +462,25 @@ export class SteamCmdManager implements ISteamCmdManager {
     serverId?: string,
   ): Promise<string> {
     if (!itemIds.length) return "";
+    // ★ BUG-5/6（第四版根因）：staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
+    //   U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描（workshopAcfService.ts:24）与
+    //   apply 流水线（WorkshopApplyService.ts:141）都读这个路径。传 serverId 拼对目录；
+    //   不传则回落旧顶层路径（兼容 /steamcmd/download-workshop 老端点）。
+    const stagingDir = serverId
+      ? path.join(installDir, "Servers", serverId, "Workshop", "staging")
+      : path.join(installDir, "Workshop", "staging");
+
+    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录 = stagingDir
+    // review 修复：之前用 installDir 做锁，同 installDir 不同 serverId 的 download 误互斥——
+    // 实写不同 staging（`Servers/A/Workshop/staging` vs `Servers/B/Workshop/staging`），
+    // 本可并发。lockKey 用 path.resolve(stagingDir) 提前可算（在 mkdir 之前）。
+    const lockKey = this.resolveLockKey(stagingDir);
     // review 修复（P2-4）：裸 new Error → AppError（busy=409 / not-found=500），
     // 路由才能区分错误类型（mods.ts 的 502 包装不再吞掉 409 语义）
-    if (this.activeJobs.has(installDir)) {
+    if (this.activeJobs.has(lockKey)) {
       throw new AppError(
         "steamcmd-busy",
-        "该 installDir 已有 SteamCMD 任务在跑",
+        "该 staging 目录已有 SteamCMD 下载任务在跑",
         409,
       );
     }
@@ -451,15 +491,7 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     // ★ review 修复（P2-3）：加锁提前到任何 await 之前（原实现在 mkdir/writeFile 之后才 add）——
     //   TOCTOU：两个并发请求同时通过 busy 检查 → 都 spawn SteamCMD 写同一 staging。
-    this.activeJobs.add(installDir);
-
-    // ★ BUG-5/6（第四版根因）：staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
-    //   U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描（workshopAcfService.ts:24）与
-    //   apply 流水线（WorkshopApplyService.ts:141）都读这个路径。传 serverId 拼对目录；
-    //   不传则回落旧顶层路径（兼容 /steamcmd/download-workshop 老端点）。
-    const stagingDir = serverId
-      ? path.join(installDir, "Servers", serverId, "Workshop", "staging")
-      : path.join(installDir, "Workshop", "staging");
+    this.activeJobs.add(lockKey);
 
     const scriptContent = [
       "@ShutdownOnFailedCommand 1",
@@ -475,7 +507,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
     } catch (err) {
       // mkdir/writeFile 失败：释放锁并同步抛（route 转 500），不留悬挂锁
-      this.activeJobs.delete(installDir);
+      this.activeJobs.delete(lockKey);
       throw err;
     }
 
@@ -492,7 +524,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       );
     } catch (err) {
       this.broadcastProgressWithJobId(jobId, 0, "failed");
-      this.activeJobs.delete(installDir);
+      this.activeJobs.delete(lockKey);
       try {
         await fs.promises.unlink(scriptPath);
       } catch {
@@ -557,7 +589,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         this.broadcastProgressWithJobId(jobId, 0, "failed");
       })
       .finally(() => {
-        this.activeJobs.delete(installDir);
+        this.activeJobs.delete(lockKey);
       });
 
     return jobId;
@@ -582,16 +614,17 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 404);
     }
 
-    // review 修复：jobId 用 installDir 隔离（前端按 installPath 订阅），但 runscript 写系统
-    // tmp 目录——原来 tmpDir=installDir 会把 .scf 临时脚本写进 U3DS 安装目录（污染）。
-    const lockKey = installDir ?? "default";
+    // jobId 与 lockKey 分离：jobId 包含 installDir 供前端按 installPath 订阅；
+    // lockKey 是 SteamCMD 写入目录 = jobDir（全局 tmp）——所有 checkUpdate 共享，
+    // 自然实现「同一 tmp 目录不能并发写」的互斥。
+    const jobDir = path.join(os.tmpdir(), "steamcmd-check");
+    const lockKey = this.resolveLockKey(jobDir);
     if (this.activeJobs.has(lockKey)) {
       throw new AppError("steamcmd-busy", "已有一个检查更新任务在跑", 409);
     }
     this.activeJobs.add(lockKey);
 
-    const jobId = `steamcmd-check-${lockKey}`;
-    const jobDir = path.join(os.tmpdir(), "steamcmd-check");
+    const jobId = `steamcmd-check-${installDir ?? "default"}`;
 
     // ★ review 修复（P1-2）：mkdir 移到广播/后台启动之前 + try/catch 释放锁——
     //   原来 add 锁后 mkdir 在 try/finally 之外，/tmp 满或权限异常时函数 reject 但
@@ -642,7 +675,7 @@ export class SteamCmdManager implements ISteamCmdManager {
           }
           const scriptPath = path.join(
             jobDir,
-            `${encodeURIComponent(lockKey)}-${attempt}.scf`,
+            `${encodeURIComponent(installDir ?? "default")}-${attempt}.scf`,
           );
           try {
             await fs.promises.writeFile(
@@ -727,10 +760,12 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     // review 修复：reinstall 与其他 SteamCMD 方法一致加 activeJobs 锁（key=targetDir），
     // 防并发重装同一目录 → 删/下/解压互相踩踏
-    if (this.activeJobs.has(targetDir)) {
+    // P2-2：锁 key 通过 resolveLockKey 统一计算（realpath 解析软链接/相对路径）
+    const lockKey = this.resolveLockKey(targetDir);
+    if (this.activeJobs.has(lockKey)) {
       throw new AppError("steamcmd-busy", "该目录已有 SteamCMD 任务在跑", 409);
     }
-    this.activeJobs.add(targetDir);
+    this.activeJobs.add(lockKey);
 
     // ★ review 修复（P1-1）：jobId 必须用 **rawTarget**（getStatus().installPath 的原值），
     //   不能用归一后的 targetDir——前端 SteamCmdCard 按 `steamcmd-reinstall-${status.installPath}`
@@ -841,7 +876,7 @@ export class SteamCmdManager implements ISteamCmdManager {
           "SteamCMD reinstall 失败",
         );
       } finally {
-        this.activeJobs.delete(targetDir);
+        this.activeJobs.delete(lockKey);
       }
     })();
 

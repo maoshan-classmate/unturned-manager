@@ -447,4 +447,86 @@ describe("SteamCmdManager — Phase 0 review 回归", () => {
       manager.downloadWorkshopItem("/opt/unturned", ["2"]),
     ).rejects.toMatchObject({ code: "steamcmd-busy", status: 409 });
   });
+
+  it("downloadWorkshopItem 同 installDir 不同 serverId 锁 key 不同——不互斥（P2-2 修复）", async () => {
+    // P2-2 review bug：之前 installDir 共享作锁 key，导致 serverA 的下载与
+    // serverB 的下载被误判为「同目录并发」（实写不同 staging）。
+    // 修复后：锁 key = stagingDir = installDir/Servers/<serverId>/Workshop/staging
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as never);
+    vi.spyOn(fs.promises, "writeFile").mockResolvedValue(undefined as never);
+    fakeProcessSupervisor.spawn.mockResolvedValue(123);
+    // 两个并发都让 waitForExit 挂起，模拟后台并行
+    fakeProcessSupervisor.waitForExit.mockReturnValue(new Promise(() => {}));
+    const exec = mockAdapter();
+    const manager = new SteamCmdManager(
+      fakeProcessSupervisor,
+      fakeBroadcaster,
+      "/opt/steamcmd/steamcmd.sh",
+      () => [],
+      exec,
+    );
+
+    // serverA 与 serverB 同 installDir，不同 serverId → 不同 stagingDir → 不互斥
+    const jobIdA = await manager.downloadWorkshopItem(
+      "/opt/unturned",
+      ["1"],
+      "serverA",
+    );
+    const jobIdB = await manager.downloadWorkshopItem(
+      "/opt/unturned",
+      ["2"],
+      "serverB",
+    );
+    expect(jobIdA).toBe("steamcmd-download-/opt/unturned");
+    expect(jobIdB).toBe("steamcmd-download-/opt/unturned");
+    // 两次 spawn 都成功（各自走不同 staging）
+    expect(fakeProcessSupervisor.spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("downloadWorkshopItem 同 stagingDir 并发抛 409（P2-2：锁 key 真的是写入目录）", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as never);
+    vi.spyOn(fs.promises, "writeFile").mockResolvedValue(undefined as never);
+    fakeProcessSupervisor.spawn.mockResolvedValue(123);
+    fakeProcessSupervisor.waitForExit.mockReturnValue(new Promise(() => {}));
+    const exec = mockAdapter();
+    const manager = new SteamCmdManager(
+      fakeProcessSupervisor,
+      fakeBroadcaster,
+      "/opt/steamcmd/steamcmd.sh",
+      () => [],
+      exec,
+    );
+
+    // 同 serverId 连续两次 → 同一 stagingDir → 互斥
+    await manager.downloadWorkshopItem("/opt/unturned", ["1"], "serverA");
+    await expect(
+      manager.downloadWorkshopItem("/opt/unturned", ["2"], "serverA"),
+    ).rejects.toMatchObject({ code: "steamcmd-busy", status: 409 });
+  });
+
+  it("checkUpdate 不论 installDir 是什么都互斥（P2-2：锁 key = jobDir 共享 tmp）", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as never);
+    vi.spyOn(fs.promises, "writeFile").mockResolvedValue(undefined as never);
+    // 后台运行挂起
+    fakeProcessSupervisor.waitForExit.mockReturnValue(new Promise(() => {}));
+    const exec = mockAdapter();
+    const manager = new SteamCmdManager(
+      fakeProcessSupervisor,
+      fakeBroadcaster,
+      "/opt/steamcmd/steamcmd.sh",
+      () => [],
+      exec,
+    );
+
+    // 第一次（installDir=/opt/unturned）启动后台任务，锁挂起
+    await manager.checkUpdate("/opt/unturned");
+    // 第二次不同 installDir → jobId 不同（前端按 installPath 订阅隔离），
+    // 但锁 key 是 jobDir（全局 tmp）→ 仍互斥
+    await expect(
+      manager.checkUpdate("/opt/unturned-other"),
+    ).rejects.toMatchObject({ code: "steamcmd-busy", status: 409 });
+  });
 });
