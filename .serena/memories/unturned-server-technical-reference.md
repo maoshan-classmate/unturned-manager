@@ -11,10 +11,10 @@
 3. OpenMod RCON - Valve Source RCON 二进制，推荐
 4. BattlEye RCON - UDP+CRC32，仅反作弊
 
-## Node.js RCON 库
-- OpenMod: rcon-srcds (npm, 首选)
-- RocketMod: Node.js net 模块 (Telnet fallback)
-- A2S 查询: @fabricio-191/valve-server-query (npm)
+## 命令通道（ADR-0004 Phase 6 更新）
+- RCON/A2S 通道已整体删除——命令统一走 PTY 持久终端 owner-trust 模型
+- 后端：node-pty 常驻 bash；前端：xterm.js（WS console_line 出站 + terminal_input 入站）
+- 上方「RCON 四层体系」仅作历史参考，若未来恢复 RCON 按 rcon-protocol.md 重建
 
 ## Steam Workshop（2026-08 调研更新）
 - 元数据获取：IPublishedFileService/QueryFiles + GetDetails（需 WebAPI Key，Settings 配置，AES-GCM 加密存储）
