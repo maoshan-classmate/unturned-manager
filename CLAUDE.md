@@ -118,6 +118,22 @@ D:/unturned-manager/
 
 ① `git add` → ② `git diff --cached --name-only`，**仅当 staged 含 `.md` 文件时**才调 `doc-outdated-guard` subagent（`@.claude/agents/doc-outdated-guard.md`），输出 `正在调取文档语义分析...` → ③ `git commit`。每步独立 Bash 调用。详细流程见 `.claude/rules/development.md`。
 
+## 7. 输出内容规则
+
+1. 所有输出内容，包括但不限于终端输出，文档输出，架构设计输出，工作流输出、测试输出、任务清单输出，严令禁止代码名+中文的描述方式，人类开发者难以理解。
+
+   ```
+   错误示例：
+   让 `installU3DS` / `updateU3DS` / `reinstall` / `checkUpdate` / `downloadWorkshopItem` 全部异步
+   用户没填 startCommand 时，detectStartScript 自动生成 `./ServerHelper.sh +InternetServer/<id> -ThreadedConsole`
+   正确示例:
+   让 U3DS相关操作和下载创意工坊模组的操作全部异步
+   用户没填开始命令时，检测启动脚本自动生成 .生成以下内容：`./ServerHelper.sh +InternetServer/<id> -ThreadedConsole`
+   
+   ```
+
+   
+
 ---
 
 *最近修订：2026-08-08——合并 tech-stack 信息、新增 3 个规范文件、rules 增至 9 个、新增 §6 git commit 文档过时检测、移除 agent hook、hook exit 0 改为 JSON 输出、新增 Vite proxy 端口约束。*
