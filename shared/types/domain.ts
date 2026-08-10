@@ -10,6 +10,12 @@ export interface ServerConfig {
   rconPassword?: string;
   /** OpenMod RCON 凭证（ADR-17 双协议分离）：格式 "SteamID:密码" */
   openModCredential?: string;
+  /**
+   * U3DS 启动命令（ADR-0004 §6.1）。
+   * Phase 2：后端用 detectStartScript 自动生成 `./ServerHelper.sh +InternetServer/<id> -ThreadedConsole`；
+   * Phase 4：用户可在控制卡片编辑并持久化到 SQLite。留空 = 用默认模板。
+   */
+  startCommand?: string;
 }
 
 // Commands.dat 解析结果

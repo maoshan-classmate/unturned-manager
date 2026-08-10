@@ -15,7 +15,10 @@ export type PtyDataCallback = (data: string) => void;
 /**
  * PTY 进程退出回调签名——非零退出码 = 进程异常退出。
  */
-export type PtyExitCallback = (info: { exitCode: number; signal?: number }) => void;
+export type PtyExitCallback = (info: {
+  exitCode: number;
+  signal?: number;
+}) => void;
 
 /**
  * PTY 进程 spawn 选项。
@@ -130,6 +133,17 @@ export interface IPtyManager {
    * @param callback - 退出回调
    */
   onExit(serverId: PtyKey, callback: PtyExitCallback): void;
+
+  /**
+   * 等待 PTY 进程退出（在 timeoutMs 内确认退出即返回 true）。
+   * Phase 2：ServerManager.stop 用它在 ctrl+c / exit 后等永驻 bash 退出，
+   * 超时返回 false 由调用方 forceKill 兜底。
+   *
+   * @param serverId - PTY key
+   * @param timeoutMs - 等待毫秒数
+   * @returns true=已退出（或进程不存在）；false=超时仍未退出
+   */
+  waitExit(serverId: PtyKey, timeoutMs: number): Promise<boolean>;
 
   /**
    * 销毁所有 PTY 进程（应用关闭时调用）。

@@ -207,7 +207,7 @@ export class PtyManager implements IPtyManager {
     }
 
     // 等 5s；若仍在跑则强杀
-    const exited = await this.waitExit(entry, DEFAULT_GRACEFUL_TIMEOUT_MS);
+    const exited = await this.waitExitOnce(entry, DEFAULT_GRACEFUL_TIMEOUT_MS);
     if (!exited) {
       logger.warn(
         { serverId, pid: entry.pid },
@@ -229,6 +229,20 @@ export class PtyManager implements IPtyManager {
 
   isRunning(serverId: PtyKey): boolean {
     return this.processes.has(serverId);
+  }
+
+  /**
+   * 等待 PTY 进程退出（在 timeoutMs 内确认退出即返回 true）。
+   * Phase 2：ServerManager.stop 在写 ctrl+c / exit 后调用，等永驻 bash 退出。
+   *
+   * @param serverId - PTY key
+   * @param timeoutMs - 等待毫秒数
+   * @returns true=已退出（或进程不存在）；false=超时仍未退出
+   */
+  async waitExit(serverId: PtyKey, timeoutMs: number): Promise<boolean> {
+    const entry = this.processes.get(serverId);
+    if (!entry) return true; // 无进程 = 已退出
+    return this.waitExitOnce(entry, timeoutMs);
   }
 
   // ── callbacks ────────────────────────────────────────
@@ -271,7 +285,7 @@ export class PtyManager implements IPtyManager {
    * 等待 PTY 进程退出（在 timeoutMs 内确认退出即返回 true）。
    * 实现：注册一次性 onExit，setTimeout 兜底。
    */
-  private waitExit(entry: ManagedPty, timeoutMs: number): Promise<boolean> {
+  private waitExitOnce(entry: ManagedPty, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (exited: boolean) => {

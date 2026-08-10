@@ -91,10 +91,11 @@ export function buildContainer(db: Database.Database): AppContainer {
   const logStreamer = new LogStreamer(broadcaster, processSupervisor);
 
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
+  // ★ ADR-0004 Phase 2：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
   serverManager = new ServerManager(
     db,
     new ServerDiscovery(),
-    processSupervisor,
+    ptyManager,
     rconManager,
     configService,
     broadcaster,

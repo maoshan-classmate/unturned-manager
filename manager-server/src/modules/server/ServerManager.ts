@@ -5,7 +5,7 @@ import type {
   ServerConfig,
   IServerManager,
   IServerDiscovery,
-  IProcessSupervisor,
+  IPtyManager,
   IRconManager,
   IConfigService,
   IBroadcaster,
@@ -32,6 +32,7 @@ import {
 
 const SHUTDOWN_TIMEOUT = 30_000; // 等待进程退出
 const CRASH_RESTART_DELAY = 5_000; // T6: 崩溃 5s 硬重启（抄 GSM GameManager.ts:331-335）
+const START_COMMAND_DELAY = 1_000; // ADR-0004 §3.3：spawn bash 后 1s 塞 startCommand
 
 // ─── 运行时状态 (in-memory, 目录扫描真源 + settings K-V) ──
 
@@ -39,6 +40,14 @@ interface RuntimeServerState {
   state: ServerState;
   activeOperation: ActiveOperation;
   config: ServerConfig;
+  /** ADR-0004 Phase 2：PTY 终端会话 ID（= serverId，IPtyManager 的 key） */
+  terminalSessionId?: string;
+  /** PTY 进程 PID（spawn 返回值，start 返回给前端） */
+  ptyPid?: number;
+  /** 主动停止标记——stop/stopInternal/forceStop 置位，onExit 据此跳过崩溃重启 */
+  stopRequested?: boolean;
+  /** 会话代际（review-修复 BUG-2）：每次 startPty spawn 自增，1s timer 校验归属，防过期 timer 误写新会话 */
+  sessionEpoch?: number;
 }
 
 /**
@@ -57,7 +66,7 @@ export class ServerManager implements IServerManager {
   constructor(
     private db: Database.Database,
     private discovery: IServerDiscovery,
-    private processSupervisor: IProcessSupervisor,
+    private ptyManager: IPtyManager,
     private rconManager: IRconManager,
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
@@ -77,12 +86,9 @@ export class ServerManager implements IServerManager {
       }
     });
 
-    // CLAUDE.md §4.7: 崩溃检测——进程退出 → STOPPED；T6: 非预期退出 5s 硬重启
-    this.processSupervisor.onCrash((serverId, exitCode) => {
-      logger.warn({ serverId, exitCode }, "U3DS 进程退出");
-      this.transition(serverId, ServerState.STOPPED);
-      this.scheduleCrashRestart(serverId, exitCode);
-    });
+    // ★ ADR-0004 Phase 2：崩溃检测从 processSupervisor.onCrash 挪到 PTY exit——
+    // U3DS 走 PTY 后，bash 退出 = PTY 会话结束（bash 永驻，U3DS 崩溃时 bash 回提示符
+    // 不触发 exit；崩溃重启语义见 scheduleCrashRestart）。onExit 在 startPty 每次 spawn 时注册。
   }
 
   // ── 目录扫描加载 ────────────────────────────────────
@@ -272,7 +278,18 @@ export class ServerManager implements IServerManager {
 
   // ── 生命周期 ───────────────────────────────────────
 
-  async start(serverId: ServerId): Promise<void> {
+  /**
+   * 启动服务端（ADR-0004 Phase 2）。
+   * spawn 永驻 PTY bash（cwd=installDir）后立即返回 terminalSessionId + pid，
+   * 1s 后自动向 PTY 写入 startCommand 启动 U3DS（不等待 U3DS 就绪）。
+   *
+   * @param serverId - 服务端实例 ID
+   * @returns 立即返回 { terminalSessionId, pid }；RUNNING/STARTING 幂等返回已有会话
+   * @throws {AppError} 操作冲突 409；start-script-not-found 409；u3ds-start-failed 500
+   */
+  async start(
+    serverId: ServerId,
+  ): Promise<{ terminalSessionId: string; pid: number }> {
     const entry = this.ensureServer(serverId);
 
     if (entry.activeOperation.type !== "none") {
@@ -283,7 +300,17 @@ export class ServerManager implements IServerManager {
       );
     }
 
-    if (entry.state === ServerState.RUNNING) return;
+    // ★ ADR-0004 Phase 2：RUNNING/STARTING 幂等返回。
+    // STARTING = PTY 已 spawn、1s 塞命令窗口内——重复点击直接返回已有会话。
+    if (
+      entry.state === ServerState.RUNNING ||
+      entry.state === ServerState.STARTING
+    ) {
+      return {
+        terminalSessionId: entry.terminalSessionId ?? serverId,
+        pid: entry.ptyPid ?? 0,
+      };
+    }
 
     entry.activeOperation = {
       type: "manual_start",
@@ -292,31 +319,27 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STARTING);
 
     try {
-      const { id, installDir } = entry.config;
-      // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
-      const pid = await this.spawnU3DS(id, installDir);
-      logger.info({ serverId, pid, installDir }, "U3DS 进程已启动");
-
-      // ★ ADR-0004 Phase 1 中间态：A2S 通道已删除，RUNNING 立即触发。
-      // Phase 2 将改成「PTY 输出 'Server is ready' / 'World saved' 信号触发 RUNNING」
-      this.transition(serverId, ServerState.RUNNING);
-
-      // 连接 RCON
+      const result = await this.startPty(serverId);
+      // 连接 RCON（保留，Phase 6 评估去留）
       try {
         await this.rconManager.connect(serverId);
       } catch (err) {
         logger.warn({ serverId, err }, "RCON 连接失败，服务仍在运行");
       }
+      return result;
     } catch (err) {
       logger.error({ serverId, err }, "启动失败");
-      // BUG-3/7（第四版）：spawn 失败时，spawn 的 ServerHelper.sh 可能还挂在后台
-      // （比如 Mono 慢启动），若不清理，processes map 残留 → 下次启动被「已有进程在运行」拦截。
-      // 启动失败即清理，保证可重试。
+      // review-修复 BUG-1：启动失败清理也视为主动停止——forceKill 触发的 onExit
+      // 若 stopRequested 未置位会走崩溃重启分支，把「启动失败」误判成「崩溃要重启」。
+      entry.stopRequested = true;
+      // BUG-3/7（第四版）：spawn 失败时清理 PTY，保证可重试
       try {
-        this.processSupervisor.forceKill(serverId);
+        this.ptyManager.forceKill(serverId);
       } catch {
         /* 进程可能已退出，forceKill 幂等 */
       }
+      entry.terminalSessionId = undefined;
+      entry.ptyPid = undefined;
       this.transition(serverId, ServerState.STOPPED);
       // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失）原样上抛
       // 会被全局错误处理兜底成「服务器内部错误」——用户和面板都看不到真实原因。
@@ -332,6 +355,15 @@ export class ServerManager implements IServerManager {
     }
   }
 
+  /**
+   * 停止服务端（ADR-0004 Phase 2）：RCON Save+Shutdown 优雅关 U3DS → PTY ctrl+c →
+   * 写 exit 关永驻 bash → waitExit（超时 forceKill 兜底）。
+   *
+   * @param serverId - 服务端实例 ID
+   * @param reason - 停止原因（写入 RCON Shutdown 消息）
+   * @returns Promise 在 bash 退出（或 forceKill 兜底）后 resolve
+   * @throws {AppError} 操作冲突 409
+   */
   async stop(serverId: ServerId, reason: string): Promise<void> {
     const entry = this.ensureServer(serverId);
 
@@ -342,6 +374,8 @@ export class ServerManager implements IServerManager {
         409,
       );
     }
+    // review-修复 风险-6：已停止实例调 stop 幂等返回，避免 STOPPED→STOPPING→STOPPED 空转闪动
+    if (entry.state === ServerState.STOPPED) return;
 
     entry.activeOperation = {
       type: "manual_stop",
@@ -350,33 +384,23 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STOPPING);
 
     try {
-      // 尝试 RCON Save + Shutdown
-      if (this.rconManager.isReachable(serverId)) {
-        try {
-          await this.rconManager.execute(serverId, "Save");
-        } catch {
-          /* RCON 可能已断开 */
-        }
-        try {
-          await this.rconManager.execute(serverId, `Shutdown 30 "${reason}"`);
-        } catch {
-          /* Shutdown 可能不受支持 */
-        }
-      }
-
-      await this.processSupervisor.waitForExit(serverId, SHUTDOWN_TIMEOUT);
+      await this.stopPty(serverId, reason);
       this.transition(serverId, ServerState.STOPPED);
       this.rconManager.disconnect(serverId);
-    } catch {
-      // 进程未在超时内退出
-      logger.warn({ serverId }, "停止超时，SIGKILL");
-      this.processSupervisor.forceKill(serverId);
-      this.transition(serverId, ServerState.STOPPED);
     } finally {
       entry.activeOperation = { type: "none" };
     }
   }
 
+  /**
+   * 重启服务端 = 内部 stop（RCON + ctrl+c + exit）→ 内部 start（spawn 新 bash）。
+   * 全程一个 manual_restart activeOperation 覆盖（CLAUDE.md §4.7 防竞态）。
+   *
+   * @param serverId - 服务端实例 ID
+   * @param reason - 重启原因（写入 RCON Shutdown 消息）
+   * @returns Promise 在新 bash spawn 后 resolve（不等待 U3DS 就绪）
+   * @throws {AppError} 操作冲突 409
+   */
   async restart(serverId: ServerId, reason: string): Promise<void> {
     const entry = this.ensureServer(serverId);
 
@@ -409,44 +433,18 @@ export class ServerManager implements IServerManager {
     reason: string,
   ): Promise<void> {
     this.transition(serverId, ServerState.STOPPING);
-
-    if (this.rconManager.isReachable(serverId)) {
-      try {
-        await this.rconManager.execute(serverId, "Save");
-      } catch {
-        /* noop */
-      }
-      try {
-        await this.rconManager.execute(serverId, `Shutdown 30 "${reason}"`);
-      } catch {
-        /* noop */
-      }
-    }
-
-    try {
-      await this.processSupervisor.waitForExit(serverId, SHUTDOWN_TIMEOUT);
-    } catch {
-      this.processSupervisor.forceKill(serverId);
-    }
-
+    await this.stopPty(serverId, reason);
     this.transition(serverId, ServerState.STOPPED);
     this.rconManager.disconnect(serverId);
   }
 
-  /** 内部 start——不检查 activeOperation（由 restart 统一管理）。 */
+  /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。 */
   private async startInternal(serverId: ServerId): Promise<void> {
     const entry = this.ensureServer(serverId);
     if (entry.state === ServerState.RUNNING) return;
 
     this.transition(serverId, ServerState.STARTING);
-
-    const { id, installDir } = entry.config;
-    // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
-    const pid = await this.spawnU3DS(id, installDir);
-
-    logger.info({ serverId, pid, installDir }, "U3DS 进程已启动");
-    // ★ ADR-0004 Phase 1 中间态：A2S 通道已删除，RUNNING 立即触发（Phase 2 改 PTY ready）
-    this.transition(serverId, ServerState.RUNNING);
+    await this.startPty(serverId);
 
     try {
       await this.rconManager.connect(serverId);
@@ -456,13 +454,142 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 探测 U3DS 启动脚本 + chmod +x + spawn（T6 抄 GSM detectStartScript）。
-   * 统一带 +InternetServer/<id> 参数（对齐 GSM3 docs 启动方式：启动脚本负责拉起 U3DS，
-   * 后置参数覆盖 ExampleServer.sh 自带的 +InternetServer/Default，保证启动用户创建的实例）。
+   * ADR-0004 Phase 2 核心：spawn 永驻 PTY bash → 立即返回 → 1s 后塞 startCommand。
    *
-   * @throws {AppError} code=start-script-not-found, status=500 当 installDir 无 U3DS 启动脚本
+   * - bash 永驻（GSM3 同款 §6.2/6.3）：U3DS 是 bash 子进程，退出后 bash 回提示符、终端仍可交互
+   * - startCommand 由 detectStartScript 生成并缓存到 config（Phase 4 用户可编辑覆盖）
+   * - PTY exit（bash 退出）→ STOPPED + 崩溃重启判定（onExit 注册；stopRequested 置位时跳过）
+   * - 若 bash 已存在（崩溃残留）→ 只重塞命令，不重 spawn（isRunning 分支）
+   *
+   * @returns PTY 会话信息——terminalSessionId（= serverId）与 PID
    */
-  private async spawnU3DS(id: ServerId, installDir: string): Promise<number> {
+  private async startPty(
+    serverId: ServerId,
+  ): Promise<{ terminalSessionId: string; pid: number }> {
+    const entry = this.ensureServer(serverId);
+    const { id, installDir } = entry.config;
+
+    // 生成 / 复用 startCommand（缓存到 config，避免每次探测 + chmod）
+    let startCommand = entry.config.startCommand;
+    if (!startCommand) {
+      startCommand = await this.buildStartCommand(id, installDir);
+      entry.config = { ...entry.config, startCommand };
+    }
+
+    let pid: number;
+    if (this.ptyManager.isRunning(id)) {
+      // bash 已残留（U3DS 崩溃后 bash 回提示符仍在）——只重塞命令，不重 spawn。
+      // review-修复 风险-5：新 start 意图接管，清掉残留的 stopRequested（否则后续 exit 事件
+      // 会误把这次 start 当「主动停止」跳过崩溃判定，导致 start 后闪一下又回 STOPPED）。
+      entry.stopRequested = false;
+      pid = entry.ptyPid ?? 0;
+      logger.info({ serverId, pid }, "PTY bash 已存在，直接塞启动命令");
+      this.ptyManager.write(id, `${startCommand}\r`);
+      this.transition(serverId, ServerState.RUNNING);
+    } else {
+      // 首次：spawn 永驻 bash（cwd=installDir）
+      pid = await this.ptyManager.spawn(id, "/bin/bash", [], {
+        cwd: installDir,
+      });
+      entry.terminalSessionId = id;
+      entry.ptyPid = pid;
+      logger.info(
+        { serverId, pid, installDir, startCommand },
+        "PTY bash 已启动",
+      );
+
+      // 崩溃检测接线：bash 退出 → STOPPED + 崩溃重启判定。
+      // stopRequested 置位（主动 stop/forceStop）时跳过重启。
+      this.ptyManager.onExit(id, ({ exitCode }) => {
+        const wasStopped = entry.stopRequested ?? false;
+        entry.stopRequested = false;
+        entry.terminalSessionId = undefined;
+        entry.ptyPid = undefined;
+        logger.warn({ serverId, exitCode }, "PTY bash 退出");
+        this.transition(id, ServerState.STOPPED);
+        if (!wasStopped) {
+          this.scheduleCrashRestart(id, exitCode);
+        }
+      });
+
+      // review-修复 BUG-2：会话代际保护。epoch 捕获本次 spawn，过期 timer（旧会话已 stop、
+      // 新会话已 spawn）经 epoch 比对丢弃，杜绝「把命令写进新 bash / 强制 RUNNING」。
+      const epoch = (entry.sessionEpoch ?? 0) + 1;
+      entry.sessionEpoch = epoch;
+
+      // 1s 后塞 startCommand（对齐 ADR-0004 §3.3：STARTING → 1s → RUNNING）
+      setTimeout(() => {
+        if (entry.sessionEpoch !== epoch) return; // 过期 timer（本会话已结束）
+        if (entry.state !== ServerState.STARTING) return; // 已被 stop/forceStop 中断
+        if (!this.ptyManager.isRunning(id)) return;
+        this.ptyManager.write(id, `${startCommand}\r`);
+        this.transition(id, ServerState.RUNNING);
+      }, START_COMMAND_DELAY);
+    }
+
+    return { terminalSessionId: id, pid };
+  }
+
+  /**
+   * 优雅停止 PTY：RCON Save + Shutdown（保留，Phase 6 评估去留）→ PTY 写 ctrl+c →
+   * 写 exit 关永驻 bash → 等 bash 退出（30s 超时 forceKill）。
+   *
+   * 顺序保证数据安全：先 RCON Save 刷盘，再双路关停（RCON Shutdown + ctrl+c）。
+   * ctrl+c 是 ADR-0004 §2.2 要求的 PTY 停服通道；exit\r 尽力关闭 bash（见下方实机说明）。
+   * 最后 waitExit 确认 bash 退出；超时 forceKill（SIGKILL bash → SIGHUP 前台组 U3DS 兜底）。
+   *
+   * 实机说明（review 风险-2）：U3DS 在前台运行时，③ 的 exit\r 字节进的是 U3DS 的 stdin
+   * 而非 bash（终端输入送达前台进程组），会被 U3DS 当控制台命令忽略——因此优雅关闭的主力
+   * 是 ① RCON Shutdown 30 + ② ctrl+c，exit\r 只在 U3DS 已退出、bash 回提示符后才有机会命中。
+   * 真实停止耗时 ≈ RCON Shutdown 30 秒，waitExit 超时后 forceKill 收尾是常态路径而非兜底。
+   * 数据安全由 ① Save 先行保证；RCON 不可达时（isReachable false）走 ctrl+c 直杀，无 Save，
+   * 属「RCON 挂了无法安全关」的固有代价。
+   */
+  private async stopPty(serverId: ServerId, reason: string): Promise<void> {
+    const entry = this.ensureServer(serverId);
+    entry.stopRequested = true; // 防 onExit 误判崩溃重启
+
+    // ① RCON 优雅关闭（U3DS 已知可靠路径）
+    if (this.rconManager.isReachable(serverId)) {
+      try {
+        await this.rconManager.execute(serverId, "Save");
+      } catch {
+        /* RCON 可能已断开 */
+      }
+      try {
+        await this.rconManager.execute(serverId, `Shutdown 30 "${reason}"`);
+      } catch {
+        /* Shutdown 可能不受支持 */
+      }
+    }
+
+    // ② PTY 写 ctrl+c（ADR-0004 §2.2）——U3DS 收到 SIGINT 退出
+    this.ptyManager.write(serverId, "\u0003");
+
+    // ③ 写 exit 尽力关 bash（U3DS 已退、bash 回提示符时命中；否则被 U3DS stdin 吞掉，
+    //    由 ④ waitExit 超时 forceKill 兜底）
+    this.ptyManager.write(serverId, "exit\r");
+
+    // ④ 等 bash 退出（30s 超时 → forceKill）
+    const exited = await this.ptyManager.waitExit(serverId, SHUTDOWN_TIMEOUT);
+    if (!exited) {
+      logger.warn({ serverId }, "停止超时，SIGKILL");
+      this.ptyManager.forceKill(serverId);
+      // 给 PTY exit 事件一点时间触发（onExit 会清 terminalSessionId + 触发 crash 判定）
+      await this.ptyManager.waitExit(serverId, 2_000);
+    }
+  }
+
+  /**
+   * 生成 U3DS 启动命令（ADR-0004 §6.1）：detectStartScript 探测 → chmod +x →
+   * `./<script> +InternetServer/<id> -ThreadedConsole`。Phase 4 用户可在控制卡片编辑覆盖。
+   *
+   * @throws {AppError} code=start-script-not-found, status=409 当 installDir 无 U3DS 启动脚本
+   */
+  private async buildStartCommand(
+    id: ServerId,
+    installDir: string,
+  ): Promise<string> {
     const script = await detectStartScript(installDir);
     if (!script) {
       // BUG-3/7：未安装 U3DS 时给可执行的引导，而不是裸 500「未检测到启动脚本」。
@@ -477,18 +604,22 @@ export class ServerManager implements IServerManager {
     // 对齐 GSM3 docs 启动方式：统一带 +InternetServer/<id> + -ThreadedConsole。
     // ServerHelper.sh 透传参数；ExampleServer.sh 自带 +InternetServer/Default 会被后置参数覆盖——
     // 保证启动的是用户创建的 <id> 实例而非 Default（BUG-3/7 潜在错实例修复）。
-    const args = [`+InternetServer/${id}`, "-ThreadedConsole"];
-    return this.processSupervisor.spawn(
-      id,
-      `${installDir}/${script}`,
-      args,
-      installDir,
-    );
+    return `./${script} +InternetServer/${id} -ThreadedConsole`;
   }
 
   /**
-   * 崩溃 5s 硬重启（T6 抄 GSM GameManager.ts:331-335）。守卫：
-   *   - 主动操作（manual_stop/manual_restart/mod_apply）期间退出 → 不重启
+   * 崩溃 5s 硬重启（T6 抄 GSM GameManager.ts:331-335）。
+   *
+   * 崩溃语义（review 风险-1 澄清）：触发点是「bash 退出」——bash 是 U3DS 的父进程，
+   * bash 退出 ⇒ U3DS 必死（PTY 会话整体结束）。U3DS 单独崩溃时 bash 回提示符不退出，
+   * 不走此路径，由 RCON 心跳失败 → DEGRADED 承接（用户看状态手动处理，不做自动拉起）。
+   *
+   * 守卫：
+   *   - 主动停止类操作（manual_stop/manual_restart/mod_apply）期间退出 → 不重启。
+   *     stopRequested 已在 onExit 层拦截主动路径，这里是双保险；stopPty 对 STARTING 中的
+   *     bash 写 exit 也会触发 onExit，若此时 activeOperation=manual_stop 会误吞——守卫防之。
+   *   - manual_start 期间退出 → **放行重启**（启动期崩溃恰恰最需要自动拉起；start 失败
+   *     forceKill 触发的 onExit 已由 start catch 置 stopRequested 拦截，不会误入此分支）。
    *   - exitCode === 0（RCON 优雅关闭等正常退出）→ 不重启
    *   - 5s 后实例已被删除 → 跳过
    */
@@ -497,8 +628,12 @@ export class ServerManager implements IServerManager {
     exitCode: number | null,
   ): void {
     const entry = this.servers.get(serverId);
-    if (!entry || entry.activeOperation.type !== "none") return;
+    if (!entry) return;
     if (exitCode === 0) return;
+    const op = entry.activeOperation.type;
+    if (op === "manual_stop" || op === "manual_restart" || op === "mod_apply") {
+      return; // 主动停止类操作期间退出，不重启
+    }
     logger.info({ serverId, exitCode }, "5s 后自动重启");
     setTimeout(() => {
       if (!this.servers.has(serverId)) return; // 期间被删除
@@ -508,11 +643,20 @@ export class ServerManager implements IServerManager {
     }, CRASH_RESTART_DELAY);
   }
 
+  /**
+   * 强制停止（kill -9 兜底）：PTY forceKill bash → 内核 SIGHUP 前台进程组 U3DS 终止。
+   * 不等待优雅关闭，立即 STOPPED。stopRequested 置位防 onExit 误判崩溃重启。
+   *
+   * @param serverId - 服务端实例 ID
+   */
   async forceStop(serverId: ServerId): Promise<void> {
     const entry = this.ensureServer(serverId);
     logger.warn({ serverId }, "强制停止");
 
-    this.processSupervisor.forceKill(serverId);
+    // ★ Phase 2：PTY forceKill（SIGKILL bash → 内核 SIGHUP 前台进程组 U3DS 兜底终止）。
+    // stopRequested 置位防 onExit 误判崩溃重启。
+    entry.stopRequested = true;
+    this.ptyManager.forceKill(serverId);
     this.rconManager.disconnect(serverId);
     this.transition(serverId, ServerState.STOPPED);
     entry.activeOperation = { type: "none" };
@@ -528,8 +672,8 @@ export class ServerManager implements IServerManager {
    * ④ 每 10s 广播一次倒计时（共 5 次：50→10 剩余）
    * ⑤ RCON `Save`
    * ⑥ RCON `Shutdown 10 "<原因>"`
-   * ⑦ waitForExit（30s 超时则 forceKill）
-   * ⑧ spawn（走 startInternal + RUNNING transition）
+   * ⑦ PTY waitExit 等 bash 退出（30s 超时则 forceKill 关 bash）
+   * ⑧ spawn PTY bash + 1s 塞 startCommand（走 startInternal + RUNNING transition）
    * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
    *
    * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
@@ -641,14 +785,18 @@ export class ServerManager implements IServerManager {
         }
       }
 
-      // ⑦ 等进程退出
+      // ⑦ 等进程退出（★ Phase 2：bash 永驻不自己退——RCON Shutdown 10 让 U3DS 优雅退出后
+      // bash 回提示符仍在。等 bash 退出必然超时 → forceKill 关 bash。stopRequested 置位防
+      // onExit 误判崩溃重启）
       announce("waiting_exit");
-      try {
-        await this.processSupervisor.waitForExit(serverId, SHUTDOWN_TIMEOUT);
-      } catch {
+      const exited = await this.ptyManager.waitExit(serverId, SHUTDOWN_TIMEOUT);
+      if (!exited) {
         // 30s 未退出 → 强杀
         logger.warn({ serverId }, "Shutdown 超时，SIGKILL");
-        this.processSupervisor.forceKill(serverId);
+        entry.stopRequested = true;
+        this.ptyManager.forceKill(serverId);
+        // 给 PTY exit 事件一点时间触发（onExit 清 terminalSessionId）
+        await this.ptyManager.waitExit(serverId, 2_000);
       }
       this.transition(serverId, ServerState.STOPPED);
       this.rconManager.disconnect(serverId);
