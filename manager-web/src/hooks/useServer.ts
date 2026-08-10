@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "../api/client.js";
+import {
+  useWebSocket,
+  type ServerEventMessage,
+} from "../contexts/WebSocketContext.js";
 
 /** 服务器实例信息——GET /servers 响应形状（后端 ServerConfig，state 在服务端内存不返回） */
 export interface ServerInfo {
@@ -13,7 +17,7 @@ export interface ServerInfo {
   ownerSteamId: string;
   /** U3DS 安装根目录 */
   installDir: string;
-  /** 运行时状态（面板本地维护，非后端持久化字段） */
+  /** 运行时状态（面板本地维护，非后端持久化字段）—— ★ ADR-0004 Phase 5：实时状态由 WS state_change 推送更新 */
   state?: string;
   /** U3DS 启动命令（ADR-0004 Phase 4）——用户编辑后 PATCH /servers/:id 持久化；空 = 后端兜底模板 */
   startCommand?: string;
@@ -57,6 +61,8 @@ export function useServer(): UseServerReturn {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // ADR-0004 Phase 5：订阅 WS state_change 实时更新 server.state（无需重新拉 GET /servers）
+  const { subscribe } = useWebSocket();
 
   const refresh = useCallback(async () => {
     try {
@@ -72,10 +78,27 @@ export function useServer(): UseServerReturn {
   }, []);
 
   // 实例列表只挂载时拉取一次——增删后由 addServer/removeServer 内部 refresh，
-  // 避免轮询覆盖本地操作；状态实时变化将来由 WebSocket 推送（后端 onStateChange）。
+  // 避免轮询覆盖本地操作；状态实时变化由 WebSocket 推送（★ ADR-0004 Phase 5：listener 接管）。
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // ★ ADR-0004 Phase 5：订 WS state_change → 收到后只更新对应 serverId 的 state 字段
+  // （不发整张表重拉——后端 broadcast 一次 = 前端一次 setState）。
+  useEffect(() => {
+    const unsubscribe = subscribe((msg: ServerEventMessage) => {
+      if (msg.type !== "state_change") return;
+      const serverId = msg.serverId;
+      if (typeof serverId !== "string") return;
+      const to = msg.to;
+      if (typeof to !== "string") return;
+      // 只更新对应 server 的 state（其他字段交给下一轮 refresh）
+      setServers((prev) =>
+        prev.map((s) => (s.id === serverId ? { ...s, state: to } : s)),
+      );
+    });
+    return unsubscribe;
+  }, [subscribe]);
 
   const addServer = useCallback(
     async (server: CreateServerPayload) => {
