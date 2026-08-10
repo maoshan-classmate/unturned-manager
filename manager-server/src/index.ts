@@ -153,7 +153,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
   try {
     await wsBroadcaster.destroy();
     await container.rconManager.destroy();
-    await container.a2sClient.destroy();
     await container.processSupervisor.destroy();
 
     server.close();

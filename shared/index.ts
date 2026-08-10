@@ -11,10 +11,10 @@ export type { IServerDiscovery, DiscoveredServer } from './contracts/discovery.j
 export type { IConfigService } from './contracts/config.js';
 export type { IRconManager, RconServerConfig } from './contracts/rcon.js';
 export type { IProcessSupervisor } from './contracts/process.js';
+export type { IPtyManager, PtyKey, PtySpawnOptions, PtyDataCallback, PtyExitCallback } from './contracts/pty.js';
 export type { IBroadcaster, ServerEvent, WsConnection } from './contracts/broadcast.js';
 export type { IFilesService, WritableFileStream } from './contracts/files.js';
 export type { IAuthService, JwtPayload } from './contracts/auth.js';
-export type { IA2SClient } from './contracts/a2s.js';
 export type { IFileLockProvider } from './contracts/filelock.js';
 export type { ISteamCmdManager } from './contracts/steamcmd.js';
 export type {

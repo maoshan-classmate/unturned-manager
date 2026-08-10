@@ -334,7 +334,7 @@ describe("routes/mods · 8 端点", () => {
 
   it("POST /mods/apply → 202 + operationId（异步执行）", async () => {
     // 模拟运行时：先让服务端进入 RUNNING 状态，再 apply
-    // 但 RUNNING 状态需要 RCON/A2S 全 mock；这里仅测 202 响应，apply 内部会失败但前端只看 operationId
+    // 但 RUNNING 状态需要 RCON 全 mock；这里仅测 202 响应，apply 内部会失败但前端只看 operationId
     const res = await request(app)
       .post("/api/servers/MyServer/mods/apply")
       .set("Authorization", `Bearer ${accessToken}`)

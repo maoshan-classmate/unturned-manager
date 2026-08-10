@@ -111,7 +111,7 @@ setTimeout(() => pty.write(`${startCommand}\r`), 1000);
 ./ExampleServer.sh                                         # 单服模式回落
 ```
 
-> ⚠️ **Phase 1 落地需同步修 `unturned-sop.md` 与 `startScript.ts`**：`detectStartScript` 当前优先级是 `start.sh > run.sh`，但 U3DS 实际启动脚本是 `ServerHelper.sh` → `ExampleServer.sh`（与 `CLAUDE.md §2` 多实例主推一致）。修正 `detectStartScript` 优先级顺序为 `ServerHelper.sh > ExampleServer.sh`。
+> ✅ **Phase 1 落地已对齐**（commit `aace5f1` 前置状态）：`detectStartScript` 优先级已经是 `ServerHelper.sh` > `ExampleServer.sh`（与 `CLAUDE.md §2` 多实例主推一致）；`unturned-sop.md §「安装+启动」` 中的过期「代码侧不一致」提示已在 T5 删除。
 
 ### 2.3 HTTP 行为：立即返回
 
@@ -224,7 +224,7 @@ RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由
 
 ### 3.5 旧 `startScript.ts` 的去留
 
-- `detectStartScript()`：**保留 + 修正优先级**——U3DS 实际启动脚本是 `ServerHelper.sh` → `ExampleServer.sh`（不是当前 `start.sh > run.sh`），修正优先级顺序，与 `unturned-sop.md §「安装+启动」` 对齐
+- `detectStartScript()`：**保留**——优先级已是 `ServerHelper.sh` → `ExampleServer.sh`，与 `unturned-sop.md §「安装+启动」` 对齐
 - `ensureStartScriptExecutable()`：**保留**——PTY 启动命令前先 chmod +x
 - `spawnU3DS()`：**删除**——PTY 模式下不需要直接 spawn U3DS
 

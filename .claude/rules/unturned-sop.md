@@ -59,8 +59,6 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 
 多个 ServerID 共用同一个 U3DS 安装目录，省 10GB×N 磁盘。
 
-> U3DS 实际启动脚本优先级：`ServerHelper.sh` > `ExampleServer.sh`。代码侧 `detectStartScript` 当前优先级与 SOP 不一致，需同步修（见 ADR-0004 §3.5）。
-
 **硬规则**：
 - 一个 ServerID 一个进程。多个 ServerID 共用同一个 U3DS 安装目录。
 - **不要再用老命令行的 `-port -map -pvp` 参数**——所有可配置项都走 `Commands.dat`。

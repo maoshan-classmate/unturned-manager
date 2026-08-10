@@ -7,7 +7,6 @@ import type {
   IServerDiscovery,
   IProcessSupervisor,
   IRconManager,
-  IA2SClient,
   IConfigService,
   IBroadcaster,
   ActiveOperation,
@@ -31,8 +30,6 @@ import {
 
 // ─── 常量 ────────────────────────────────────────────
 
-const A2S_POLL_INTERVAL = 3_000; // 3s 轮询
-const A2S_POLL_TIMEOUT = 30_000; // CLAUDE.md §4.6: 30s 总超时，超时报错
 const SHUTDOWN_TIMEOUT = 30_000; // 等待进程退出
 const CRASH_RESTART_DELAY = 5_000; // T6: 崩溃 5s 硬重启（抄 GSM GameManager.ts:331-335）
 
@@ -62,7 +59,6 @@ export class ServerManager implements IServerManager {
     private discovery: IServerDiscovery,
     private processSupervisor: IProcessSupervisor,
     private rconManager: IRconManager,
-    private a2sClient: IA2SClient,
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
     private workshopApply?: IWorkshopApplyService,
@@ -109,7 +105,6 @@ export class ServerManager implements IServerManager {
           installDir: resolveInstallDir(),
         },
       });
-      this.a2sClient.register(s.id, "127.0.0.1", s.gamePort);
       this.restoreRcon(s.id);
     }
     logger.info({ count: discovered.length }, "已从目录扫描加载服务器");
@@ -196,7 +191,6 @@ export class ServerManager implements IServerManager {
       config: normalized,
     });
 
-    this.a2sClient.register(config.id, "127.0.0.1", config.gamePort);
     this.restoreRcon(config.id);
     logger.info({ serverId: config.id }, "服务器已创建");
   }
@@ -243,7 +237,7 @@ export class ServerManager implements IServerManager {
 
     existing.config = updated;
     if (patch.gamePort != null) {
-      this.a2sClient.register(serverId, "127.0.0.1", patch.gamePort);
+      // A2S 通道已删（ADR-0004 Phase 1）——端口变更无需 register
     }
     this.restoreRcon(serverId);
     logger.info({ serverId }, "服务器配置已更新");
@@ -272,7 +266,6 @@ export class ServerManager implements IServerManager {
 
     deleteRconCredentials(this.db, serverId);
     this.rconManager.unregister(serverId);
-    this.a2sClient.unregister(serverId);
     this.servers.delete(serverId);
     logger.info({ serverId }, "服务器已删除");
   }
@@ -302,14 +295,10 @@ export class ServerManager implements IServerManager {
       const { id, installDir } = entry.config;
       // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
       const pid = await this.spawnU3DS(id, installDir);
-      logger.info(
-        { serverId, pid, installDir },
-        "U3DS 进程已启动，等待 A2S 就绪",
-      );
+      logger.info({ serverId, pid, installDir }, "U3DS 进程已启动");
 
-      // 轮询 A2S 直到就绪（CLAUDE.md §4.6: 30s 超时报错）
-      await this.pollA2S(serverId);
-
+      // ★ ADR-0004 Phase 1 中间态：A2S 通道已删除，RUNNING 立即触发。
+      // Phase 2 将改成「PTY 输出 'Server is ready' / 'World saved' 信号触发 RUNNING」
       this.transition(serverId, ServerState.RUNNING);
 
       // 连接 RCON
@@ -320,7 +309,7 @@ export class ServerManager implements IServerManager {
       }
     } catch (err) {
       logger.error({ serverId, err }, "启动失败");
-      // BUG-3/7（第四版）：A2S 就绪超时等失败时，spawn 的 ServerHelper.sh 可能还挂在后台
+      // BUG-3/7（第四版）：spawn 失败时，spawn 的 ServerHelper.sh 可能还挂在后台
       // （比如 Mono 慢启动），若不清理，processes map 残留 → 下次启动被「已有进程在运行」拦截。
       // 启动失败即清理，保证可重试。
       try {
@@ -329,7 +318,7 @@ export class ServerManager implements IServerManager {
         /* 进程可能已退出，forceKill 幂等 */
       }
       this.transition(serverId, ServerState.STOPPED);
-      // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失 / A2S 超时）原样上抛
+      // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失）原样上抛
       // 会被全局错误处理兜底成「服务器内部错误」——用户和面板都看不到真实原因。
       // 包装成带 err.message 的 AppError，前端 toast 直接显示具体错因，便于定位。
       if (err instanceof AppError) throw err;
@@ -455,11 +444,8 @@ export class ServerManager implements IServerManager {
     // T6: 启动脚本探测 + chmod +x 后 spawn（抄 GSM detectStartScript）
     const pid = await this.spawnU3DS(id, installDir);
 
-    logger.info(
-      { serverId, pid, installDir },
-      "U3DS 进程已启动，等待 A2S 就绪",
-    );
-    await this.pollA2S(serverId);
+    logger.info({ serverId, pid, installDir }, "U3DS 进程已启动");
+    // ★ ADR-0004 Phase 1 中间态：A2S 通道已删除，RUNNING 立即触发（Phase 2 改 PTY ready）
     this.transition(serverId, ServerState.RUNNING);
 
     try {
@@ -543,7 +529,7 @@ export class ServerManager implements IServerManager {
    * ⑤ RCON `Save`
    * ⑥ RCON `Shutdown 10 "<原因>"`
    * ⑦ waitForExit（30s 超时则 forceKill）
-   * ⑧ spawn（走 startInternal + pollA2S）
+   * ⑧ spawn（走 startInternal + RUNNING transition）
    * ⑨ RCON `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
    *
    * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
@@ -753,30 +739,5 @@ export class ServerManager implements IServerManager {
         getRconCredential(this.db, serverId, "rocketmod") ?? undefined,
       ownerSteamId: cfg.ownerSteamId,
     });
-  }
-
-  private async pollA2S(serverId: ServerId): Promise<void> {
-    const start = Date.now();
-    while (Date.now() - start < A2S_POLL_TIMEOUT) {
-      try {
-        const info = await this.a2sClient.query(serverId);
-        if (info.players >= 0) {
-          logger.info(
-            { serverId, elapsed: Date.now() - start, info },
-            "A2S 就绪",
-          );
-          return;
-        }
-      } catch {
-        // 继续轮询
-      }
-      await new Promise((r) => setTimeout(r, A2S_POLL_INTERVAL));
-    }
-    // CLAUDE.md §4.6: "超时 30 秒就报错"
-    throw new AppError(
-      "a2s-poll-timeout",
-      `A2S 轮询超时 (${A2S_POLL_TIMEOUT / 1000}s): ${serverId}`,
-      504,
-    );
   }
 }
