@@ -1,852 +1,500 @@
-# unturned-manager 系统架构规格书
+# unturned-manager 架构规格
 
-> C4 模型 · 组件图粒度 · 不含 Docker 部署拓扑（部署拓扑单独成文）
-> 产出日期：2026-08-06
-> 前置审查：system-architect / backend-architect / security-engineer 三方交叉验证
-
----
-
-## 目录
-
-1. [系统上下文 (C4 Level 1)](#1-系统上下文-system-context)
-2. [容器图 (C4 Level 2)](#2-容器图-container)
-3. [后端组件图 (C4 Level 3a)](#3-后端组件图-backend)
-4. [前端组件图 (C4 Level 3b)](#4-前端组件图-frontend)
-5. [模块接口契约](#5-模块接口契约)
-6. [关键数据流](#6-关键数据流)
-7. [数据库 Schema](#7-数据库-schema)
-8. [安全架构](#8-安全架构)
-9. [横切关注点](#9-横切关注点)
+> **文档类型**：架构规格（C4 模型，现状记录）
+> **产出日期**：2026-08-11
+> **适用范围**：后端模块实现、前端页面实现、跨层契约变更的基准
+> **读取顺序**：`CLAUDE.md` → 本文档 → `design-system-mapping.md` → `claudedocs/reference_*.md`
 
 ---
 
-## 1. 系统上下文 (System Context)
+## 0. 阅读指南
 
-### 1.1 图
+本文档用 **C4 模型**组织，从系统整体逐层下沉到组件与契约：
 
-```
-                         ┌──────────────────────────┐
-                         │     Steam WebAPI          │
-                         │  (steamcommunity.com)     │
-                         │                           │
-                         │  · IPublishedFileService  │
-                         │    GetDetails/QueryFiles   │
-                         │  · WebAPI Key 主路径       │
-                         │  · ?xml=1 已废弃           │
-                         └────────────┬─────────────┘
-                                      │ HTTPS (按需拉取, 本地 LRU 缓存)
-                                      │
-┌──────────────┐  HTTPS + WSS (JWT)   │
-│   浏览器       │◄───────────────────┐│
-│   (服主)      │                    ││
-│              │────────────────────┼┘
-└──────────────┘                    │
-      │                              │
-      │ 仪表盘 / 控制台 / Mod 管理    │
-      │ 玩家管理 / 配置编辑 / 文件浏览 │
-      │                              │
-      ▼                              ▼
-┌──────────────────────────────────────────────────────────┐
-│                                                          │
-│                    unturned-manager                      │
-│                 (自托管 Web 管理面板)                      │
-│                                                          │
-│   ┌────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│   │ React SPA      │  │ Express + ws  │  │   SQLite       │  │
-│   │ (Vite + TW4 +  │  │ (后端容器)     │  │   (单文件数据库) │  │
-│   │  shadcn/ui)     │  │               │  │                │  │
-│   └────────────┘  └──────────────┘  └────────────────┘  │
-│                                                          │
-└──────┬──────────────┬──────────────────┬─────────────────┘
-       │              │                  │
-       │ RCON (TCP)   │ 文件 IO (共享卷)   │ child_process/spawn
-       │ A2S (UDP)    │                  │
-       │ stdout pipe  │                  │
-       │              │                  │
-       ▼              ▼                  ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
-│ U3DS 进程     │ │ 服务端文件系统  │ │    SteamCMD       │
-│ (× N 实例)   │ │              │ │                  │
-│              │ │ Servers/<ID>/ │ │ 安装/更新 U3DS    │
-│ · 每实例独立  │ │ · Server/    │ │ 下载 Workshop 内容 │
-│   状态机      │ │ · Workshop/  │ │                  │
-│ · 独立端口    │ │ · Logs/      │ │ 生命周期约束：     │
-│ · 独立 RCON   │ │ · Rocket/    │ │ 写 content/ 前必须 │
-│              │ │ · openmod/   │ │ STOPPED；staging  │
-│              │ │              │ │ 下载可不停服 (§1.4) │
-│ A2S: 游戏端口+1│ │ · Bundles/   │ └──────────────────┘
-└──────────────┘ └──────────────┘
-```
+| 层级 | 章节 | 回答的问题 |
+|---|---|---|
+| Level 1 系统上下文 | §1 | 系统边界在哪？和哪些外部系统交互？ |
+| Level 2 容器 | §2 | 系统由哪些可部署单元组成？用什么技术栈？ |
+| Level 3a 后端组件 | §3 | 后端有哪些模块？各自职责与依赖？ |
+| Level 3b 前端组件 | §4 | 前端有哪些页面、组件、hooks？ |
+| 模块接口契约 | §5 | 各接口的方法签名与数据形状？ |
+| 关键数据流 | §6 | 启动、Mod 流水线、日志、命令怎么走？ |
+| 数据库 | §7 | 持久化了什么？真源在哪？ |
+| 安全 | §8 | 认证、凭证、校验、命令鉴权怎么守？ |
+| 横切关注点 | §9 | 日志、错误、DI、测试的全局约定 |
 
-### 1.2 外部系统详表
+**真源原则**：本文档是架构层的权威来源之一（与 `design-system-mapping.md` 并列）。架构变更必须先改本文档、再改代码。文档描述的是 **当前系统的事实状态**——以代码、契约文件、ADR 为对照基准。
 
-| 外部系统 | 通信方向 | 协议 | 用途 | 约束 |
-|---|---|---|---|---|
-| **浏览器** | 双向 | HTTPS (REST) + WSS | 管理面板 UI | 单用户 JWT 认证 |
-| **U3DS 进程 × N** | 双向 | TCP (RCON) + UDP (A2S) + stdout pipe | 运行时命令、玩家查询、控制台输出、状态检测 | 每实例独立状态机、独立端口、独立 RCON 连接 |
-| **服务端文件系统** | 单向读/写 | 本地文件 IO | 配置文件 CRUD、Mod 列表、日志 tail、文件浏览 | 写入受生命周期门控（§4.6 重启流水线） |
-| **SteamCMD** | 单向 spawn | child_process | 安装/更新 U3DS 二进制、下载 Workshop 内容 | 写 `content/1110390/` 或 validate 前 U3DS 必须 STOPPED；下载到 staging（`Workshop/staging/`）可不停服（§1.4） |
-| **Steam WebAPI** | 单向拉取 | HTTPS | Workshop Mod 元数据 | WebAPI Key 主路径（`IPublishedFileService`）；`?xml=1` 已废弃 |
+---
 
-### 1.3 RCON 链路详解
+## 1. 系统上下文（Level 1）
+
+### 1.1 系统图
 
 ```
-Panel ──► 自动探测 ──► ① OpenMod Valve Source RCON (rcon-srcds)
-              │             端口：openmod.yaml → rcon.port（默认 25545）
-              │             认证：SteamID:密码 格式
-              │
-              ├── 失败 (2s 超时) ──► ② RocketMod Telnet RCON (net 模块)
-              │                         端口：游戏端口 + 2（默认 27017）
-              │                         认证：login <密码>\r\n
-              │
-              └── 成功 ──► 缓存模式 60s ──► 后续命令直接复用
-                            60s 过期 ──► 重新探测
-                            连续 3 次 ping 失败 ──► DEGRADED 状态
+  ┌─────────────┐        ┌──────────────────────────────────────┐
+  │  浏览器用户   │  HTTP  │            unturned-manager           │
+  │  (owner)    │◄──────►│             Web 管理面板              │
+  └─────────────┘   WS   └───────┬──────────┬──────────┬─────────┘
+                                 │          │          │
+                    持久 PTY bash │  子进程    │  HTTPS   │  文件系统
+                    (node-pty)   │  (spawn)  │          │  (共享卷)
+                                 ▼          ▼          ▼
+                       ┌──────────────┐ ┌─────────┐ ┌─────────────────────┐
+                       │ U3DS 服务端   │ │ SteamCMD│ │ U3DS 安装目录        │
+                       │ AppID 1110390│ │         │ │ + Servers/<ServerID>/│
+                       └──────────────┘ └─────────┘ └─────────────────────┘
 ```
+
+**关键交互线**：
+
+- **U3DS 服务端** ⇄ 面板：**持久 PTY bash 双向链路**（`node-pty` + WS `terminal_input` 入站 / `console_line` 出站）。每个运行中的实例对应一个永驻 bash PTY 进程；bash 是 U3DS 的父进程，U3DS 崩溃时 bash 回提示符、终端仍可交互。
+- **SteamCMD** ⇄ 面板：子进程 spawn（`ProcessSupervisor`），所有长任务（安装 / 更新 / 下载 / 检查 / 重装）异步启动，返回 jobId，进度经 WS `steamcmd_progress` 推送。
+- **Steam WebAPI** ⇄ 面板：HTTPS 实时查询创意工坊元数据（`IPublishedFileService`），需要用户配置的 WebAPI Key。
+- **共享卷文件系统** ⇄ 面板：`config.installDir`（全局 U3DS 安装根目录，默认 `/opt/unturned`）下的 `Servers/<ServerID>/` 目录树是实例身份与配置的真源。
+
+### 1.2 外部系统表
+
+| 外部系统 | 交互方式 | 交互内容 |
+|---|---|---|
+| **U3DS 服务端**（Unturned 专用服务端，Steam AppID `1110390`） | 持久 PTY bash（`node-pty`，cwd = installDir） | 启动（1s 后写入 `startCommand`）、停止（PTY 写 `Save` + `Shutdown 30` + ctrl+c）、命令执行（WS `terminal_input` 直达 stdin）、控制台输出（PTY stdout 经 `console_line` 推送）。U3DS 是 TTY-only 进程，PTY 模拟让它的 ANSI 色彩/进度条正常输出 |
+| **SteamCMD** | 子进程 spawn（`ProcessSupervisor`） | 安装 U3DS（`+app_update 1110390`）、更新二进制、下载创意工坊内容到 staging、检查更新、重装 SteamCMD。所有操作异步启动 + jobId 关联 |
+| **Steam WebAPI** | HTTPS（`fetch`，直连不走代理） | 创意工坊搜索/详情/批量元数据（`QueryFiles` + `GetDetails` + `GetPlayerSummaries`） |
+| **共享卷文件系统** | 直接读写（`fs`） | `Servers/<ServerID>/` 目录树、`Workshop/steamapps/workshop/content/1110390/` 已装 Mod、`Workshop/staging/` 下载暂存、`Logs/*.log` 日志 |
+| **浏览器用户**（owner） | HTTP + WebSocket | 面板页面、实例启停、终端交互、配置编辑、Mod 管理 |
+
+### 1.3 命令通道：PTY 终端 owner-trust 模型
+
+面板与 U3DS 之间的**唯一命令通道**是持久 PTY 终端：
+
+- 入站：前端 `Terminal`（xterm.js）的键盘输入经 WS `terminal_input` 事件 → 后端 `PtyManager.write(serverId, data)` → PTY stdin，原样透传不做命令解析。
+- 出站：PTY stdout（按行切分）经 WS `console_line` 事件推给前端，xterm.js 原生渲染 ANSI 转义序列。
+- **owner-trust**：WS 连接建立时 `verifyClient` 校验 access token（JWT 有效即视为 owner 本人在用终端），此后终端内的任意命令直接放行。危险指令（如 `Shutdown`、`Ban`）的二次确认由**前端** `ConfirmDialog` 拦截，后端不做命令级鉴权。
 
 ### 1.4 文件写入生命周期门控
 
-| 写操作 | 安全时机 | 不安全时的行为 |
-|---|---|---|
-| WorkshopDownloadConfig.json | U3DS 实例 STOPPED（§4.6 流水线） | 拒绝写入，返回 409 |
-| Commands.dat | U3DS 实例 STOPPED | 接受写入，UI 提示"需重启生效" |
-| Config.txt | 任意（U3DS 运行时只读） | 接受写入，UI 提示可能需重启 |
-| 插件配置 (openmod/*.yaml) | 任意（OpenMod reload 实验性） | 接受写入，UI 提示 reload 或重启 |
-| 日志文件 | 只读，永不写入 | — |
-| Workshop/ 内容（`content/1110390/`、validate、U3DS 二进制） | SteamCMD 写入时 U3DS 必须 STOPPED | 拒绝启动 SteamCMD |
-| Workshop/ staging（`Workshop/staging/`） | 任意（U3DS 运行中不扫描 staging） | 允许下载；应用前必须走重启流水线 |
+面板写 U3DS 相关文件时，按「运行时读取 vs 启动时读取」区分停服要求：
 
----
-
-## 2. 容器图 (Container)
-
-> Docker 部署拓扑不在本文档范围（用户指示"docker先不管"）。此处描述的是应用层容器——前端 SPA 和后端服务的进程边界。
-> 技术栈详见 [CLAUDE.md §2](../../CLAUDE.md#2-技术栈铁律钉死的)，本节只描述应用层容器边界。
->
-> **API 契约层（已实现）**：`shared/schemas/` 用 Zod 定义 API schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范 → Swagger UI 托管在 `/api/docs`。前后端共用同一 schema 真相源，后端自动校验入参，前端 `react-hook-form + zod` 复用校验逻辑。
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    用户浏览器                             │
-│                 (React SPA 运行环境)                      │
-│                                                         │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │              frontend (React 18 SPA)              │  │
-│  │                                                   │  │
-│  │  构建：Vite (dev) / nginx 静态托管 (prod)          │  │
-│  │  路由：react-router-dom v6                         │  │
-│  │  样式：Tailwind CSS 4 + shadcn/ui (slate+emerald)  │  │
-│  │  动画：Motion (framer-motion v13, ADR-0001)        │  │
-│  │  表单：react-hook-form + zod                        │  │
-│  │  状态：AuthContext + WebSocketContext (Zustand风格) │  │
-│  │                                                   │  │
-│  │  HTTP client: axios (JWT 注入 / 401 拦截)          │  │
-│  │  WebSocket client: 浏览器原生 WebSocket             │  │
-│  └────────────────────┬──────────────────────────────┘  │
-│                       │ HTTPS + WSS                     │
-└───────────────────────┼─────────────────────────────────┘
-                        │
-┌───────────────────────┼─────────────────────────────────┐
-│  后端服务器            │                                  │
-│                       ▼                                  │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │              backend (Node.js 20 + Express 4)     │  │
-│  │                                                   │  │
-│  │  ┌─────────┐ ┌──────────┐ ┌────────────────────┐ │  │
-│  │  │ REST    │ │WebSocket │ │ 中间件               │ │  │
-│  │  │ routes  │ │gateway   │ │ · JWT 验证           │ │  │
-│  │  │         │ │          │ │ · 速率限制            │ │  │
-│  │  │ Express │ │ ws       │ │ · 安全头              │ │  │
-│  │  │ Router  │ │ Server   │ │ · 请求日志            │ │  │
-│  │  └────┬────┘ └────┬─────┘ └────────────────────┘ │  │
-│  │       │           │                               │  │
-│  │       ▼           ▼                               │  │
-│  │  ┌─────────────────────────────────────────────┐  │  │
-│  │  │            核心域层 (Core Domain)             │  │  │
-│  │  │                                             │  │  │
-│  │  │  ServerManager  ConfigService  FilesService  │  │  │
-│  │  │  SteamCmdManager  WorkshopMetadataService    │  │  │
-│  │  │  LogStreamer  AuthService                    │  │  │
-│  │  └──────────────────┬──────────────────────────┘  │  │
-│  │                     │                              │  │
-│  │                     ▼                              │  │
-│  │  ┌─────────────────────────────────────────────┐  │  │
-│  │  │         基础设施层 (Infrastructure)           │  │  │
-│  │  │                                             │  │  │
-│  │  │  ProcessSupervisor  RconManager  A2SClient  │  │  │
-│  │  │  FileLockProvider                           │  │  │
-│  │  └─────────────────────────────────────────────┘  │  │
-│  │                                                   │  │
-│  └───────────────────────┬───────────────────────────┘  │
-│                          │                               │
-│  ┌───────────────────────┴───────────────────────────┐  │
-│  │              SQLite (better-sqlite3)              │  │
-│  │  · servers  · users  · config_snapshots           │  │
-│  │  · workshop_mods  · audit_logs                    │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. 后端组件图 (Backend)
-
-### 3.1 分层架构
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   API 层                             │
-│                                                     │
-│  Express Routes   WebSocket Gateway   WsBroadcaster │
-│  (REST 端点)      (ws 升级 + JWT 认证)  (事件广播)     │
-│                                                     │
-│  Middleware: JWT验证 | 速率限制 | 安全头 | 请求日志    │
-└────────────────────────┬────────────────────────────┘
-                         │ 依赖方向 ↓
-┌────────────────────────┴────────────────────────────┐
-│                  核心域层                             │
-│                                                     │
-│  ┌──────────────┐  ┌──────────────┐                 │
-│  │ServerManager │  │ConfigService │                 │
-│  │(聚合根)       │  │              │                 │
-│  │              │  │ Commands.dat │                 │
-│  │ 五态状态机    │  │ Config.txt   │                 │
-│  │ activeOp     │  │ Workshop.json│                 │
-│  │ 重启流水线    │  │ openmod.yaml │                 │
-│  │ 编排器        │  │ Rocket *.xml │                 │
-│  └──────┬───────┘  └──────┬───────┘                 │
-│         │                 │                          │
-│  ┌──────┴───────┐  ┌──────┴──────────┐              │
-│  │FilesService  │  │SteamCmdManager  │              │
-│  │              │  │                 │              │
-│  │ 文件浏览/上传 │  │ app_update      │              │
-│  │ 删除/重命名   │  │ 1110390         │              │
-│  │ 路径穿越防护  │  │ 子进程生命周期   │              │
-│  └──────────────┘  └─────────────────┘              │
-│                                                     │
-│  ┌──────────────────────┐  ┌────────────────────┐   │
-│  │WorkshopMetadataService│  │   AuthService      │   │
-│  │                      │  │                    │   │
-│  │ Steam ?xml=1 拉取    │  │ JWT sign/verify    │   │
-│  │ 元数据解析 + LRU 缓存 │  │ refresh token 轮换 │   │
-│  │ WebAPI Key 第二档    │  │ 密码 Argon2id hash │   │
-│  └──────────────────────┘  └────────────────────┘   │
-│                                                     │
-│  ┌──────────────────────┐                           │
-│  │    LogStreamer       │                           │
-│  │                      │                           │
-│  │ 双路日志采集：        │                           │
-│  │ · 文件 tail 轮询     │                           │
-│  │ · stdout pipe 流式   │                           │
-│  │ 凭证脱敏 → WsBroadcaster                         │
-│  └──────────────────────┘                           │
-└────────────────────────┬────────────────────────────┘
-                         │ 依赖方向 ↓
-┌────────────────────────┴────────────────────────────┐
-│                基础设施层                             │
-│                                                     │
-│  ┌────────────────┐  ┌──────────────┐               │
-│  │ProcessSupervisor│  │ RconManager  │               │
-│  │                │  │              │               │
-│  │ spawn/kill     │  │ OpenMod 优先  │               │
-│  │ 进程存活检测    │  │ RocketMod回落 │               │
-│  │ 优雅关停/强制杀 │  │ 自动探测+缓存 │               │
-│  │ 崩溃回调        │  │ 命令注入防护  │               │
-│  └────────────────┘  └──────────────┘               │
-│                                                     │
-│  ┌────────────────┐  ┌──────────────────┐           │
-│  │  A2SClient     │  │ FileLockProvider │           │
-│  │                │  │                  │           │
-│  │ UDP 查询       │  │ 跨模块文件锁注册  │           │
-│  │ 玩家数/地图    │  │ 按路径加锁/解锁  │           │
-│  │ 版本/延迟      │  │ 超时自动释放     │           │
-│  └────────────────┘  └──────────────────┘           │
-└─────────────────────────────────────────────────────┘
-```
-
-### 3.2 模块职责单行定义
-
-| 模块 | 层 | 一句话职责 | 关键约束 |
+| 文件 | 面板操作 | 停服要求 | 说明 |
 |---|---|---|---|
-| **ServerManager** | 核心域 | 服务端生命周期编排 + 五态状态机 + 操作互斥 | 聚合根，不直接 spawn 进程（委托 ProcessSupervisor） |
-| **ConfigService** | 核心域 | 配置文件语义读写 + 备份-写-恢复 | 只处理 5 种已知格式，保留未知键 |
-| **FilesService** | 核心域 | 通用文件浏览/上传/删除 | 无文件格式知识，路径白名单 + realpath 校验 |
-| **SteamCmdManager** | 核心域 | SteamCMD 安装/更新子进程管理 | 写 content/ 前校验 STOPPED；staging 下载可不停服 |
-| **WorkshopMetadataService** | 核心域 | Steam Workshop Mod 元数据拉取 + 缓存 | WebAPI Key（IPublishedFileService）主路径 |
-| **AuthService** | 核心域 | JWT 签发/校验/刷新 + 密码哈希 | access token 15min + refresh token httpOnly cookie |
-| **LogStreamer** | 核心域 | 双路日志采集 + 凭证脱敏 + 推送 | 单向：文件/stdout → WsBroadcaster，禁止反向 |
-| **WsBroadcaster** | API 层 | WebSocket 事件广播 + 连接管理 | 实现 IBroadcaster 接口，含 JWT 认证 |
-| **RconManager** | 基础设施 | RCON 连接管理 + 命令执行 + 自动探测 | 凭证 AES-GCM 存储，命令参数清洗控制字符 |
-| **A2SClient** | 基础设施 | Valve A2S_INFO 查询 | 只读，UDP，超时 3s |
-| **ProcessSupervisor** | 基础设施 | 进程 spawn/monitor/kill | ServerHelper.sh 生命周期，崩溃回调 |
-| **FileLockProvider** | 基础设施 | 文件级互斥锁注册表 | ConfigService 和 FilesService 共享同一实例 |
+| `WorkshopDownloadConfig.json` 的 `File_IDs` | apply 流水线内原子写（带备份） | **是** | 写完后走「Mod 变更 + 重启流水线」（§6.2），重启后服务端读取生效 |
+| `Workshop/staging/`（SteamCMD 下载落点） | `steamcmd download-workshop` | **否** | U3DS 只加载 `content/1110390/`，不扫描 staging；下载可不停服 |
+| `Workshop/steamapps/workshop/content/1110390/`（已装 Mod） | apply 流水线移动 staging 内容 | **是** | 写入运行中服务端直接读取的位置有覆盖风险；进程停后方可移动 |
+| `Commands.dat` / `Config.txt` | 配置页编辑 | 面板不主动停服 | U3DS 启动时读取；编辑后由用户自行决定何时重启生效 |
+| U3DS 二进制 / `validate` | SteamCMD 更新 | **是** | 覆盖正在运行的二进制有风险 |
 
 ---
 
-## 4. 前端组件图 (Frontend)
+## 2. 容器图（Level 2）
 
-### 4.1 页面路由树
-
-```
-/                          → Dashboard (仪表盘)
-/:serverId/console         → Console (控制台)
-/:serverId/mods            → Mods (Mod 管理)
-/:serverId/players         → Players (玩家管理)
-/:serverId/config/commands → Config (Commands.dat 编辑)
-/:serverId/config/gameplay → Config (Config.txt 编辑) [v1.1]
-/:serverId/config/workshop → Config (Workshop.json 编辑) [v1.1]
-/:serverId/files           → Files (文件管理)
-/:serverId/server-setup    → Server Setup (安装与管理)
-/settings                  → System Settings [P1]
-/login                     → Login (登录页)
-```
-
-### 4.2 组件树（按页面）
+### 2.1 容器图
 
 ```
-App
-├── AuthProvider (JWT 状态 + 自动刷新)
-├── WebSocketProvider (ws 连接管理, 按 serverId 多路复用)
-├── Sidebar ($5:29)
-│   ├── NavItem: Dashboard (LayoutDashboard)
-│   ├── NavItem: Console (Terminal)
-│   ├── NavItem: Mods (Package)
-│   ├── NavItem: Players (Users)
-│   ├── NavItem: Config (Settings)
-│   ├── NavItem: Files (FolderOpen)
-│   ├── NavItem: Server Setup (Server)
-│   └── NavItem: Settings (Sliders) [P1]
-│
-├── Dashboard/
-│   ├── StatCard ($5:34) × 4    (recharts: 在线玩家 / CPU / RAM / Mod 数)
-│   ├── AreaChart               (24h 玩家趋势)
-│   ├── BarChart                (资源使用)
-│   └── QuickActions            (Button $5:52 Primary)
-│
-├── Console/
-│   ├── ServerTabBar            (多 ServerID 切换)
-│   ├── ConsoleToolbar          (预设命令: Say/Save/Players/Kick/Day/Shutdown)
-│   ├── ConsoleOutput           (react-window 虚拟滚动 + ANSI 着色)
-│   └── ConsoleInput            (↑↓ 翻历史 + 危险指令 ConfirmDialog)
-│
-├── Mods/
-│   ├── ModGrid
-│   ├── ModCard ($14:16695)     (封面/标题/作者/评分/FileID/启用开关)
-│   ├── AddModDialog            (URL/ID 输入 + Steam 预览)
-│   ├── ModDetailDialog         (大封面/完整描述/依赖/文件大小/标签)
-│   ├── PendingBar              (待应用变更数 + [Apply & Restart])
-│   └── ApplyPipeline           (进度条: 广播→保存→关机→重启→完成)
-│
-├── Players/
-│   └── PlayerTable ($17:17601) (@tanstack/react-table)
-│       ├── 列: Avatar / Name / SteamID / Character / Ping / Online / Actions
-│       └── 操作: [Kick] [Ban] [Teleport] + ConfirmDialog ($12:16436)
-│
-├── Config/
-│   ├── ConfigTabBar            (Commands / Config.txt / Workshop / OpenMod / RocketMod)
-│   └── CommandsDatEditor       (分组表单: 身份/地图/权限/安全/参数/日志/投票)
-│       └── 字段控件: Input ($17:17965) / Select ($17:17966) / Switch ($17:17967/8) / Checkbox ($17:17969)
-│
-├── Files/
-│   ├── TopBar                  (标题 + 面包屑 Path Bar)
-│   ├── Toolbar                 (刷新/上传/新建文件夹/搜索)
-│   ├── FileGrid                (卡片瀑布流)
-│   │   └── FileCard ($21:19780) × N
-│   ├── StatusBar               (选中数 / 总大小)
-│   ├── ContextMenu             (右键: 新建/删除/重命名/下载/复制路径)
-│   └── PermissionsDialog       (ACL 编辑)
-│
-├── ServerSetup/
-│   ├── Tab: 安装 (SteamCMD 安装进度 + U3DS 下载进度)
-│   ├── Tab: 启动/停止 (Server 卡片 × N: Start/Stop/Restart + 状态灯)
-│   ├── Tab: 更新 (app_update 一键更新 + 日志 tail)
-│   └── Tab: 日志 (安装/启动/SteamCMD/系统 分类)
-│
-└── Settings/ [P1]
-    ├── Card: 账户安全           (改密码/二步验证/登出)
-    ├── Card: 安全配置           (凭据加密/速率限制/CSP)
-    ├── Card: 网页设置           (主题/语言/默认页)
-    ├── Card: 面板日志           (级别/滚动大小/导出)
-    └── Card: 游戏默认值          (默认端口/难度/视角)
+                 ┌───────────────────────────────────────────────┐
+                 │                  unturned-manager              │
+                 │  ┌───────────────────┐   ┌───────────────────┐ │
+   HTTPS/WS      │  │   Panel Web       │   │   Panel Server    │ │
+   ─────────────►│  │   (React SPA)     │◄──►│ (Node.js + Express)│ │
+   浏览器用户      │  │   :5173 (dev)    │HTTP│   :3001           │ │
+                 │  └───────────────────┘ WS └─────────┬─────────┘ │
+                 │                                     │ node-pty   │
+                 │                                     ▼            │
+                 │                           U3DS PTY bash 进程      │
+                 └───────────────────────────────────────────────┘
+                      │                        │              │
+                 Steam WebAPI             SteamCMD        共享卷文件系统
 ```
 
-### 4.3 共享组件清单（Figma ID → 代码路径）
+- **Panel Web**：React 18 单页应用，Vite 构建。开发模式由 Vite dev server 托管，`/api` 与 `/ws` 代理到 Panel Server；生产模式由 Panel Server 静态托管构建产物。
+- **Panel Server**：Node.js 20 + Express 4，承载 REST API、WebSocket 网关、PTY 进程管理、SQLite 持久化。HTTP 长任务统一 202 异步语义（返回 jobId / terminalSessionId）。
+- **共享契约层**：`shared/` 包（TypeScript）承载前后端共用的 branded types、领域类型、Zod schema、接口契约与 OpenAPI 派生。
 
-| Figma ID | Figma 名 | shadcn/ui 对位 | 自定义？ |
+### 2.2 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 前端框架 | React 18 + TypeScript + Vite |
+| 前端 UI | Tailwind CSS 4 + shadcn/ui（基于 `@base-ui/react`）+ Motion（framer-motion v13） |
+| 前端组件/图表 | `@tanstack/react-table`（DataTable）、recharts（Dashboard 图表）、lucide-react（图标） |
+| 前端表单 | react-hook-form + zod（zod schema 放页面同级 `xxxSchema.ts`） |
+| 前端终端 | xterm.js（`console/Terminal.tsx`） |
+| 后端框架 | Node.js 20 + Express 4 + TypeScript |
+| 进程/终端 | `node-pty`（PTY 模拟）+ `ws`（WebSocket 双向） |
+| 数据库 | better-sqlite3（同步 API）+ `user_version` PRAGMA 迁移 |
+| 配置解析 | `fast-xml-parser`（XML）+ `js-yaml`（YAML） |
+| 认证/安全 | argon2（Argon2id）、jsonwebtoken、helmet、cors |
+| 日志 | pino（结构化 JSON） |
+| 契约 | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0 |
+| 测试 | Vitest（后端单元 + supertest API）、Vitest（前端）+ Playwright（e2e） |
+
+---
+
+## 3. 后端组件图（Level 3a）
+
+### 3.1 分层
+
+```
+┌──────────────────────── API 层 ────────────────────────┐
+│  routes/ (工厂函数)  │  middleware/  │  ws/gateway.ts   │
+│  createAuthRouter    │  auth /       │  WsBroadcaster   │
+│  createServersRouter │  validate /   │  (IBroadcaster)  │
+│  createModsRouter    │  asyncHandler │                  │
+│  createModBrowseRouter│  errorHandler │                  │
+│  createConfigRouter  │  noCache      │                  │
+│  createFilesRouter   │               │                  │
+│  createSteamCmdRouter│               │                  │
+│  createWorkshopRouter│               │                  │
+│  createSettingsRouter│               │                  │
+└───────────────────────────┬────────────────────────────┘
+                            │ constructor 注入
+┌─────────────────────── 核心域层 ────────────────────────┐
+│  ServerManager（聚合根）                                 │
+│  ConfigService │ FilesService │ AuthService │ LogStreamer│
+│  SteamCmdManager │ WorkshopMetadataService             │
+│  WorkshopAcfService │ WorkshopApplyService │ WorkshopDeleteService │
+│  ServerDiscovery │ VdfParser │ pathResolver │ startScript│
+│  settingsStorage │（辅助）                                 │
+└───────────────────────────┬────────────────────────────┘
+                            │ constructor 注入
+┌─────────────────────── 基础设施层 ──────────────────────┐
+│  PtyManager（node-pty，TTY 模拟）                        │
+│  ProcessSupervisor（非 PTY 子进程，服务 SteamCMD）         │
+│  FileLockProvider（配置文件并发锁）                        │
+│  db/（connection / migrate / seed）│ utils/（logger、AppError、cryptoBox） │
+└────────────────────────────────────────────────────────┘
+```
+
+### 3.2 模块表
+
+> 每个模块是 `class`，实现 `shared/contracts/` 中对应的 `I*` 接口；依赖全部经 `composition-root.ts` 手动构造注入。有状态模块实现 `destroy()`。
+
+| 模块 | 职责 | 依赖 | destroy |
 |---|---|---|---|
-| `5:29` | Sidebar | — | ✅ 自实现 |
-| `5:34` | StatCard | Card 包装 | ✅ 自实现 |
-| `5:39` | Card | shadcn Card | ❌ 直接用 |
-| `5:52` | Button Set | shadcn Button variant | ❌ 直接用 |
-| `5:62` | Badge Set | shadcn Badge 改造 | ✅ 自定义 variant |
-| `12:16436` | ConfirmDialog | shadcn AlertDialog | ✅ 封装 |
-| `12:16476` | ToolbarBtn | shadcn Button ghost | ✅ 封装 |
-| `14:16695` | ModCard | Card 包装 | ✅ 自实现 |
-| `17:17754` | Toast | shadcn Toast variant | ✅ 自定义 variant |
-| `17:17965` | Input | shadcn Input | ❌ 直接用 |
-| `17:17966` | Select | shadcn Select | ❌ 直接用 |
-| `17:17967/8` | Switch | shadcn Switch (受控) | ❌ 直接用，不拆 ON/OFF |
-| `17:17969` | Checkbox | shadcn Checkbox | ❌ 直接用 |
-| `20:19444` | ConfigDialog | shadcn Dialog | ✅ 封装 |
-| `21:19780` | FileCard | Card 包装 | ✅ 自实现 |
+| **ServerManager** | 聚合根。实例生命周期（start/stop/restart/forceStop）、4 态状态机、Mod 应用流水线、目录扫描加载、startCommand 持久化 | ServerDiscovery、PtyManager、ConfigService、IBroadcaster、WorkshopApplyService（可选）、DB | 无（PTY 由 PtyManager 统一 destroy） |
+| **PtyManager** | PTY 进程生命周期管理（node-pty 封装）。spawn 永驻 bash、write 透传 stdin、resize、kill/forceKill、onData（按行切分）、onExit、waitExit | node-pty | ✅ destroy 全部 PTY 进程 |
+| **ProcessSupervisor** | 非 PTY 子进程管理——服务 SteamCMD（execFile/进程）。spawn、gracefulShutdown、waitForExit（返回退出码）、forceKill、onStdout、onCrash | child_process | ✅ |
+| **FileLockProvider** | 配置文件并发写锁（acquire/release/isLocked），配合乐观锁 mtime | — | — |
+| **ConfigService** | `Commands.dat` / `Config.txt` / `WorkshopDownloadConfig.json` / OpenMod / RocketMod 配置读写。乐观锁（expectedMtime）+ 备份 + 回滚 | FileLockProvider | — |
+| **FilesService** | 服务器文件浏览/读写/删除/重命名/建目录/权限/上传流（`IFilesService`），路径白名单防穿越 | FileLockProvider | — |
+| **AuthService** | JWT 认证：login/refresh/logout/changePassword/validateAccessToken。密码 Argon2id，refresh token 轮换 | DB | — |
+| **SteamCmdManager** | SteamCMD 长任务：install U3DS / update U3DS / downloadWorkshopItem（staging）/ checkUpdate / reinstall / setInstallPath。全异步返回 jobId | ProcessSupervisor、IBroadcaster、activeProbe（延迟绑定 → ServerManager） | — |
+| **WorkshopMetadataService** | Steam WebAPI 元数据：getModDetails / browseMods / batchGetDetails。**0 缓存**，每次实时查 WebAPI | DB（读 WebAPI Key） | — |
+| **WorkshopAcfService** | acf 真源维护：parse / write / listItems / listStagingItems / addItem / removeItem / backup / rollback。每次实时读盘解析 | ConfigService | — |
+| **WorkshopApplyService** | apply 流水线：staging acf → content acf 合并 + `mv` staging 内容 → 同步 File_IDs，任一失败全回滚 | WorkshopAcfService、ConfigService、IBroadcaster | — |
+| **WorkshopDeleteService** | Mod 删除：acf 删项 + content 目录删 + File_IDs 同步 | WorkshopAcfService、ConfigService | — |
+| **LogStreamer** | 日志文件 tail（`Servers/<ID>/Logs/*.log`，500ms 轮询）+ 凭证脱敏 + 速率限制（100 行/秒）→ `console_line` 广播 | IBroadcaster、ProcessSupervisor | — |
+| **ServerDiscovery**（辅助） | 目录扫描真源：扫 `installDir/Servers/`，`Commands.dat` 存在性 = 实例成立。纯同步 | fs | — |
+| **VdfParser**（辅助） | VDF 文件解析（acf） | — | — |
+| **settingsStorage**（辅助） | settings K-V 读写（AES-256-GCM 加密 + startCommand 明文），供 ServerManager / AuthService / 路由内部使用 | DB、cryptoBox | — |
 
-### 4.4 Hooks 清单
+### 3.3 路由层
 
-| Hook | 用途 | 依赖 |
-|---|---|---|
-| `useAuth` | JWT 状态、登录/登出/刷新 | AuthContext |
-| `useServer()` | 实例列表挂载拉一次 + `addServer`/`removeServer` 本地增删（纯前端效果阶段）；状态实时待 WS 推送 | IServerManager |
-| `useConsole(serverId)` | WS 控制台收发封装 | WebSocketContext |
-| `useLogs(serverId)` | WS 日志流封装 | WebSocketContext |
-| `useConfig(serverId)` | Config CRUD + dirty tracking | IConfigService |
-| `useMods(serverId)` | Mod 列表 + pending changes | WorkshopMetadataService |
-| `useFiles(serverId, path)` | 文件浏览 + 上传进度 | IFilesService |
-| `usePlayers(serverId)` | 玩家列表轮询 | A2S + RCON Players |
+所有路由是工厂函数 `createXxxRouter(deps): Router`，统一 `{ data }` / `{ error }` 响应，`authenticateToken` 保护业务端点，`validate(schema)` 做 zod 输入校验，`asyncHandler` 消除 try/catch。挂载见 §5.10。
+
+### 3.4 WebSocket 网关（WsBroadcaster）
+
+- `verifyClient` 校验 `?token=<access_token>`；无 token / 无效 → 401 拒绝。
+- 建连后客户端 **5 秒内必须发 `subscribe`**，否则关闭（code 1008）。
+- 订阅模型：`serverIds` + `eventTypes` 双过滤；`serverIds: []` + `eventTypes: null` = 接收全部。
+- 入站消息仅两类：`subscribe`、`terminal_input`（写入对应 PTY stdin）。
+- 心跳保活：每 30s ping，未回 pong 的死连接 terminate。
+- `broadcast` 按订阅过滤路由到对应 WS 连接。
+
+---
+
+## 4. 前端组件图（Level 3b）
+
+### 4.1 路由树
+
+`App.tsx`（BrowserRouter；未认证 → LoginPage；认证后套 AppLayout = Sidebar + main）：
+
+```
+/login                          → LoginPage（未认证时的唯一入口）
+/                               → DashboardPage（实例列表 + 统计）
+/:serverId/console              → ConsolePage（xterm.js 终端）
+/:serverId/mods                 → ModsPage（创意工坊浏览 + 已下载管理）
+/:serverId/config/commands      → ConfigPage（Commands.dat / Config.txt / Workshop / OpenMod / RocketMod Tab）
+/:serverId/files                → FilesPage（文件浏览器）
+/:serverId/server-setup         → ServerSetupPage（安装引导 + 实例控制 + 计划任务）
+/:serverId/settings             → SettingsPage（WebAPI Key / 改密）
+```
+
+### 4.2 组件分层
+
+```
+components/
+├── layout/       Sidebar（全局导航）
+├── shared/       跨页复用业务组件：PageState / DataTable / SearchInput / ConfirmDialog /
+│                 Dialog / Dropdown / TabBar / Card / ConfigField / ConfigSection /
+│                 ConfigToggle / PaginationBar / PasswordInput
+├── ui/           shadcn/ui 原生包装：button / input / card / label / select / switch / alert / sonner
+├── console/      Terminal（xterm.js 终端渲染 + 键盘输入 → WS terminal_input）
+├── mods/         ModCard / ModCardSkeleton / ModDetailDialog
+├── server-setup/ U3dsCard / SteamCmdCard / ServerControlCard / CreateServerDialog /
+│                 LaunchCommandsDialog / ScheduledTaskDialog / ScheduledTasksCard / SteamCmdPathDialog
+├── stats/        StatCard
+└── pages/        LoginPage / DashboardPage / ConsolePage / ModsPage / ConfigPage /
+                  FilesPage / ServerSetupPage / SettingsPage（+ loginSchema.ts）
+```
+
+**铁律**：同一 JSX 模式 ≥3 次提取到 `shared/`；页面必须用 `<PageState>` 包裹；表单必须 react-hook-form + zod；样式走 Tailwind class，禁止手写 hex 色值。
+
+### 4.3 Hooks 与 Context
+
+| Hook / Context | 职责 |
+|---|---|
+| `useServer()` | 实例列表。挂载拉一次 + 手动 refresh（不轮询）；订阅 WS `state_change` 实时更新单个实例状态；addServer/removeServer/updateServer 走真实 API |
+| `useServerActions()` | 实例 start / stop / restart，错误抛后端中文 message |
+| `useConsole(serverId)` | 控制台输出缓冲（最多 500 行）+ 命令发送（WS `terminal_input`，拼 `\r`）+ `sendTerminalInput`（xterm 原始输入）+ 退避重连 |
+| `useConsoleHistory()` | 命令历史（↑↓ 翻页） |
+| `useSteamCmdProgress({ jobId })` | SteamCMD 进度订阅（独立 WS + jobId 过滤 + 退避重连） |
+| `AuthContext` | JWT 会话：登录/恢复/注销，`useAuth()` null-guard |
+| `WebSocketContext` | WS 事件总线：`subscribe(listener) => unsubscribe`；挂载即建连，5s 内发 subscribe；WS 401 退避重连 |
 
 ---
 
 ## 5. 模块接口契约
 
-> 所有接口定义在 `shared/contracts/` 目录。使用 branded types 防止原始类型混淆。
-> **`shared/schemas/`（已实现）**：Zod schema → `z.infer` 派生 TS 类型 → `zod-openapi` 生成 OpenAPI 3.0 规范。运行时校验替代手写参数检查，前后端共用同一 schema。
+> 契约定义在 `shared/contracts/`（接口）与 `shared/types/`（类型），前后端共用。以下为摘要——精确签名以源码为准。
 
-### 5.1 共享类型 (`shared/types/branded.ts`)
+### 5.1 领域类型
 
-```typescript
-// Branded types — 编译期类型安全，运行时是原始 string/number
-// 是整个 shared/ 包的类型系统基础，防止原始类型混淆（如把 WorkshopFileId 当 ServerId 传）
-type ServerId = string & { readonly __brand: 'ServerId' };
-type SteamId64 = string & { readonly __brand: 'SteamId64' };
-type WorkshopFileId = string & { readonly __brand: 'WorkshopFileId' };
-type ModId = number & { readonly __brand: 'ModId' };
-type Port = number & { readonly __brand: 'Port' };
-```
+**Branded types**（`shared/types/branded.ts`）：`ServerId`、`SteamId64`、`WorkshopFileId`、`Port`——编译期类型安全，运行时是原始 string/number。
 
-### 5.1a 领域数据类型 (`shared/types/domain.ts`)
+**ServerConfig**（`shared/types/domain.ts`）：
 
 ```typescript
-// 服务端配置
 interface ServerConfig {
-  id: ServerId;
+  id: ServerId;              // ServerID，对应 Servers/<ServerID> 目录名
   name: string;
-  gamePort: Port;
-  ownerSteamId: SteamId64;
-  installDir: string;            // U3DS 安装根目录
-  rconPassword?: string;          // 明文传入，内部 AES-GCM 加密存储
-}
-
-// Commands.dat 解析结果
-// 保留未知键是 CLAUDE.md §4.3 硬约束——面板不能删除不认识的指令
-interface CommandsDatRecord {
-  known: Map<KnownCommandKey, string>;     // 已知字段：Port / Map / Mode / Name 等
-  unknown: Map<string, string>;            // 未知键完整保留 → 写回时原样输出
-  comments: string[];                       // # 和 ; 开头的注释行，保留位置
-}
-
-// Config.txt 解析结果（继承 happy-forging-zephyr 的 section/comment/known 模型）
-interface ConfigTxtRecord {
-  sections: ConfigSection[];
-}
-interface ConfigSection {
-  name: string;                              // 段名（如 "Browser"、"_unlabeled"）
-  entries: ConfigEntry[];
-}
-interface ConfigEntry {
-  key: string;
-  value: string | null;                      // null = 使用默认值
-  comment: string | null;                    // 紧邻该行的 > 注释
-  known: boolean;                            // false → 前端渲染通用文本框 + ⚠ 标记
-  type?: 'string' | 'bool' | 'int';          // known=false 时自动推断
-}
-
-// WorkshopDownloadConfig.json
-interface WorkshopConfig {
-  File_IDs: WorkshopFileId[];
-  Should_Monitor_Updates: boolean;
-  Query_Cache_Max_Age_Seconds: number;
-  Max_Query_Retries: number;
-  Use_Cached_Downloads: boolean;
-  Shutdown_Update_Detected_Timer: number;
-  Shutdown_Update_Detected_Message: string;
-  Shutdown_Kick_Message: string;
-}
-
-// A2S 查询结果
-interface A2SInfo {
-  players: number;
-  maxPlayers: number;
-  map: string;
-  version: string;
-  latency: number;               // ms
-}
-
-// Workshop Mod 元数据
-interface WorkshopModMeta {
-  fileId: WorkshopFileId;
-  title: string;
-  author: string;
-  description: string;
-  previewUrl?: string;
-  fileSize?: number;
-  updatedAt?: string;
-  tags?: string[];
-}
-
-// 文件条目
-interface FileEntry {
-  name: string;
-  path: string;                  // 相对路径
-  isDirectory: boolean;
-  size: number;
-  modifiedAt: string;
-}
-
-interface FilePermissions {
-  owner: 'read' | 'write' | 'none';
-  group: 'read' | 'write' | 'none';
-  other: 'read' | 'write' | 'none';
-}
-
-// SteamCMD 状态
-interface SteamCmdStatus {
-  isInstalled: boolean;
-  version?: string;
-  installPath?: string;
-  lastChecked?: string;
+  gamePort: Port;            // 游戏监听端口
+  ownerSteamId: SteamId64;   // 服主 SteamID64
+  installDir: string;        // 全局 U3DS 安装根目录
+  startCommand?: string;     // U3DS 启动命令；留空 = 探测生成默认模板
 }
 ```
 
-### 5.2 状态机类型 (`shared/types/state.ts`)
+**配置解析结果**：`CommandsDatRecord`（`known` / `unknown` / `comments`——保留未知键）、`ConfigTxtRecord`（`sections: Record<string, ConfigSection>`）、`WorkshopConfig`（`File_IDs` / `Should_Monitor_Updates` / 计时器字段）。
+
+**Workshop 类型**：`WorkshopModMeta`（含 `authorName`、`voteScore`）、`WorkshopAcf` / `WorkshopAcfItem`（`fileId` / `timeupdated` / `size` / `manifest`）。
+
+### 5.2 状态机（`shared/types/state.ts`）
 
 ```typescript
 enum ServerState {
-  STOPPED = 'STOPPED',
-  STARTING = 'STARTING',
-  RUNNING = 'RUNNING',
-  DEGRADED = 'DEGRADED',
-  STOPPING = 'STOPPING',
+  STOPPED = "STOPPED",
+  STARTING = "STARTING",
+  RUNNING = "RUNNING",
+  STOPPING = "STOPPING",
 }
 
 type ActiveOperation =
-  | { type: 'none' }
-  | { type: 'manual_start'; startedAt: string }
-  | { type: 'manual_restart'; startedAt: string }
-  | { type: 'manual_stop'; startedAt: string }
-  | { type: 'mod_apply'; startedAt: string; modIds: string[] }
-  | { type: 'steamcmd_update'; startedAt: string }
-  | { type: 'initial_setup'; startedAt: string };
-
-enum RconProtocol {
-  OPENMOD = 'openmod',
-  ROCKETMOD = 'rocketmod',
-  UNREACHABLE = 'unreachable',
-}
-
-// RCON 连接级状态（与 ServerState 是不同层级的概念）
-// RconManager 回调此状态 → ServerManager 消费后决定是否将 ServerState 转为 DEGRADED
-enum RconConnectionState {
-  CONNECTED = 'connected',
-  DISCONNECTED = 'disconnected',
-  DEGRADED = 'degraded',    // 连续 3 次 ping 失败，尝试重连中
-}
+  | { type: "none" }
+  | { type: "manual_start"; startedAt: string }
+  | { type: "manual_restart"; startedAt: string }
+  | { type: "manual_stop"; startedAt: string }
+  | { type: "mod_apply"; startedAt: string; modIds: string[] }
+  | { type: "steamcmd_update"; startedAt: string }
+  | { type: "initial_setup"; startedAt: string };
 ```
 
-### 5.3 IServerManager (`shared/contracts/server.ts`)
+- **转换**：`STOPPED → STARTING → RUNNING → STOPPING → STOPPED`。
+- **决定性状态由 PTY 进程存活驱动**：bash 活 = STARTING / RUNNING / STOPPING；bash 死 = STOPPED。无中间模糊态。
+- **`activeOperation` 竞态门控**：非 `none` 时，start/stop/restart/applyModChanges 返回 409，防「自动重启 + 手动重启」并发。
+- `steamcmd_update` / `initial_setup` 变体为保留分支（当前无写入点）。
+
+### 5.3 IServerManager（`shared/contracts/server.ts`）
 
 ```typescript
 interface IServerManager {
-  // 查询
   getState(serverId: ServerId): ServerState;
   getActiveOperation(serverId: ServerId): ActiveOperation;
   listServers(): Promise<ServerConfig[]>;
+  listServersSync(): string[];
+  listActiveServerIds(): ServerId[];   // 状态非 STOPPED 的实例
 
-  // 服务端创建/配置（首次设置 RCON 密码等）
   createServer(config: ServerConfig): Promise<void>;
   configureServer(serverId: ServerId, patch: Partial<ServerConfig>): Promise<void>;
+  removeServer(serverId: ServerId): Promise<void>;
 
-  // 生命周期操作
-  start(serverId: ServerId): Promise<void>;
+  start(serverId: ServerId): Promise<{ terminalSessionId: string; pid: number }>;
   stop(serverId: ServerId, reason: string): Promise<void>;
   restart(serverId: ServerId, reason: string): Promise<void>;
   forceStop(serverId: ServerId): Promise<void>;
 
-  // Mod 变更流水线（编排 ConfigService + RconManager + ProcessSupervisor）
   applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void>;
-
-  // SteamCMD 更新流水线
   updateServerBinaries(installDir: string): Promise<void>;
 }
 ```
 
-### 5.4 IConfigService (`shared/contracts/config.ts`)
+### 5.4 IConfigService（`shared/contracts/config.ts`）
+
+- `readCommandsDat` / `writeCommandsDat(serverId, config, expectedMtime?)`——乐观锁：mtime 不一致抛 `config_conflict`。
+- `readConfigTxt` / `writeConfigTxt`；`readWorkshopConfig` / `writeWorkshopFileIds`（面板只写 File_IDs）。
+- `backup(serverId, filePath): Promise<string>` / `rollback(serverId, filePath, backupPath)`。
+- OpenMod / RocketMod 配置读写（`readOpenModConfig` / `writeRocketModConfig` 等）。
+
+### 5.5 IPtyManager（`shared/contracts/pty.ts`）
 
 ```typescript
-interface IConfigService {
-  // Commands.dat — 保留未知键，按行解析/序列化
-  readCommandsDat(serverId: ServerId): Promise<CommandsDatRecord>;
-  writeCommandsDat(serverId: ServerId, config: CommandsDatRecord, expectedVersion?: number): Promise<void>;
+type PtyKey = ServerId | string;   // ServerId（实例）或 jobId（SteamCMD 长任务）
 
-  // Config.txt — 通用 Key-Value + 注释保留
-  readConfigTxt(serverId: ServerId): Promise<ConfigTxtRecord>;
-  writeConfigTxt(serverId: ServerId, entries: ConfigTxtRecord, expectedVersion?: number): Promise<void>;
-
-  // WorkshopDownloadConfig.json — 面板只写 File_IDs + Should_Monitor_Updates（CLAUDE.md §4.4）
-  // 其他字段只读展示；写前自动备份（原子操作，调用者无感知）
-  readWorkshopConfig(serverId: ServerId): Promise<WorkshopConfig>;
-  writeWorkshopFileIds(serverId: ServerId, fileIds: WorkshopFileId[], expectedVersion?: number): Promise<void>;
-
-  // 显式备份（Mod 流水线等需在写前独立备份的场景）
-  backup(serverId: ServerId, filePath: string): Promise<string>;  // 返回备份路径
-
-  // OpenMod / RocketMod 插件配置
-  readOpenModConfig(serverId: ServerId, pluginId: string): Promise<Record<string, unknown>>;
-  writeOpenModConfig(serverId: ServerId, pluginId: string, config: Record<string, unknown>): Promise<void>;
-  readRocketModConfig(serverId: ServerId, pluginName: string): Promise<Record<string, unknown>>;
-  writeRocketModConfig(serverId: ServerId, pluginName: string, config: Record<string, unknown>): Promise<void>;
+interface IPtyManager {
+  spawn(serverId: PtyKey, file: string, args: string[], options?): Promise<number>;  // → PID
+  write(serverId: PtyKey, data: string): void;   // 同步，原样写入 stdin，不自动加 \r
+  resize(serverId: PtyKey, cols: number, rows: number): void;
+  kill(serverId: PtyKey): Promise<void>;         // SIGTERM → 等 5s → SIGKILL 兜底
+  forceKill(serverId: PtyKey): void;             // SIGKILL 立即
+  isRunning(serverId: PtyKey): boolean;
+  onData(serverId: PtyKey, cb: (line: string) => void): void;   // 单行回调（内部按 \n 切分）
+  onExit(serverId: PtyKey, cb: ({ exitCode, signal }) => void): void;
+  waitExit(serverId: PtyKey, timeoutMs: number): Promise<boolean>;
+  destroy(): Promise<void>;
 }
 ```
 
-### 5.5 IRconManager (`shared/contracts/rcon.ts`)
+### 5.6 IProcessSupervisor（`shared/contracts/process.ts`）
 
-```typescript
-interface IRconManager {
-  connect(serverId: ServerId): Promise<void>;
-  disconnect(serverId: ServerId): void;
-  execute(serverId: ServerId, command: string): Promise<string>;
-  getProtocol(serverId: ServerId): RconProtocol;
-  isReachable(serverId: ServerId): boolean;
-  destroy(): Promise<void>;  // 关闭所有 TCP 连接，移除心跳定时器
+- `spawn(key: ServerId | string, command, args, cwd?): Promise<number>`——非 PTY 子进程。
+- `gracefulShutdown(key, timeoutMs?)`、`waitForExit(key, timeoutMs): Promise<number | null>`（返回退出码，null = 无进程）、`forceKill`、`isRunning`、`onStdout`、`onCrash`、`destroy`。
 
-  // 回调注册（非 EventEmitter，类型安全）
-  onStateChange(callback: (serverId: ServerId, state: RconConnectionState) => void): void;
-}
-
-// RconManager 内部责任：
-// · 自动探测 OpenMod → RocketMod 回落
-// · 凭证 AES-GCM 解密后使用，绝不记录到日志
-// · execute() 入参清洗：去除 \r \n \0 及所有 < 0x20 的控制字符
-// · 60s 协议缓存 + 30s 心跳 ping
-// · 连续 3 次 ping 失败 → 回调 onStateChange(serverId, DISCONNECTED)
-```
-
-### 5.6 IProcessSupervisor (`shared/contracts/process.ts`)
-
-```typescript
-interface IProcessSupervisor {
-  spawn(serverId: ServerId, command: string, args: string[]): Promise<number>; // 返回 PID
-  gracefulShutdown(serverId: ServerId, timeoutMs?: number): Promise<void>;     // 默认 30s，发送关闭信号
-  waitForExit(serverId: ServerId, timeoutMs: number): Promise<void>;           // 等待进程自然退出，超时 throw
-  forceKill(serverId: ServerId): void;
-  isRunning(serverId: ServerId): boolean;
-  destroy(): Promise<void>;          // 杀死所有管理的子进程，移除所有监听器
-
-  // stdout 输出 → LogStreamer 消费
-  onStdout(serverId: ServerId, callback: (line: string) => void): void;
-  // 进程异常退出 → ServerManager 消费
-  onCrash(callback: (serverId: ServerId, exitCode: number | null) => void): void;
-}
-```
-
-### 5.7 IBroadcaster (`shared/contracts/broadcast.ts`)
+### 5.7 IBroadcaster 与事件（`shared/contracts/broadcast.ts`）
 
 ```typescript
 type ServerEvent =
-  | { type: 'state_change'; serverId: ServerId; from: ServerState; to: ServerState }
-  | { type: 'console_line'; serverId: ServerId; line: string; source: 'stdout' | 'file' }
-  | { type: 'rcon_status'; serverId: ServerId; protocol: RconProtocol; reachable: boolean }
-  | { type: 'player_join'; serverId: ServerId; playerName: string; steamId: SteamId64 }
-  | { type: 'player_leave'; serverId: ServerId; playerName: string; steamId: SteamId64 }
-  | { type: 'mod_apply_progress'; serverId: ServerId; stage: string; remainingSeconds?: number }
-  | { type: 'file_changed'; serverId: ServerId; path: string }
-  | { type: 'steamcmd_progress'; stage: string; percent?: number };
+  | { type: "state_change"; serverId; from: ServerState; to: ServerState }
+  | { type: "console_line"; serverId; line: string; source: "stdout" | "file" }
+  | { type: "player_join"; serverId; playerName: string; steamId: SteamId64 }
+  | { type: "player_leave"; serverId; playerName: string; steamId: SteamId64 }
+  | { type: "mod_apply_progress"; serverId; stage: string; remainingSeconds?: number }
+  | { type: "file_changed"; serverId; path: string }
+  | { type: "steamcmd_progress"; stage: string; percent?: number; jobId?: string; latestVersion?: string };
 
 interface IBroadcaster {
   broadcast(event: ServerEvent): void;
-  register(ws: WebSocket, serverIds: ServerId[]): void;     // 订阅指定 serverId 的事件
-  unregister(ws: WebSocket): void;
-  destroy(): Promise<void>;          // 关闭所有 ws 连接，移除心跳定时器
+  register(ws, serverIds): void;
+  unregister(ws): void;
+  destroy(): Promise<void>;
 }
-
-// WsBroadcaster 是 IBroadcaster 的唯一实现，位于 API 层。
-// 核心域层只依赖 IBroadcaster 接口。
-// WebSocket 升级时通过 JWT 验证（verifyClient 回调），
-// 验证失败拒绝连接。
 ```
 
-### 5.8 IFilesService (`shared/contracts/files.ts`)
+> `player_join` / `player_leave` / `file_changed` 为契约中的保留变体（当前无广播点）。另两类消息 `subscribed`（建连确认回执）与 `error`（消息错误 / PTY 不可用）由 ws 网关运行时发出，未纳入上述类型 union。
+
+### 5.8 WS 客户端消息（`shared/contracts/ws.ts`）
 
 ```typescript
-interface IFilesService {
-  listDirectory(serverId: ServerId, relativePath: string): Promise<FileEntry[]>;
-  readFile(serverId: ServerId, relativePath: string, encoding?: BufferEncoding): Promise<Buffer>;
-  writeFile(serverId: ServerId, relativePath: string, content: Buffer): Promise<void>;
-  deleteEntry(serverId: ServerId, relativePath: string): Promise<void>;
-  createDirectory(serverId: ServerId, relativePath: string): Promise<void>;
-  renameEntry(serverId: ServerId, relativePath: string, newName: string): Promise<void>;
-  getPermissions(serverId: ServerId, relativePath: string): Promise<FilePermissions>;
-
-  // 流式上传（大文件 > 1MB）
-  createUploadStream(serverId: ServerId, relativePath: string, size: number): WritableStream;
-}
-
-// 安全约束（实现层强制执行，接口层标注）：
-// 1. 所有路径必须通过 fs.realpath() 解析后再做前缀匹配
-// 2. 白名单路径前缀：Servers/<ID>/Server/ | Workshop/ | Logs/ | Rocket/ | openmod/ | Bundles/
-// 3. 拒绝包含 \x00 的路径，拒绝 symlink 出白名单的路径
-// 4. 已知敏感字段（GSLT/Password/Login_Token/RCON Password）在通用读取时替换为 [REDACTED]
+type ClientWsMessage =
+  | { type: "subscribe"; serverIds: ServerId[]; eventTypes: string[] | null }
+  | { type: "terminal_input"; serverId: ServerId; data: string };  // xterm 原始输入 → PTY stdin
 ```
 
-### 5.9 其他模块接口
+### 5.9 其他接口
 
-```typescript
-// shared/contracts/auth.ts
-interface IAuthService {
-  login(username: string, password: string): Promise<{ accessToken: string; refreshToken: string }>;
-  refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }>;
-  logout(refreshJti: string): Promise<void>;
-  validateAccessToken(token: string): JwtPayload | null;
-}
-
-// shared/contracts/a2s.ts
-interface IA2SClient {
-  query(serverId: ServerId): Promise<A2SInfo>;
-  destroy(): Promise<void>;  // 关闭 UDP socket
-  // 返回：{ players: number, maxPlayers: number, map: string, version: string, latency: number }
-  // 超时 3s，UDP 协议，只读
-}
-
-// shared/contracts/filelock.ts
-interface IFileLockProvider {
-  acquire(path: string, owner: string, timeoutMs?: number): Promise<void>;  // 默认 10s 超时
-  release(path: string, owner: string): void;
-  isLocked(path: string): boolean;
-  // ConfigService 和 FilesService 共享同一实例，按文件路径互斥
-}
-
-// shared/contracts/steamcmd.ts
-interface ISteamCmdManager {
-  getStatus(): Promise<SteamCmdStatus>;            // 安装状态/路径/版本
-  install(installDir: string): Promise<void>;      // 下载 SteamCMD 本身
-  updateU3DS(installDir: string): Promise<void>;   // app_update 1110390 validate
-  // 生命周期：updateU3DS 内部先检查所有 U3DS 实例是否 STOPPED，否则拒绝
-}
-
-// shared/contracts/workshop.ts
-interface IWorkshopMetadataService {
-  getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null>;
-  searchMods(query: string): Promise<WorkshopModMeta[]>;
-  refreshCache(modId: WorkshopFileId): Promise<void>;
-  // WebAPI Key（IPublishedFileService/GetDetails）主路径；?xml=1 已废弃
-  // 缓存：DB-backed LRU，stale-while-revalidate（600s 后尝试刷新但不驱逐旧数据）
-}
-
-// shared/contracts/logstream.ts
-interface ILogStreamer {
-  startStreaming(serverId: ServerId): void;
-  stopStreaming(serverId: ServerId): void;
-  // 内部：tail 文件 + 消费 ProcessSupervisor.onStdout（通过 PTY 伪终端采集，
-  // PTY 二进制自举参考 .research/GameServerManager/start.sh 第 36–60 行）
-  // 输出：通过 IBroadcaster.broadcast({type:'console_line',...})
-  // 安全：所有输出经过双重凭证脱敏——已知密钥精确匹配 + 正则模式匹配
-}
-```
-### 5.10 REST API 端点约定
-
-所有 REST 端点遵循以下约定：
-
-**URL 模式**：`/api/servers/:serverId/<resource>`（全局端点用 `/api/<resource>`）
-
-**状态码语义**：
-| 状态码 | 语义 |
+| 接口 | 要点 |
 |---|---|
-| 200 | 成功（GET/PUT） |
-| 201 | 创建成功（POST） |
-| 202 | 已接受，异步处理中（start/restart/mod apply） |
-| 400 | 请求参数校验失败 |
-| 401 | 未认证（JWT 过期/无效） |
-| 403 | 已认证但权限不足（Owner 专属指令） |
-| 404 | 资源不存在（ServerID 无效） |
-| 409 | 操作冲突（activeOperation 非 none / 乐观锁 version 不匹配） |
-| 500 | 服务端内部错误（不暴露堆栈） |
+| `IServerDiscovery` | `scanSync(installDir): DiscoveredServer[]`——目录扫描真源，纯同步 |
+| `IAuthService` | `login` / `refresh` / `logout(refreshJti)` / `validateAccessToken` / `changePassword(userId, current, new)` |
+| `ISteamCmdManager` | `getStatus` / `setInstallPath` / `installU3DS(dir): Promise<jobId>` / `updateU3DS(dir): Promise<jobId>` / `downloadWorkshopItem(dir, ids, serverId?): Promise<jobId>` / `checkUpdate(dir?): Promise<jobId>` / `reinstall(dir?): Promise<jobId>` |
+| `IWorkshopMetadataService` | `getModDetails(id): Promise<WorkshopModMeta \| null>` / `browseMods(query, sort, range, type, page, pageSize): Promise<BrowseResult>` / `batchGetDetails(ids)`——0 缓存，实时查 WebAPI |
+| `IWorkshopAcfService` | `parse` / `write` / `listItems` / `listStagingItems` / `parseStagingItem` / `addItem` / `removeItem` / `backup` / `rollback` |
+| `IWorkshopApplyService` | `applyStaged(serverId)`——staging → content 移动 + acf 合并 + File_IDs 同步，失败全回滚 |
+| `IWorkshopDeleteService` | `deleteMod(serverId, fileId): Promise<ModDeleteResult>`——acf + content + File_IDs 三处同步 |
+| `IFilesService` | `listDirectory` / `readFile` / `writeFile` / `deleteEntry` / `createDirectory` / `renameEntry` / `getPermissions` / `createUploadStream` |
+| `IFileLockProvider` | `acquire(path, owner, timeoutMs?)` / `release` / `isLocked` |
+| `ILogStreamer` | `startStreaming(serverId)` / `stopStreaming(serverId)` |
 
-**响应格式**：
-```typescript
-// 成功
-{ "data": T }
+**Mod 枚举**：`ModSort`（popular / rated / published / updated / subscribed / relevance）、`ModTimeRange`（day / week / month / months3 / months6 / year / all）、`ModSearchType`（text / id）。
 
-// 错误
-{ "error": { "code": string, "message": string, "detail"?: string } }
-```
+### 5.10 REST 端点表
 
-**端点清单**（§6 数据流中引用的核心端点）：
+> 统一 `{ data }` 成功 / `{ error: { code, message } }` 失败。长任务端点（SteamCMD、实例启停）返回 **202** + jobId / terminalSessionId。
 
-| 方法 | 路径 | 用途 | 对应接口 |
-|---|---|---|---|
-| POST | `/api/auth/login` | 登录 | IAuthService.login |
-| POST | `/api/auth/refresh` | 刷新 token | IAuthService.refresh |
-| POST | `/api/auth/logout` | 注销 | IAuthService.logout |
-| GET | `/api/servers` | 列出所有服务端 | IServerManager.listServers |
-| POST | `/api/servers` | 创建服务端 | IServerManager.createServer |
-| PATCH | `/api/servers/:id` | 配置服务端 | IServerManager.configureServer |
-| POST | `/api/servers/:id/start` | 启动 | IServerManager.start |
-| POST | `/api/servers/:id/stop` | 停止 | IServerManager.stop |
-| POST | `/api/servers/:id/restart` | 重启 | IServerManager.restart |
-| GET | `/api/mods/search` | 浏览/搜索 Steam 工坊 | IWorkshopMetadataService.browseMods |
-| GET | `/api/mods/:fileId` | 单个 Mod 详情 | IWorkshopMetadataService.getModDetails |
-| POST | `/api/mods/batch-details` | 批量补元数据 | IWorkshopMetadataService.batchGetDetails |
-| GET | `/api/servers/:id/mods/downloaded` | 已下载 Mod 列表 | IWorkshopAcfService.listItems |
-| POST | `/api/servers/:id/mods/download` | 下载到 staging | ISteamCmdManager.downloadWorkshopItem |
-| POST | `/api/servers/:id/mods/apply` | 应用 Mod 变更 | IServerManager.applyModChanges |
-| DELETE | `/api/servers/:id/mods/:fileId` | 删除 Mod | IWorkshopDeleteService.deleteMod |
-| POST | `/api/servers/:id/rcon/execute` | 执行 RCON 命令 | IRconManager.execute |
-| GET | `/api/servers/:id/config/commands` | 读 Commands.dat | IConfigService.readCommandsDat |
-| PUT | `/api/servers/:id/config/commands` | 写 Commands.dat | IConfigService.writeCommandsDat |
-| GET | `/api/servers/:id/config/txt` | 读 Config.txt | IConfigService.readConfigTxt |
-| PUT | `/api/servers/:id/config/txt` | 写 Config.txt | IConfigService.writeConfigTxt |
-| GET | `/api/servers/:id/config/workshop` | 读 Workshop 配置 | IConfigService.readWorkshopConfig |
-| PUT | `/api/servers/:id/config/workshop` | 写 Workshop File IDs | IConfigService.writeWorkshopFileIds |
-| GET | `/api/servers/:id/files` | 文件浏览 | IFilesService.listDirectory |
-| POST | `/api/servers/:id/files/upload` | 文件上传 | IFilesService.createUploadStream |
-| GET | `/api/steamcmd/status` | SteamCMD 状态 | ISteamCmdManager.getStatus |
-| POST | `/api/steamcmd/update` | 更新 U3DS | ISteamCmdManager.updateU3DS |
-| ~~GET `/api/workshop/mods/:fileId`~~ | ~~Mod 详情（v1 废弃，改 `/api/mods/:fileId`）~~ | IWorkshopMetadataService.getModDetails |
+| 前缀 | 端点 | 语义 |
+|---|---|---|
+| `/api/auth` | `POST /login` | 登录 → `{ accessToken, refreshToken }` |
+| | `POST /refresh` | refresh token 换新对 |
+| | `POST /logout` | 注销（jti 入黑名单） |
+| | `POST /change-password` | 修改密码（authenticateToken 保护） |
+| `/api/servers` | `GET /` | 实例列表（目录扫描真源） |
+| | `POST /` | 创建实例（写 Commands.dat 即成立） |
+| | `PATCH /:id` | 更新配置（startCommand → settings K-V；身份字段 → Commands.dat） |
+| | `DELETE /:id` | 删除实例（先 stop → 删目录 → 删 startCommand K-V） |
+| | `POST /:id/start` | **202** `{ terminalSessionId, pid }` |
+| | `POST /:id/stop` | **202**（PTY Save + Shutdown + ctrl+c） |
+| | `POST /:id/restart` | **202** |
+| `/api/servers/:id/mods` | `GET /downloaded` | 已下载列表（主 acf + staging acf 合并 + `applied` 状态） |
+| | `POST /download` | **202** `{ jobId }` 下载到 staging |
+| | `POST /apply` | **202** `{ operationId }` 应用 + 重启流水线 |
+| | `DELETE /:fileId` | 删除 Mod（U3DS 须 STOPPED） |
+| | `GET /acf` | acf 真源列表 |
+| `/api/mods` | `GET /search` | 创意工坊浏览/搜索（QueryFiles + GetDetails） |
+| | `GET /:fileId` | 单个 Mod 详情 |
+| | `POST /batch-details` | 批量补元数据 |
+| `/api/servers/:id/config` | `GET/PUT /commands` | Commands.dat（乐观锁 expectedMtime） |
+| | `GET/PUT /txt` | Config.txt |
+| | `GET/PUT /workshop` | WorkshopDownloadConfig.json（PUT 只写 File_IDs） |
+| `/api/servers/:id`（files） | `GET /` `GET /content` `POST /upload` `POST /files/raw` `GET /files/raw` `POST /mkdir` `DELETE /` `PUT /rename` | 文件浏览/读写/二进制上传下载/建目录/删除/重命名 |
+| `/api/steamcmd` | `GET /status` | SteamCMD 状态 |
+| | `POST /install-u3ds` | **202** `{ jobId }` 安装 U3DS |
+| | `POST /update` | **202** `{ jobId }` 更新 U3DS 二进制 |
+| | `POST /download-workshop` | **202** `{ jobId }` 下载 Workshop 到 staging |
+| | `POST /check-update` | **202** `{ jobId }` 检查更新（结果经 WS 推 latestVersion） |
+| | `POST /reinstall` | **202** `{ jobId }` 重装 SteamCMD |
+| | `PATCH /install-path` | 设置 SteamCMD 安装路径（内存态） |
+| `/api/workshop` | `GET /mods/:fileId` `GET /browse` | 旧版浏览端点（兼容） |
+| `/api/settings` | `POST /webapi-key` `GET /webapi-key` `DELETE /webapi-key` | WebAPI Key 加密存取 |
+| `/api/health` | `GET /` | 健康检查（无需认证） |
 
 ---
 
 ## 6. 关键数据流
 
-### 6.1 服务端启动序列
+### 6.1 启动序列
 
 ```
 POST /api/servers/:id/start
         │
         ▼
-  ServerManager.start(id)
+ServerManager.start(id)
         │
-        ├─ check activeOperation.type === 'none'  （否则 409 Conflict）
-        ├─ state → STARTING
-        ├─ IBroadcaster.broadcast({type:'state_change', to:STARTING})
+        ├─ activeOperation === 'none'（否则 409）
+        ├─ 已在 RUNNING/STARTING → 幂等返回已有会话
         │
-        ├─ IProcessSupervisor.spawn(id, './ServerHelper.sh',
-        │     ['+InternetServer/' + id, '-ThreadedConsole'])
+        ├─ activeOperation = {type:'manual_start'}
+        ├─ state → STARTING（广播 state_change）
         │
-        ├─ poll: A2SClient.query(id) 每 3s 直到返回有效响应
-        │     │
-        │     ├─ 60s 内成功 ──► state → RUNNING
-        │     │                 IBroadcaster.broadcast({type:'state_change', to:RUNNING})
-        │     │
-        │     └─ 60s 超时 ──► state → STARTING (进程存活但 A2S/RCON 不可达)
-        │                    UI 显示 "服务器启动超时，可能正在下载 Mod"
-        │
-        └─ RconManager.connect(id)
-              │
-              ├─ 成功 ──► RconManager.onStateChange → ServerManager
-              │           state → RUNNING (如果还没到)
-              │
-              └─ 失败 ──► state 保持 RUNNING (进程在跑)
-                          rconReachable = false
+        └─ startPty(id)
+             │
+             ├─ 生成/复用 startCommand：
+             │   未配置 → detectStartScript(installDir)
+             │   （优先 ServerHelper.sh，回落 ExampleServer.sh）
+             │   → chmod +x → `./<script> +InternetServer/<id> -ThreadedConsole`
+             │
+             ├─ spawn 永驻 PTY bash（/bin/bash, cwd=installDir）
+             │   → 返回 pid，terminalSessionId = serverId
+             │
+             ├─ 注册 onData → console_line 广播（PTY stdout → xterm.js）
+             ├─ 注册 onExit → bash 退出 → STOPPED + 崩溃重启判定
+             ├─ sessionEpoch 自增（防过期 1s timer 误写新会话）
+             │
+             └─ 立即返回 { terminalSessionId, pid }
+                     │
+                     ▼
+              HTTP 202 立即响应（不等 U3DS 就绪）
+                     │
+              （1s 后，异步）
+                     │
+              setTimeout:
+                ├─ sessionEpoch 归属校验（过期则丢弃）
+                ├─ state 仍是 STARTING
+                ├─ PTY 仍在跑
+                └─ pty.write(id, `${startCommand}\r`)
+                   → state → RUNNING（广播 state_change）
 ```
+
+前端拿到 `terminalSessionId` 跳转控制台页，`ConsolePage` 的 `Terminal` 立即挂上 WS `console_line` 订阅，全程无阻塞等待。
+
+**崩溃重启守卫**：bash 退出（exitCode ≠ 0）且非主动停止类操作（manual_stop / manual_restart / mod_apply）期间 → 5 秒后自动 `startInternal` 拉起；`exitCode === 0` 或实例已删除 → 不重启。
 
 ### 6.2 Mod 变更 + 重启流水线
 
@@ -854,184 +502,150 @@ POST /api/servers/:id/start
 POST /api/servers/:id/mods/apply   { fileIds: [...] }
         │
         ▼
-  ServerManager.applyModChanges(id, modIds)
+ServerManager.applyModChanges(id, fileIds)
+  （前置：activeOperation === 'none' 且 state === RUNNING，否则 409）
         │
-        ├─ check activeOperation === 'none'  （否则 409）
-        ├─ activeOperation = {type:'mod_apply', startedAt, modIds}
+        ├─ activeOperation = {type:'mod_apply', modIds}
         │
-        ├─ ① ConfigService.backup(id, 'WorkshopDownloadConfig.json')
-        │     → 备份到面板数据目录，返回备份路径
+        ├─ ① 备份 WorkshopDownloadConfig.json（backup，失败降级 warn）
+        │    广播 mod_apply_progress {stage:'backing_up'}
         │
-        ├─ ② ConfigService.writeWorkshopFileIds(id, newIds)
+        ├─ ② 写新 File_IDs（writeWorkshopFileIds）
         │
-        ├─ ③ RconManager.execute(id, 'Say "服务器将在 60 秒后重启以应用 Mod 变更"')
-        │     IBroadcaster.broadcast({type:'mod_apply_progress', stage:'broadcasting', remaining:60})
+        ├─ ③ PTY 写 'Say "服务器将在 60 秒后重启以应用 Mod 变更"\r'
+        │    广播 {stage:'broadcasting', remainingSeconds:60}
         │
-        ├─ ④ 每隔 10s 广播一次倒计时，共 5 次（60→50→40→30→20→10）
+        ├─ ④ 依次广播倒计时 {stage:'countdown', remainingSeconds:50/40/30/20/10}
         │
-        ├─ ⑤ RconManager.execute(id, 'Save')
+        ├─ ⑤ PTY 写 'Save\r'（强制刷玩家数据到磁盘）
         │
-        ├─ ⑥ RconManager.execute(id, 'Shutdown 10 "Mod 变更重启"')
-        │     state → STOPPING
+        ├─ ⑥ PTY 写 'Shutdown 10 "Mod 变更重启"\r'
+        │    广播 {stage:'shutting_down', remainingSeconds:10}
         │
-        ├─ ⑦ ProcessSupervisor.waitForExit(id, 30s)
-        │     │
-        │     ├─ 正常退出 → state → STOPPED
-        │     └─ 30s 超时 → ProcessSupervisor.forceKill(id) → state → STOPPED
+        ├─ ⑦ 等 PTY 退出（waitExit 30s；超时 forceKill + stopRequested 置位防误判）
+        │    state → STOPPED
         │
-        ├─ ⑧ ProcessSupervisor.spawn(id, ...)  （走 §6.1 启动序列）
+        ├─ ⑦.5 WorkshopApplyService.applyStaged（进程已停，零冲突）：
+        │    ├─ 备份 acf（可选）
+        │    ├─ 解析 staging acf → 拿 staging mod 元数据
+        │    ├─ acf.addItem（每个新 mod，自带备份+回滚）
+        │    ├─ mv staging/content/<id>/ → content/<id>/（跨设备降级 cp -r + rm）
+        │    ├─ 重新读 acf → 最新 File_IDs
+        │    ├─ writeWorkshopFileIds
+        │    └─ 任一失败 → 全回滚（acf + Config 备份）
         │
-        └─ ⑨ RCON 恢复 → RconManager.execute(id, 'Say "Mod 变更已应用"')
+        ├─ ⑧ startInternal（spawn 新 bash → 1s 塞 startCommand → RUNNING）
+        │
+        └─ ⑨ PTY 写 'Say "Mod 变更已应用"\r'
               activeOperation = {type:'none'}
-              IBroadcaster.broadcast({type:'mod_apply_progress', stage:'completed'})
+              广播 {stage:'completed'}
 ```
+
+**下载 ≠ 生效**：新 Mod 的下载（`POST /mods/download`）走 SteamCMD 落到 staging，可不停服；只有 apply 流水线（以上 9 步）才让 Mod 生效，且必须重启。
 
 ### 6.3 控制台日志流（双路合并 + 凭证脱敏）
 
 ```
-  ┌─────────────────────┐    ┌──────────────────────┐
-  │ ProcessSupervisor   │    │ 文件系统               │
-  │ onStdout(line)      │    │ Servers/<ID>/Logs/    │
-  └────────┬────────────┘    └──────────┬────────────┘
-           │                            │
-           │ stdout 行 (实时)            │ fs.watch / 定时 read (轮询)
-           │                            │
-           ▼                            ▼
-  ┌──────────────────────────────────────────────────┐
-  │              LogStreamer                         │
-  │                                                  │
-  │  ① 合并两路为单一事件流（按时间戳排序）            │
-  │  ② 凭证脱敏管道：                                 │
-  │     - 匹配 /7656119\d{10}:[^\s]+/ → SteamID:[REDACTED]
-  │     - 匹配 /login\s+\S+/i → "login [REDACTED]"
-  │     - 匹配 /GSLT\s+\S+/i → "GSLT [REDACTED]"
-  │     - 匹配 /Login_Token\s+\S+/i → "Login_Token [REDACTED]"
-  │  ③ 限制频率：最多 100 行/秒，超出则批量合并          │
-  │  ④ 最多保留最近 500 行缓冲区                       │
-  └──────────────────────┬───────────────────────────┘
-                         │
+  ┌─────────────────────┐        ┌──────────────────────┐
+  │  PtyManager.onData   │        │  LogStreamer         │
+  │  (PTY stdout, 按行)   │        │  (文件 tail, 500ms)   │
+  └─────────┬───────────┘        └──────────┬───────────┘
+            │                              │
+            │ source='stdout'              │ source='file'
+            │                              │ 凭证脱敏管道：
+            │                              │   /7656119\d{10}:[^\s]+/ → SteamID:[REDACTED]
+            │                              │   /login\s+\S+/i  → login [REDACTED]
+            │                              │   /GSLT\s+\S+/i   → GSLT [REDACTED]
+            │                              │   /Login_Token\s+\S+/i → Login_Token [REDACTED]
+            │                              │   /Password\s+\S+/i → Password [REDACTED]
+            │                              │ 速率限制：≤100 行/秒
+            ▼                              ▼
+  ┌─────────────────────────────────────────────────────┐
+  │              IBroadcaster.broadcast                 │
+  │           {type:'console_line', serverId, line,     │
+  │            source:'stdout'|'file'}                  │
+  └──────────────────────┬──────────────────────────────┘
+                         │ 按 serverId 路由订阅
                          ▼
-  IBroadcaster.broadcast({type:'console_line', serverId, line, source:'stdout'|'file'})
-                         │
-                         ▼
-  WsBroadcaster → 根据 serverId 路由 → 对应 ws 连接 → 浏览器 ConsoleOutput
+               对应 WS 连接 → 前端 ConsolePage
+               （stdout 路渲染到 xterm.js，ANSI 原生解析）
 ```
 
-### 6.4 RCON 命令执行（含安全防护）
+控制台页主要消费 PTY stdout 路（实时终端输出）；文件 tail 路提供 `Logs/*.log` 的持久日志流（实例未运行时也能看历史日志）。
+
+### 6.4 命令执行（PTY owner-trust）
 
 ```
-POST /api/servers/:id/rcon/execute   { command: "Kick 76561198... Griefing" }
+前端 xterm.js 键盘输入 / 命令输入框
         │
         ▼
-  RconManager.execute(id, rawCommand)
+WS {type:'terminal_input', serverId, data}      ← sendCommand 拼 `\r`，sendTerminalInput 原样
         │
-        ├─ ① 解析命令名和参数（按空格拆分）
+        ▼
+WsBroadcaster 校验 JWT（verifyClient 已过）→ 契约合法即受理
         │
-        ├─ ② 危险指令检查（cmdName in DANGEROUS_COMMANDS）
-        │     → 已在前端 ConfirmDialog 确认，后端再次验证
+        ▼
+PtyManager.write(serverId, data)   →  PTY stdin（原样透传，不解析、不校验命令）
         │
-        ├─ ③ Owner 专属指令检查（cmdName in OWNER_ONLY_COMMANDS）
-        │     → 验证 JWT 身份是否匹配该 serverId 的 Owner SteamID64
-        │     → 不匹配返回 403
-        │
-        ├─ ④ 参数清洗（IRconManager 实现层负责）
-        │     args = args.map(stripControlCharacters)
-        │     // 移除 \r \n \0 及所有 charCode < 0x20
-        │
-        ├─ ⑤ 命令拼接（Telnet fallback 时逐字节构建，不插 \r\n）
-        │
-        └─ ⑥ 发送 + 等待响应
-              │
-              ├─ 10s 超时 → reject + 前端显示 "命令超时"
-              └─ 成功 → 返回响应文本
+        ▼
+U3DS 执行（控制台命令）→ 输出经 PTY stdout → console_line 回显前端
 ```
+
+- **无角色检查、无后端 428 二次确认**——JWT 有效 = owner 本人在终端，可执行任意命令。
+- 危险指令（`Shutdown`、`Ban`、`Slay` 等）由前端 `ConsolePage` 的 `ConfirmDialog` 拦截，用户确认后才发出。
+- `PtyManager.write` 不自动加 `\r`：命令输入框拼接 `\r` 让 bash 解析；xterm 原始输入原样透传（PTY 自回显）。
 
 ---
 
 ## 7. 数据库 Schema
 
-### 7.1 DDL
+### 7.1 真源与持久化边界
+
+- **实例身份真源 = 目录扫描**：`<installDir>/Servers/<ServerID>/Server/Commands.dat` 存在性。实例不落库。
+- **运行时状态 = 内存**：ServerManager 维护 in-memory Map；面板启动不吸附真实进程，一律 STOPPED。
+- **SQLite 只存 3 表**：用户、refresh token 黑名单、settings K-V。
+
+### 7.2 DDL（当前 schema）
 
 ```sql
--- 服务端实例
-CREATE TABLE servers (
-  id          TEXT PRIMARY KEY,              -- ServerID, e.g. "MyServer"
-  name        TEXT NOT NULL DEFAULT '',       -- 显示名称
-  game_port   INTEGER NOT NULL DEFAULT 27015,
-  state       TEXT NOT NULL DEFAULT 'STOPPED', -- STOPPED|STARTING|RUNNING|DEGRADED|STOPPING
-  rcon_protocol TEXT,                         -- 'openmod'|'rocketmod'|null
-  rcon_port   INTEGER,
-  rcon_password_enc TEXT,                     -- AES-GCM 加密的 RCON 密码
-  owner_steam_id TEXT,                        -- 服主 SteamID64
-  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- 用户表（v1 单用户，v2 多用户扩展预留）
+-- 用户表（单用户系统，is_admin 恒为 1）
 CREATE TABLE users (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  username    TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,               -- Argon2id
-  is_admin    INTEGER NOT NULL DEFAULT 1,    -- v1 始终为 1
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,                -- Argon2id
+  is_admin      INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- JWT refresh token 黑名单（注销 + 轮换）
 CREATE TABLE refresh_tokens (
-  jti         TEXT PRIMARY KEY,              -- JWT ID
+  jti         TEXT PRIMARY KEY,               -- JWT ID
   user_id     INTEGER NOT NULL REFERENCES users(id),
   expires_at  TEXT NOT NULL,
   revoked_at  TEXT,                           -- null = 有效
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- 配置文件快照（乐观锁版本追踪 + 回滚）
-CREATE TABLE config_snapshots (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  server_id   TEXT NOT NULL REFERENCES servers(id),
-  file_path   TEXT NOT NULL,                 -- 相对路径, e.g. "Server/Commands.dat"
-  content     TEXT NOT NULL,
-  version     INTEGER NOT NULL,              -- 乐观锁版本号 = 修改次数
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+-- 全局加密 K-V（AES-256-GCM 加密值 + 明文复用列）
+CREATE TABLE settings (
+  key        TEXT PRIMARY KEY,
+  value_enc  TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
--- Workshop Mod 元数据缓存
-CREATE TABLE workshop_mods (
-  file_id     TEXT PRIMARY KEY,              -- Steam Workshop File ID
-  title       TEXT NOT NULL DEFAULT '',
-  author      TEXT NOT NULL DEFAULT '',
-  description TEXT NOT NULL DEFAULT '',
-  preview_url TEXT,
-  file_size   INTEGER,
-  updated_at_steam TEXT,                     -- Steam 上的更新时间
-  cached_at   TEXT NOT NULL DEFAULT (datetime('now')),  -- 本地缓存时间
-  raw_xml     TEXT                            -- 废弃字段：原 ?xml=1 响应（保留兼容）
-);
-
--- 审计日志（危险操作全记录）
-CREATE TABLE audit_logs (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  server_id   TEXT,                          -- 可为 null（全局操作）
-  action      TEXT NOT NULL,                 -- 'server.start' | 'server.stop' | 'mod.apply' | ...
-  actor       TEXT NOT NULL DEFAULT 'admin', -- v2 改为 user_id
-  detail      TEXT,                          -- JSON 格式的额外信息
-  ip_address  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- 索引
-CREATE INDEX idx_servers_state ON servers(state);
-CREATE INDEX idx_config_snapshots_server_file ON config_snapshots(server_id, file_path);
-CREATE INDEX idx_audit_logs_server ON audit_logs(server_id, created_at);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action, created_at);
 ```
 
-### 7.2 迁移策略
+### 7.3 settings K-V 约定
 
-- 使用 `better-sqlite3` 的 `user_version` PRAGMA 进行 schema 版本管理
-- 迁移脚本放在 `manager-server/src/db/migrations/`，命名格式 `NNN-description.sql`
-- 首次启动时自动执行所有未执行的迁移
-- 所有迁移在事务内执行
+| key | 值形态 | 加密 | 消费方 |
+|---|---|---|---|
+| `steam_webapi_key` | WebAPI Key | AES-256-GCM（`cryptoBox.encrypt`，三段 hex `iv:tag:ct`，密钥来自 `ENCRYPTION_KEY`） | WorkshopMetadataService / settings 路由 |
+| `startCommand:<ServerID>` | U3DS 启动命令字符串 | **明文**（复用 `value_enc` 列，语义不加密——命令非凭证） | ServerManager（restoreStartCommand / configureServer / removeServer） |
+
+### 7.4 迁移策略
+
+- better-sqlite3 `user_version` PRAGMA 做版本管理；迁移脚本在 `manager-server/src/db/migrations/`，命名 `NNN-description.sql`。
+- 首次启动自动执行全部未执行迁移；每份迁移在事务内执行、幂等（`IF NOT EXISTS` / `DROP IF EXISTS`）。
+- 现状迁移序列：`001-initial-schema` → `002-add-install-dir` → `003-add-settings` → `004-drop-mod-cache-tables` → `005-drop-servers-tables`（收敛到 3 表）。
 
 ---
 
@@ -1041,79 +655,58 @@ CREATE INDEX idx_audit_logs_action ON audit_logs(action, created_at);
 
 ```
 登录
-  │
   ├─ POST /api/auth/login { username, password }
   │     → Argon2id 验证
-  │     → 签发 access_token (JWT, 15min, 存在内存，不落 localStorage)
-  │     → 签发 refresh_token (JWT, 7d, httpOnly + Secure + SameSite=Strict cookie)
+  │     → 签发 access_token（JWT, 15min）
+  │     → 签发 refresh_token（JWT, 7d，JSON body 返回，前端存 localStorage）
   │
   ├─ 每次请求
   │     → Authorization: Bearer <access_token>
-  │     → Express 中间件验证签名 + 过期
-  │     → 过期 → 前端用 refresh_token cookie 换新的 access_token
+  │     → Express 中间件（authenticateToken）验证签名 + 过期
+  │     → 过期 → 前端读 localStorage 的 refresh_token，POST /auth/refresh 换新 token 对
   │
   ├─ WebSocket 升级
   │     → 查询参数 ?token=<access_token>
-  │     → ws verifyClient 回调验证
-  │     → 失败 → 拒绝连接
+  │     → verifyClient 校验，失败 401 拒绝
   │
   └─ 注销
-        → refresh_token 的 jti 写入 refresh_tokens 表 (revoked_at = now)
-        → 浏览器清除 cookie
+        → refresh_token 的 jti 写入 refresh_tokens 表（revoked_at = now）
 ```
 
 ### 8.2 凭证存储
 
-| 凭证类型 | 存储方式 | 算法 |
+| 凭证类型 | 存储方式 | 算法/格式 |
 |---|---|---|
-| 用户密码 | `users.password_hash` | Argon2id (OWASP 推荐参数) |
-| RCON 密码 (OpenMod) | `servers.rcon_password_enc` | AES-256-GCM, 密钥来自环境变量 |
-| RCON 密码 (RocketMod) | 同上 | 同上 |
-| Steam WebAPI Key (可选) | 同 AES-256-GCM | 同上 |
-| GSLT | `Commands.dat` 中明文（U3DS 读取需要），Files 页读取时替换为 `[REDACTED]` | — |
+| 用户密码 | `users.password_hash` | Argon2id |
+| Steam WebAPI Key | `settings` K-V（`steam_webapi_key`） | AES-256-GCM（`iv:tag:ct` 三段 hex，密钥 = `ENCRYPTION_KEY` env） |
+| GSLT | `Commands.dat` 明文（U3DS 读取需要）；Files 页读取时替换为 `[REDACTED]` | — |
+| startCommand | `settings` K-V（`startCommand:<ServerID>`）明文 | 命令串非凭证，不加密 |
 
-### 8.3 速率限制（Express 中间件）
+**硬约束**：日志脱敏管道（§6.3）确保 `SteamID:密码`、`login`、`GSLT`、`Login_Token`、`Password` 后接的敏感串绝不出现在日志/前端。ENCRYPTION_KEY / JWT_SECRET 等 secrets 从环境变量来，`.env*` git 忽略。
 
-| 端点 | 限制 | 窗口 |
-|---|---|---|
-| POST /api/auth/login | 5 次 | 15 分钟（同一 IP） |
-| POST /api/servers/:id/rcon/execute | 2 次/秒 | 1 秒（同一 session） |
-| POST /api/servers/:id/files/upload | 3 并发 | — |
-| GET /api/workshop/mods/:id | 1 次/60秒 | 60 秒（同一 mod ID，命中缓存） |
-| 全局 | 100 次/秒 | 1 秒（同一 IP） |
+### 8.3 HTTP 安全头与中间件
 
-### 8.4 安全头（Express + 反向代理双层）
+- `helmet` 默认安全头 + `noCache`（全局 `no-store`）。
+- Content-Security-Policy **关闭**（`helmet({ contentSecurityPolicy: false })`）——xterm.js 终端需要内联样式/脚本。
+- `cors`（`origin: config.corsOrigin`，`credentials: true`）。
+- 静态资源：`/assets/` 内容哈希文件名长缓存（`max-age=31536000, immutable`），其余 `no-cache`；SPA fallback 回 `index.html`。
 
-```
-Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-Strict-Transport-Security: max-age=31536000; includeSubDomains
-Referrer-Policy: strict-origin-when-cross-origin
-```
-
-### 8.5 输入校验
+### 8.4 输入校验
 
 | 输入 | 校验规则 |
 |---|---|
-| ServerID | `/^[A-Za-z0-9_-]{1,64}$/` |
+| ServerID | `/^[A-Za-z0-9_-]+$/`（zod `serverIdPattern`——id 会拼进启动命令与文件路径，防注入/穿越） |
 | SteamID64 | `/^7656119\d{10}$/` |
-| Workshop File ID | 正整数, 1–999999999999 |
-| 文件路径 | 拒绝 `\x00`, 拒绝 `..` 穿越, fs.realpath 解析后做白名单前缀匹配 |
-| RCON 命令参数 | 剥离 `\r` `\n` `\0` 及所有 charCode < 0x20 |
-| YAML/XML 文件 | 最大 1MB, js-yaml DEFAULT_SCHEMA (无 !!js/*), fast-xml-parser 禁用 DTD |
+| Workshop File ID | 正整数 |
+| 文件路径 | 拒绝 `\x00`、拒绝 `..` 穿越；`realpath` 解析后白名单前缀匹配（`resolveValidatedPath`） |
+| YAML/XML | 最大 1MB；js-yaml DEFAULT_SCHEMA（无 `!!js/*`）、fast-xml-parser 禁用 DTD |
+| 请求体 | JSON `10mb` 限制、octet-stream raw `100mb` 限制 |
 
-### 8.6 Owner 专属指令鉴权（后端强制，非仅前端隐藏）
+### 8.5 命令鉴权（owner-trust）
 
-```
-OWNER_ONLY_COMMANDS = ['Owner', 'Cheats', 'Shutdown']
-
-RconManager.execute(serverId, command):
-  cmdName = command.split(/\s+/)[0].toLowerCase()
-  if cmdName in OWNER_ONLY_COMMANDS:
-    if jwt.steamId !== servers.get(serverId).owner_steam_id:
-      return 403 Forbidden
-```
+- 命令执行唯一通道是 PTY 终端（§6.4）：WS `verifyClient` 校验 access token 即视为 owner 本人，终端命令放行。
+- 危险指令二次确认在前端 `ConfirmDialog`（`Shutdown`、`Ban` 等），后端不做命令级门控。
+- 面板**不提供**「前端执行任意命令」的 REST 接口——命令只能经 WS `terminal_input` 到 PTY stdin。
 
 ---
 
@@ -1121,53 +714,61 @@ RconManager.execute(serverId, command):
 
 ### 9.1 日志
 
-- 后端日志：pino（结构化 JSON），级别由环境变量 `LOG_LEVEL` 控制
-- 审计日志：所有状态变更 + 危险操作写入 `audit_logs` 表
-- RCON 凭证绝不出现在任何日志中（构造认证调用时不 log 参数）
-- 日志滚动：pino 内置 transport 按天切分，保留 30 天
+- pino 结构化 JSON，级别由 `LOG_LEVEL` env 控制；请求日志 `logger.debug({ method, url })`。
+- 凭证/密钥绝不出现在任何日志（脱敏管道 + 打印规范）。
+- 非生产环境挂 pino-pretty（彩色 + 时间戳）；生产环境纯结构化 JSON（不做文件轮转）。
 
 ### 9.2 错误处理
 
-- Express 全局错误处理器：捕获所有未处理异常，返回统一 `{ error, code, detail? }` JSON
-- RCON 超时：10s → reject → 前端 "命令超时"
-- 文件操作失败：返回具体错误 + 建议操作（权限不足 / 磁盘满 / 路径不存在）
-- 进程崩溃：ProcessSupervisor.onCrash → ServerManager 状态机处理 → audit_log 记录
-- 绝不暴露堆栈跟踪给前端（生产环境 `NODE_ENV=production`）
+- **AppError** 统一错误类：`code`（kebab-case）+ 中文 `message` + `status`。业务错误必须 `throw new AppError(...)`，禁止裸抛 `Error`。
+- Express 全局错误处理器（`errorHandler`，注册在路由之后）：AppError → `{ error: { code, message } }`；其余 → 记日志 + `500 { error: { code: 'internal_error', message: '服务器内部错误' } }`。
+- 生产环境不暴露堆栈跟踪。
+- 实例操作冲突（`operation-conflict` 409）、U3DS 未装引导（`start-script-not-found` 409）、实例不存在（`server-not-found` 404）等错误码在路由层直接映射为可展示的中文 message。
 
 ### 9.3 依赖注入
 
-- 使用手动 DI（不引入框架）——在 `manager-server/src/composition-root.ts` 中集中组装
-- 核心域层只依赖接口（存在 `shared/contracts/`），实现注入在 API 层入口
-- 模块依赖关系（→ = 依赖）：
+- **手动构造注入**（无框架），集中在 `manager-server/src/composition-root.ts`（`buildContainer(db)`）。
+- 核心域层只依赖 `shared/contracts/` 接口，实现注入在 API 层入口。
+- 依赖关系（→ = 依赖）：
 
 ```
-ServerManager → ProcessSupervisor, RconManager, A2SClient, ConfigService, IBroadcaster
+ServerManager → ServerDiscovery, PtyManager, ConfigService, IBroadcaster, WorkshopApplyService, DB
 ConfigService → FileLockProvider
-FilesService → FileLockProvider, IFileAccessProvider (本地实现)
-SteamCmdManager → ProcessSupervisor
-WorkshopMetadataService → (HTTP client, 独立无依赖)
-AuthService → (better-sqlite3, 独立无依赖)
-LogStreamer → ProcessSupervisor.onStdout, IBroadcaster
-RconManager → A2SClient (端口探测), FileLockProvider (凭证文件锁)
-WsBroadcaster → (实现 IBroadcaster, 无业务依赖)
-ProcessSupervisor → (child_process, 独立无依赖)
-A2SClient → (UDP socket, 独立无依赖)
+FilesService → FileLockProvider
+SteamCmdManager → ProcessSupervisor, IBroadcaster, activeProbe(延迟绑定 → ServerManager)
+WorkshopMetadataService → DB
+WorkshopAcfService → ConfigService
+WorkshopApplyService → WorkshopAcfService, ConfigService, IBroadcaster
+WorkshopDeleteService → WorkshopAcfService, ConfigService
+LogStreamer → IBroadcaster, ProcessSupervisor
+AuthService → DB
+WsBroadcaster →（实现 IBroadcaster，无业务依赖）
+PtyManager → node-pty
+ProcessSupervisor → child_process
 ```
+
+- **SteamCmdManager 的 activeProbe 延迟绑定闭包**：SteamCmdManager 需要 ServerManager 的 `listActiveServerIds`（更新 U3DS 前置检查），但 ServerManager 构造依赖 workshopApply 而 SteamCmdManager 又依赖 ServerManager——用「先声明 `let serverManager`，activeProbe 在闭包内解引用，构造完成后再赋值」打破构造循环。
+- 生产代码无 `getDb()` 全局单例调用（db 经 constructor 注入）。
 
 ### 9.4 测试策略
 
 | 层 | 工具 | 覆盖要求 |
 |---|---|---|
-| 基础设施层 | Jest | 单元测试：模块接口的所有公开方法 |
-| 核心域层 | Jest | ServerManager 状态机所有转换路径、ConfigService 往返测试 |
-| API 层 | Jest + supertest | 所有 HTTP 端点 + WebSocket 升级流程 |
-| 前端 | Vitest + Playwright | 每个 P0 页面至少一个 E2E 冒烟用例 |
-| 安全 | Fuzz 测试 | RCON 命令注入、路径穿越的自动化攻击向量 |
-
-> 具体测试方法（录制回放、mock 策略）见实现计划。A2S/RconManager 测试不依赖真 U3DS 进程。
+| 后端单元 | Vitest | 模块接口公开方法、状态机转换路径、ConfigService 往返、PTY 命令链路断言 PTY writes（`Save\r` / `Shutdown 30\r`，不连真服务） |
+| 后端 API | Vitest + supertest | HTTP 端点 + WebSocket 升级/订阅/terminal_input |
+| 前端单元 | Vitest | 组件渲染、hooks |
+| E2E | Playwright | 每个改到的功能至少一个冒烟用例（登录 → 实例列表 → 启停 → 配置 → Mod 流程） |
+| 契约 | zod + OpenAPI | API 边界 schema 校验 |
 
 ---
 
-> **本文档是 `docs/architecture/` 的核心文件。**  
-> 与 `design-system-mapping.md`（设计系统映射）并列为架构层两大权威来源。  
-> 任何架构变更必须先改本文档、再改代码。PR 评审以本文档为基准。
+## 10. 文档生命周期
+
+- 本文档是 `docs/architecture/` 的核心文件，与 `design-system-mapping.md`（设计系统映射）并列为架构层两大权威来源。
+- 任何架构变更必须先改本文档、再改代码；PR 评审以本文档为基准。
+- 配套活参考：`claudedocs/reference_config_files.md`（配置文件字段）、`claudedocs/reference_console_commands.md`（控制台命令）、`claudedocs/research_verification_tracker.md`（未验证项）。
+- 技术决策记录在 `docs/adr/`；`docs/external-resources.md` 索引外部官方文档。
+
+---
+
+*最近修订：2026-08-11——全面改写为 Phase 0-6 落地后的现状规格（PTY 持久终端 owner-trust 命令通道、4 态状态机、目录扫描真源、3 表 DB、202 异步化）。*

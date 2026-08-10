@@ -116,7 +116,7 @@ Votify N 60 60 30 60 1
 用户确认修改 Mod 列表（staging 下载已在不停服阶段完成）
   → 备份 WorkshopDownloadConfig.json → 原子写新文件
   → 经 PTY 终端写入 "Save"（强制刷玩家数据到磁盘）
-  → 经 PTY 终端写入 "Shutdown 30 <重启原因>"（30 秒优雅关服）
+  → 经 PTY 终端写入 "Shutdown 10 <重启原因>"（10 秒优雅关服，对齐 applyModChanges 代码）
   → 等进程退出
   → 移动 staging 内容 → Workshop/steamapps/workshop/content/1110390/（进程已停，零冲突）
   → 再拉起新的
@@ -127,8 +127,7 @@ Votify N 60 60 30 60 1
 ## 服务端状态机
 
 ```
-STOPPED → STARTING → RUNNING
-RUNNING → STOPPING → STOPPED
+STOPPED → STARTING → RUNNING → STOPPING → STOPPED（循环，4 态）
 任何状态 → STOPPED（强制停止，kill -9 兜底）
 ```
 
