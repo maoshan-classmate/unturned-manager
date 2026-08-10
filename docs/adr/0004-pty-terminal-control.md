@@ -300,7 +300,7 @@ RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由
 | PTY 永久进程容器重建后丢失会话 | PTY 进程绑 session 生命周期；容器重建 = 用户重连 PTY（行为合理） |
 | 状态信息丢失（无 A2S 后玩家数 / 地图无面板展示） | 用户决策：「如果只是用于卡片展示，那就可以不需要」（§6.5）；想看玩家数进终端敲 `Players`，地图进终端敲 `Map` |
 | node-pty runtime 缺 PTY 设备权限 | node-pty Linux 上需要 `/dev/ptmx` + `/dev/pts`；Docker 默认 runtime 有这些设备权限，但需在 Phase 1 DoD 显式验证（`docker exec unturned-manager ls -la /dev/ptmx` + spawn bash 测试）。如缺权限需 `--privileged` 或 `--device /dev/ptmx` |
-| `axios timeout 10000ms` 仍有其他长任务（install / update U3DS） | 已在 ADR 同步改动中拉长到 60s（`manager-web/src/api/client.ts`）；U3DS 安装 steamcmd 单 task 30s 内能完成，60s 足够 |
+| 其他路由仍可能超 10s（`/steamcmd/update` 30min / `/steamcmd/reinstall` 2-3min / `/steamcmd/check-update` 30s+） | install U3DS / download-workshop / start 都已异步化（HTTP 立即返回 jobId，无 axios timeout 风险）；剩余 update/reinstall/check-update 是同步设计选择（完成后才能告诉用户结果），不是 bug。如未来想改异步，单独讨论 |
 
 ---
 
