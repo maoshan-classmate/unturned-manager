@@ -45,6 +45,7 @@ import { createFilesRouter } from "./routes/files.js";
 import { createSteamCmdRouter } from "./routes/steamcmd.js";
 import { createWorkshopRouter } from "./routes/workshop.js";
 import { createSettingsRouter } from "./routes/settings.js";
+import { createSessionsRouter } from "./routes/sessions.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
 
@@ -59,6 +60,9 @@ setAuthService(
   container.authService as import("./modules/auth/AuthService.js").AuthService,
 );
 
+// ★ ADR-0005 Phase 7：终端会话管理器初始化（1:1 GSM3 TerminalSessionManager）
+await container.sessionManager.initialize();
+
 // ─── LogStreamer 接线（Phase 0 修复——日志流此前从未启动）──
 for (const serverId of container.serverManager.listServersSync()) {
   container.logStreamer.startStreaming(serverId as never);
@@ -67,6 +71,22 @@ logger.info(
   { count: container.serverManager.listServersSync().length },
   "LogStreamer 已启动所有已加载服务器",
 );
+
+// ─── 终端会话过期清理（ADR-0005 Phase 7：启用 GSM3 注释掉的 cleanupExpiredSessions）──
+const SESSION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 小时
+const sessionCleanupTimer = setInterval(() => {
+  container.sessionManager
+    .cleanupExpiredSessions()
+    .then((removed) => {
+      if (removed > 0) {
+        logger.info({ removed }, "会话清理 cron：删除过期会话");
+      }
+    })
+    .catch((err) => {
+      logger.error({ err }, "会话清理 cron：失败");
+    });
+}, SESSION_CLEANUP_INTERVAL_MS);
+sessionCleanupTimer.unref?.();
 
 // ─── Express 应用 ──────────────────────────────────────
 const app = express();
@@ -118,6 +138,11 @@ app.use("/api/servers", createFilesRouter(container.filesService));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
+// ★ ADR-0005 Phase 7：终端会话列表端点（1:1 GSM3 routes/terminal.ts:44 形态）
+app.use(
+  "/api/sessions",
+  createSessionsRouter(container.sessionManager, container.ptyManager),
+);
 
 // WebSocket
 wsBroadcaster.init(
@@ -170,6 +195,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, 30000);
 
   try {
+    // ★ ADR-0005 Phase 7：清理会话清理 cron + 标记所有活跃会话为 inactive（面板重启后用户能看到「PTY 已断开」）
+    clearInterval(sessionCleanupTimer);
+    for (const session of container.sessionManager.getSavedSessions()) {
+      if (session.isActive) {
+        await container.sessionManager.setSessionActive(session.id, false);
+      }
+    }
+
     await wsBroadcaster.destroy();
     await container.processSupervisor.destroy();
     await container.ptyManager.destroy(); // ★ P0-1 修复：Phase 1 PtyManager 缺优雅关闭钩子

@@ -11,6 +11,7 @@ import type {
   ActiveOperation,
   WorkshopFileId,
   IWorkshopApplyService,
+  ISessionManager,
   CommandsDatRecord,
 } from "@unturned-manager/shared";
 import { ServerState } from "@unturned-manager/shared";
@@ -74,6 +75,7 @@ export class ServerManager implements IServerManager {
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
     private workshopApply?: IWorkshopApplyService,
+    private sessionManager?: ISessionManager, // ★ ADR-0005 Phase 7：终端会话持久化（1:1 GSM3）
   ) {
     this.loadServersFromDisk();
 
@@ -249,6 +251,10 @@ export class ServerManager implements IServerManager {
 
     // ADR-0004 Phase 4：同步清掉 startCommand K-V
     deleteStartCommand(this.db, serverId);
+    // ★ ADR-0005 Phase 7：删除实例 → 同步清终端会话记录
+    if (this.sessionManager) {
+      void this.sessionManager.removeSession(serverId);
+    }
     this.servers.delete(serverId);
     logger.info({ serverId }, "服务器已删除");
   }
@@ -312,6 +318,10 @@ export class ServerManager implements IServerManager {
       entry.terminalSessionId = undefined;
       entry.ptyPid = undefined;
       this.transition(serverId, ServerState.STOPPED);
+      // ★ ADR-0005 Phase 7：启动失败 → 移除会话记录（GSM3 TerminalManager.ts:1056 回滚形态）
+      if (this.sessionManager) {
+        void this.sessionManager.removeSession(serverId);
+      }
       // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失）原样上抛
       // 会被全局错误处理兜底成「服务器内部错误」——用户和面板都看不到真实原因。
       // 包装成带 err.message 的 AppError，前端 toast 直接显示具体错因，便于定位。
@@ -462,6 +472,19 @@ export class ServerManager implements IServerManager {
         "PTY bash 已启动",
       );
 
+      // ★ ADR-0005 Phase 7：PTY spawn 成功 → 持久化终端会话（1:1 GSM3 TerminalManager.ts:1030）
+      if (this.sessionManager) {
+        const now = new Date().toISOString();
+        void this.sessionManager.saveSession({
+          id,
+          name: `终端 - ${id}`,
+          workingDirectory: installDir,
+          createdAt: now,
+          lastActivity: now,
+          isActive: true,
+        });
+      }
+
       // ★ ADR-0004 Phase 3：PTY stdout → console_line 广播（§2.4）。
       // U3DS 的 ANSI 彩色日志经此推给前端 xterm.js（xterm 原生渲染 ANSI）。
       this.pipePtyOutput(id);
@@ -475,6 +498,10 @@ export class ServerManager implements IServerManager {
         entry.ptyPid = undefined;
         logger.warn({ serverId, exitCode }, "PTY bash 退出");
         this.transition(id, ServerState.STOPPED);
+        // ★ ADR-0005 Phase 7：PTY 退出 → 标记会话 inactive（GSM3 TerminalManager.ts:2962 形态）
+        if (this.sessionManager) {
+          void this.sessionManager.setSessionActive(id, false);
+        }
         if (!wasStopped) {
           this.scheduleCrashRestart(id, exitCode);
         }
@@ -511,6 +538,10 @@ export class ServerManager implements IServerManager {
         line,
         source: "stdout",
       });
+      // ★ ADR-0005 Phase 7：PTY 每收到 stdout → 刷新 lastActivity（5 秒节流，SessionManager 内部处理）
+      if (this.sessionManager) {
+        void this.sessionManager.touchActivity(serverId);
+      }
     });
   }
 

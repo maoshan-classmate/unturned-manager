@@ -14,9 +14,11 @@ import {
   type IFileLockProvider,
   type IAuthService,
   type IPtyManager,
+  type ISessionManager,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
+import { logger } from "./utils/logger.js";
 import { AuthService } from "./modules/auth/AuthService.js";
 import { FileLockProvider } from "./modules/filelock/FileLockProvider.js";
 import { ProcessSupervisor } from "./modules/process/ProcessSupervisor.js";
@@ -31,6 +33,7 @@ import { WorkshopAcfService } from "./modules/workshop/WorkshopAcfService.js";
 import { WorkshopApplyService } from "./modules/workshop/WorkshopApplyService.js";
 import { WorkshopDeleteService } from "./modules/workshop/WorkshopDeleteService.js";
 import { LogStreamer } from "./modules/logs/LogStreamer.js";
+import { SessionManager } from "./modules/sessions/SessionManager.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -49,6 +52,7 @@ export interface AppContainer {
   broadcaster: IBroadcaster;
   processSupervisor: IProcessSupervisor;
   ptyManager: IPtyManager;
+  sessionManager: ISessionManager;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -86,9 +90,13 @@ export function buildContainer(db: Database.Database): AppContainer {
   const workshopDelete = new WorkshopDeleteService(workshopAcf, configService);
   const logStreamer = new LogStreamer(broadcaster, processSupervisor);
 
+  // Phase 7：终端会话持久化（1:1 GSM3 TerminalSessionManager）
+  const sessionManager = new SessionManager(logger, config.dataDir);
+
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
   // ★ ADR-0004 Phase 2：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
   // ★ ADR-0004 Phase 6：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
+  // ★ ADR-0005 Phase 7：注入 sessionManager——PTY spawn/exit 时调 saveSession / setSessionActive
   serverManager = new ServerManager(
     db,
     new ServerDiscovery(),
@@ -96,6 +104,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     configService,
     broadcaster,
     workshopApply,
+    sessionManager,
   );
 
   // AuthService
@@ -115,5 +124,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     broadcaster,
     processSupervisor,
     ptyManager,
+    sessionManager,
   };
 }
