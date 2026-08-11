@@ -76,6 +76,7 @@ export type LoginFormValues = z.infer<typeof loginSchema>;
 | ServerID / 实例 ID | 服务器名称 |
 | SteamCMD | 保留原文（官方工具名，用户装它时会在 SteamCMD 官方文档里看到同样的写法） |
 | 创意工坊 / Workshop | 创意工坊（Steam「创意工坊」是其官方中文译名，保留） |
+| PTY / 持久终端 / 持久 PTY / 终端 | **统一改为「控制台」**（侧栏导航与页面标题已用；新规则生效后包括错误消息、placeholder、toast 全部统一）。玩家不会知道 pty(7) 是什么，「控制台」是 PC 游戏圈对「服务端后台」的共识说法 |
 
 新增内部术语时，必须在这一节同步加对照——这条不是建议，是强制。
 

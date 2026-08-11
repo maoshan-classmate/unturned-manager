@@ -242,7 +242,7 @@ export function DashboardPage() {
           icon={Users}
           label="在线玩家"
           value="—"
-          subtext="需 Pty 终端敲 Players 命令查看"
+          subtext="需在「控制台」输入 Players 命令查看"
           status="neutral"
         />
         <StatCard

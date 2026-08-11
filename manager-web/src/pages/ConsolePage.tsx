@@ -184,7 +184,7 @@ export function ConsolePage() {
       {savedSessions.length > 0 && (
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           <span className="text-xs" style={{ color: "#64748B" }}>
-            历史终端:
+            历史控制台:
           </span>
           {savedSessions
             .filter((s) => s.id !== serverId)
@@ -193,7 +193,7 @@ export function ConsolePage() {
                 key={s.id}
                 onClick={() => {
                   toast.error(
-                    "这个终端已经断开，点「启动」重新打开",
+                    "这个控制台已经断开，点「启动」重新打开",
                     { duration: 4000 },
                   );
                 }}
@@ -268,7 +268,7 @@ export function ConsolePage() {
             onKeyDown={handleKeyDown}
             className="flex-1 bg-transparent border-none outline-none text-xs font-mono"
             style={{ color: "#F1F5FB" }}
-            placeholder="输入命令...（写入服务器终端）"
+            placeholder="输入命令...（写入控制台）"
             aria-label="控制台命令输入"
             spellCheck={false}
             autoComplete="off"

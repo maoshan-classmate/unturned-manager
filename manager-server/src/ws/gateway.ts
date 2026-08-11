@@ -144,7 +144,7 @@ class WsBroadcaster implements IBroadcaster {
                 JSON.stringify({
                   type: "error",
                   code: "pty_unavailable",
-                  message: "PTY 管理器未初始化",
+                  message: "控制台未就绪，请稍后重试",
                 }),
               );
               return;

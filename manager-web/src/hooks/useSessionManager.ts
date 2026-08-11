@@ -56,7 +56,7 @@ export function useSessionManager(): {
       setSaved(data.data.saved);
       setError(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "获取终端会话列表失败";
+      const msg = err instanceof Error ? err.message : "获取历史控制台列表失败";
       setError(msg);
     } finally {
       setLoading(false);

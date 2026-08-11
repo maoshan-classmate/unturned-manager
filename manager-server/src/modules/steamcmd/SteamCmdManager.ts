@@ -233,7 +233,12 @@ export class SteamCmdManager implements ISteamCmdManager {
       );
     } catch (err) {
       callbacks?.onStatusChange?.("failed");
-      this.broadcastProgressWithJobId(jobId, 0, "failed");
+      this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
       this.activeJobs.delete(lockKey);
       try {
         await fs.promises.unlink(scriptPath);
@@ -430,7 +435,12 @@ export class SteamCmdManager implements ISteamCmdManager {
           this.broadcastProgressWithJobId(jobId, 100, "completed");
           this.loggerUpdate().info({ installDir }, "SteamCMD update 完成");
         } catch (err) {
-          this.broadcastProgressWithJobId(jobId, 0, "failed");
+          this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
           this.loggerUpdate().error(
             { err, installDir },
             "SteamCMD update 失败",
@@ -454,7 +464,12 @@ export class SteamCmdManager implements ISteamCmdManager {
       } catch {
         /* noop */
       }
-      this.broadcastProgressWithJobId(jobId, 0, "failed");
+      this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
       throw err;
     }
   }
@@ -536,7 +551,12 @@ export class SteamCmdManager implements ISteamCmdManager {
         path.dirname(exePath),
       );
     } catch (err) {
-      this.broadcastProgressWithJobId(jobId, 0, "failed");
+      this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
       this.activeJobs.delete(lockKey);
       try {
         await fs.promises.unlink(scriptPath);
@@ -600,8 +620,13 @@ export class SteamCmdManager implements ISteamCmdManager {
         }
         this.broadcastProgressWithJobId(jobId, 100, "completed");
       })
-      .catch(() => {
-        this.broadcastProgressWithJobId(jobId, 0, "failed");
+      .catch((err) => {
+        this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
       })
       .finally(() => {
         this.activeJobs.delete(lockKey);
@@ -734,7 +759,12 @@ export class SteamCmdManager implements ISteamCmdManager {
           500,
         );
       } catch (err) {
-        this.broadcastProgressWithJobId(jobId, 0, "failed");
+        this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
         this.loggerUpdate().error({ err, jobDir }, "SteamCMD checkUpdate 失败");
       } finally {
         this.activeJobs.delete(lockKey);
@@ -885,7 +915,12 @@ export class SteamCmdManager implements ISteamCmdManager {
         this.broadcastProgressWithJobId(jobId, 100, "completed");
         this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 完成");
       } catch (err) {
-        this.broadcastProgressWithJobId(jobId, 0, "failed");
+        this.broadcastProgressWithJobId(
+        jobId,
+        0,
+        "failed",
+        err instanceof AppError || err instanceof Error ? err.message : undefined,
+      );
         this.loggerUpdate().error(
           { err, targetDir },
           "SteamCMD reinstall 失败",

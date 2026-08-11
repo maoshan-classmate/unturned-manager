@@ -54,7 +54,7 @@ export class PtyManager implements IPtyManager {
     if (existing) {
       throw new AppError(
         "pty-already-running",
-        `Server ${serverId} 已有 PTY 进程在运行 (PID ${existing.pid})`,
+        `Server ${serverId} 的控制台已经在运行 (PID ${existing.pid})。请先停止再启动。`,
         409,
       );
     }
@@ -89,7 +89,7 @@ export class PtyManager implements IPtyManager {
     } catch (err) {
       throw new AppError(
         "pty-spawn-failed",
-        `PTY 启动失败: ${err instanceof Error ? err.message : String(err)}`,
+        `控制台启动失败: ${err instanceof Error ? err.message : String(err)}`,
         500,
       );
     }
