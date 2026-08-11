@@ -188,7 +188,7 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        {/* 游戏默认值 */}
+        {/* 游戏默认值——每个值对应的 SDK 真源行号见 claudedocs/reference_config_files.md §1「SDK 真源」列 */}
         <Card icon={Gamepad2} title="游戏默认值" className="md:col-span-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" style={{ color: '#94A3B8' }}>
             {[
@@ -211,6 +211,10 @@ export function SettingsPage() {
               </div>
             ))}
           </div>
+          <p className="text-[11px] mt-3" style={{ color: '#64748B' }}>
+            每个值对应的 U3-SDK 真源行号见{' '}
+            <code>claudedocs/reference_config_files.md</code> §1「SDK 真源」列
+          </p>
         </Card>
 
         {/* Steam WebAPI Key — 模组页面依赖此项 */}

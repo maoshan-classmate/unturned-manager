@@ -18,10 +18,26 @@ export interface ServerConfig {
 // Commands.dat 解析结果
 // CLAUDE.md §4.3 硬约束：保留未知键，面板不能删除不认识的指令
 // Phase 0 修复：Map → Record，JSON.stringify 兼容（C4 根因）
+// Loadout 是 Commands.dat 唯一允许重复出现的已知键（每 SkillsetID 一行），
+// 故独立成 loadouts 字段而不是塞进 known，避免与"已知键只能出现一次"的契约打架。
 export interface CommandsDatRecord {
   known: Record<string, string>;
   unknown: Record<string, string>;
   comments: string[];
+  /** Loadout 重复行结构化结果——格式：Loadout <SkillsetID>/<itemID>/<itemID>... */
+  loadouts?: LoadoutEntry[];
+}
+
+/**
+ * 单条 Loadout 行结构（CommandLoadout.cs:13-49 / PlayerSkills.cs:43-97）。
+ * 权威约束：SkillsetID ∈ {0,1,2,3,4,5,6,7,8,9,10,255}（255 = 默认全部技能组），
+ *           ItemID ∈ [0, 65535] ushort。同一 SkillsetID 多行 = 后写覆盖前写。
+ */
+export interface LoadoutEntry {
+  /** 0–10 = 11 个技能组，255 = 默认全部技能组 */
+  skillsetId: number;
+  /** 该技能组开局携带的物品 ID 列表；空数组表示该技能组无物品加成 */
+  itemIds: number[];
 }
 
 // Config.txt 解析结果

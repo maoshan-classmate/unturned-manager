@@ -12,6 +12,7 @@ import type {
   WorkshopConfig,
   ConfigSection,
   ConfigEntry,
+  LoadoutEntry,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
 import { resolveServerPath } from '../server/pathResolver.js';
@@ -24,7 +25,16 @@ const KNOWN_KEYS = new Set([
   'Name', 'Port', 'MaxPlayers', 'Map', 'Mode', 'Owner',
   'Perspective', 'Chatrate', 'Cycle', 'Timeout', 'Queue_Size',
   'Filter', 'Whitelisted', 'Gold', 'Hide_Admins', 'Sync',
-  'Cheats', 'GSLT', 'Log', 'Votify', 'Password', 'PvE',
+  'Cheats', 'GSLT', 'Log', 'Votify', 'Password', 'PvE', 'Bind',
+  'Loadout',
+]);
+
+/** 允许重复出现的已知键——Loadout 是 Commands.dat 唯一允许重复的已知键 */
+const REPEATABLE_KEYS = new Set(['Loadout']);
+
+/** Loadout 合法 SkillsetID（CommandLoadout.cs:22 校验：byte，255 或 ≤10） */
+const VALID_LOADOUT_SKILLSET_IDS = new Set([
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 255,
 ]);
 
 /** 开关型字段——出现即启用，不带 value */
@@ -130,7 +140,7 @@ export class ConfigService implements IConfigService {
       content = await fs.readFile(absPath, 'utf-8');
     } catch {
       logger.warn({ serverId, path: absPath }, 'Commands.dat 不存在，返回空记录');
-      return { known: {}, unknown: {}, comments: [] };
+      return { known: {}, unknown: {}, comments: [], loadouts: [] };
     }
 
     return parseCommandsDatContent(content);
@@ -150,7 +160,7 @@ export class ConfigService implements IConfigService {
     );
   }
 
-  /** 序列化：comments → known → unknown，保留原始顺序 */
+  /** 序列化：comments → known → loadouts → unknown，保留原始顺序 */
   private serializeCommandsDat(record: CommandsDatRecord): string {
     const lines: string[] = [];
 
@@ -159,12 +169,29 @@ export class ConfigService implements IConfigService {
       lines.push(c);
     }
 
-    // 已知键
+    // 已知键（Loadout 从 known 中拿出，留到下面统一序列化）
     for (const [key, value] of Object.entries(record.known)) {
+      if (REPEATABLE_KEYS.has(key)) continue; // Loadout 在 loadouts 段统一输出
       if (FLAG_KEYS.has(key)) {
         lines.push(key); // flag 型不带 value
       } else {
         lines.push(key + ' ' + value);
+      }
+    }
+
+    // Loadout 重复行——每行：Loadout <SkillsetID>/<itemID>/<itemID>/...
+    // 同 SkillsetID 多行由面板去重处理（U3DS 后写覆盖前写——面板策略：每 ID 一行）
+    if (record.loadouts && record.loadouts.length > 0) {
+      for (const entry of record.loadouts) {
+        if (!VALID_LOADOUT_SKILLSET_IDS.has(entry.skillsetId)) {
+          logger.warn(
+            { serverId: 'unknown', skillsetId: entry.skillsetId },
+            'Loadout 序列化跳过非法 SkillsetID（CommandLoadout.cs:22 约束）',
+          );
+          continue;
+        }
+        const parts = [String(entry.skillsetId), ...entry.itemIds.map(String)];
+        lines.push('Loadout ' + parts.join('/'));
       }
     }
 
@@ -439,14 +466,16 @@ export class ConfigService implements IConfigService {
  * 解析 Commands.dat 文本（ADR-0003 B2 §3.1：ServerDiscovery 身份读取复用）。
  * 行语义：`key value` 或单独 `key`（flag 型）；`#`/`;` 起注释。
  * 硬约束：保留未知键——面板不能删除不认识的指令（CLAUDE.md §4.3）。
+ * Loadout 是唯一允许重复出现的已知键——每行解析为独立 LoadoutEntry。
  *
  * @param content - Commands.dat 原始文本
- * @returns 结构化记录 { known, unknown, comments }
+ * @returns 结构化记录 { known, unknown, comments, loadouts }
  */
 export function parseCommandsDatContent(content: string): CommandsDatRecord {
   const known: Record<string, string> = {};
   const unknown: Record<string, string> = {};
   const comments: string[] = [];
+  const loadouts: LoadoutEntry[] = [];
 
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -473,6 +502,14 @@ export function parseCommandsDatContent(content: string): CommandsDatRecord {
     } else {
       const key = trimmed.slice(0, spaceIdx);
       const value = trimmed.slice(spaceIdx + 1).trim();
+
+      // Loadout 重复行——结构化解析（CommandLoadout.cs:13-49）
+      if (key === 'Loadout') {
+        const parsed = parseLoadoutLine(value);
+        if (parsed) loadouts.push(parsed);
+        continue; // 不进 known，Loadout 走 loadouts 数组
+      }
+
       if (KNOWN_KEYS.has(key)) {
         known[key] = value;
       } else {
@@ -481,5 +518,32 @@ export function parseCommandsDatContent(content: string): CommandsDatRecord {
     }
   }
 
-  return { known, unknown, comments };
+  return { known, unknown, comments, loadouts };
+}
+
+/**
+ * 解析单条 Loadout 行（CommandLoadout.cs:13-49 / PlayerSkills.cs:43-97）。
+ * 格式：`SkillsetID/itemID/itemID/...`——第一个段是 byte SkillsetID，
+ * 其余段是 ushort ItemID。非法行返回 null（解析失败但保留为注释式丢弃）。
+ *
+ * @param value - Loadout 行 value 部分（已去掉 'Loadout ' 前缀）
+ * @returns LoadoutEntry 或 null（非法格式）
+ */
+function parseLoadoutLine(value: string): LoadoutEntry | null {
+  if (!value) return null;
+  const parts = value.split('/');
+  if (parts.length < 1) return null;
+
+  const skillsetId = Number(parts[0]);
+  if (!Number.isInteger(skillsetId) || skillsetId < 0 || skillsetId > 255) return null;
+  if (skillsetId !== 255 && skillsetId > 10) return null; // CommandLoadout.cs:22 校验
+
+  const itemIds: number[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    const id = Number(parts[i]);
+    if (!Number.isInteger(id) || id < 0 || id > 65535) return null; // ushort 校验
+    itemIds.push(id);
+  }
+
+  return { skillsetId, itemIds };
 }

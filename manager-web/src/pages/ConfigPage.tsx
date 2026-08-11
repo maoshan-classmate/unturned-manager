@@ -16,6 +16,10 @@ import { ConfigField } from "../components/shared/ConfigField.js";
 import { ConfigToggle } from "../components/shared/ConfigToggle.js";
 import { SearchInput } from "../components/shared/SearchInput.js";
 import {
+  LoadoutEditor,
+  type LoadoutEntry,
+} from "../components/shared/LoadoutEditor.js";
+import {
   DataTable,
   type DataTableColumn,
 } from "../components/shared/DataTable.js";
@@ -42,6 +46,24 @@ interface CommandsFields {
   Queue_Size: string;
   GSLT: string;
   Password: string;
+  /** PvE flag——true=PvE 模式，false=PvP 模式（SDK 默认 false）。面板勾选 = PvE */
+  PvE: boolean;
+  /** Bind 监听 IP（SDK 默认 0 = 0.0.0.0 监听所有接口，Provider.cs:6624） */
+  Bind: string;
+  /** Log 4 字段复合：依次为 Chat/Join/Death/Anticheat Y/N（SDK 默认 Y/Y/Y/N，CommandWindow.cs:49-52） */
+  LogChat: boolean;
+  LogJoin: boolean;
+  LogDeath: boolean;
+  LogAnticheat: boolean;
+  /** Votify 6 字段复合（CommandVotify.cs:18-83）：Allow Y/N, PassCooldown(秒), FailCooldown(秒), Duration(秒), Percentage(0-100), Players */
+  VotifyAllow: boolean;
+  VotifyPassCooldown: string;
+  VotifyFailCooldown: string;
+  VotifyDuration: string;
+  VotifyPercentage: string;
+  VotifyPlayers: string;
+  /** Loadout 重复行结构化结果——CommandLoadout.cs:13-49 + PlayerSkills.cs:43-97 */
+  Loadout: LoadoutEntry[];
   Cheats: boolean;
   Filter: boolean;
   Whitelisted: boolean;
@@ -64,6 +86,19 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
   Queue_Size: "排队上限",
   GSLT: "游戏服务器登录令牌",
   Password: "服务器密码",
+  PvE: "PvE 模式",
+  Bind: "监听 IP",
+  LogChat: "记录聊天",
+  LogJoin: "记录进/离",
+  LogDeath: "记录死亡",
+  LogAnticheat: "记录反作弊",
+  VotifyAllow: "启用投票",
+  VotifyPassCooldown: "通过冷却(秒)",
+  VotifyFailCooldown: "失败冷却(秒)",
+  VotifyDuration: "持续时长(秒)",
+  VotifyPercentage: "通过百分比",
+  VotifyPlayers: "最少玩家数",
+  Loadout: "开局物品",
   Cheats: "启用作弊",
   Filter: "名称过滤",
   Whitelisted: "白名单模式",
@@ -72,7 +107,7 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
   Sync: "跨服同步",
 };
 
-/** 空白初始值——不预设任何游戏默认值，全部从服务端文件读取 */
+/** 空白初始值——除 Log 沿用 SDK 默认（Y/Y/Y/N）外其余字段从服务端文件读取 */
 const EMPTY_FIELDS: CommandsFields = {
   Name: "",
   Port: "",
@@ -87,6 +122,19 @@ const EMPTY_FIELDS: CommandsFields = {
   Queue_Size: "",
   GSLT: "",
   Password: "",
+  PvE: false,
+  Bind: "",
+  LogChat: true,
+  LogJoin: true,
+  LogDeath: true,
+  LogAnticheat: false,
+  VotifyAllow: false,
+  VotifyPassCooldown: "5",
+  VotifyFailCooldown: "60",
+  VotifyDuration: "15",
+  VotifyPercentage: "75",
+  VotifyPlayers: "3",
+  Loadout: [],
   Cheats: false,
   Filter: false,
   Whitelisted: false,
@@ -196,17 +244,62 @@ export function ConfigPage() {
         const data = res.data.data;
         if (data) {
           const known = data.known ?? {};
+          const loadouts: LoadoutEntry[] = Array.isArray(data.loadouts)
+            ? data.loadouts.map((l: { skillsetId: number; itemIds: number[] }) => ({
+                skillsetId: Number(l.skillsetId),
+                itemIds: (l.itemIds ?? []).map(Number),
+              }))
+            : [];
           setFields({
             ...EMPTY_FIELDS,
             ...Object.fromEntries(
               Object.entries(known).map(([k, v]) => [k, String(v)]),
             ),
+            PvE: known.PvE !== undefined,
+            // Log 字段：4 字段空格分隔 Y/N（CommandLog.cs:18-84），依次 Chat/Join/Death/Anticheat
+            // 未配时回填 SDK 默认值 Y/Y/Y/N（CommandWindow.cs:49-52）——与 UI 默认一致
+            ...(() => {
+              if (known.Log === undefined) {
+                return { LogChat: true, LogJoin: true, LogDeath: true, LogAnticheat: false };
+              }
+              const parts = known.Log.split(/\s+/);
+              return {
+                LogChat: parts[0]?.toUpperCase() === "Y",
+                LogJoin: parts[1]?.toUpperCase() === "Y",
+                LogDeath: parts[2]?.toUpperCase() === "Y",
+                LogAnticheat: parts[3]?.toUpperCase() === "Y",
+              };
+            })(),
+            // Votify 字段：6 字段斜杠分隔（CommandVotify.cs:18），依次 Allow/PassCooldown/FailCooldown/Duration/Percentage/Players
+            // 未配时回填 SDK 默认值（N/5/60/15/75/3，ChatManager.cs:76-81）——与 UI 默认一致
+            ...(() => {
+              if (known.Votify === undefined) {
+                return {
+                  VotifyAllow: false,
+                  VotifyPassCooldown: "5",
+                  VotifyFailCooldown: "60",
+                  VotifyDuration: "15",
+                  VotifyPercentage: "75",
+                  VotifyPlayers: "3",
+                };
+              }
+              const parts = known.Votify.split("/");
+              return {
+                VotifyAllow: parts[0]?.toUpperCase() === "Y",
+                VotifyPassCooldown: parts[1] ?? "5",
+                VotifyFailCooldown: parts[2] ?? "60",
+                VotifyDuration: parts[3] ?? "15",
+                VotifyPercentage: parts[4] ?? "75",
+                VotifyPlayers: parts[5] ?? "3",
+              };
+            })(),
             Cheats: known.Cheats !== undefined,
             Filter: known.Filter !== undefined,
             Whitelisted: known.Whitelisted !== undefined,
             Gold: known.Gold !== undefined,
             Hide_Admins: known.Hide_Admins !== undefined,
             Sync: known.Sync !== undefined,
+            Loadout: loadouts,
           });
         }
       } else if (tab === "txt") {
@@ -281,8 +374,11 @@ export function ConfigPage() {
       if (tab === "commands") {
         const known = new Map<string, string>();
         for (const [key, val] of Object.entries(fields)) {
+          // Loadout 走独立 loadouts 字段，不进 known（避免空数组变成空字符串行）
+          if (key === "Loadout") continue;
           if (
             [
+              "PvE",
               "Cheats",
               "Filter",
               "Whitelisted",
@@ -294,10 +390,25 @@ export function ConfigPage() {
             if (val) known.set(key, "");
           } else if (val) known.set(key, String(val));
         }
+        // Log 4 字段合成单行 'Y/N Y/N Y/N Y/N'（Chat/Join/Death/Anticheat）——总是写入，UI 默认 = SDK 默认（Y/Y/Y/N）
+        const logLine = `${fields.LogChat ? "Y" : "N"} ${fields.LogJoin ? "Y" : "N"} ${fields.LogDeath ? "Y" : "N"} ${fields.LogAnticheat ? "Y" : "N"}`;
+        known.set("Log", logLine);
+        // Votify 6 字段合成单行 'Y/PassCooldown/FailCooldown/Duration/Percentage/Players'——总是写入，UI 默认 = SDK 默认（N/5/60/15/75/3，ChatManager.cs:76-81）
+        const votifyLine = [
+          fields.VotifyAllow ? "Y" : "N",
+          fields.VotifyPassCooldown || "5",
+          fields.VotifyFailCooldown || "60",
+          fields.VotifyDuration || "15",
+          fields.VotifyPercentage || "75",
+          fields.VotifyPlayers || "3",
+        ].join("/");
+        known.set("Votify", votifyLine);
         await apiClient.put(`/servers/${server.id}/config/commands`, {
-          known,
+          known: Object.fromEntries(known),
           unknown: {},
           comments: [],
+          // Loadout 重复行独立上传——序列化时 ConfigService 按 loadouts 数组写多行
+          loadouts: fields.Loadout,
         });
       } else if (tab === "txt") {
         await apiClient.put(`/servers/${server.id}/config/txt`, {
@@ -379,7 +490,7 @@ export function ConfigPage() {
 
   const handleFieldChange = (
     key: keyof CommandsFields,
-    value: string | boolean,
+    value: string | boolean | LoadoutEntry[],
   ) => {
     setFields((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
@@ -594,7 +705,7 @@ function CommandsTab({
   onChange,
 }: {
   fields: CommandsFields;
-  onChange: (k: keyof CommandsFields, v: string | boolean) => void;
+  onChange: (k: keyof CommandsFields, v: string | boolean | LoadoutEntry[]) => void;
 }) {
   return (
     <div className="p-4 md:p-6">
@@ -621,9 +732,14 @@ function CommandsTab({
               placeholder={k === "Map" ? "PEI" : k === "Mode" ? "Normal" : k === "Perspective" ? "FIRST（专用服务器默认）" : undefined}
             />
           ))}
+          <ConfigToggle
+            label={FIELD_LABELS.PvE}
+            checked={fields.PvE}
+            onChange={(v) => onChange("PvE", v)}
+          />
         </ConfigSection>
         <ConfigSection title="网络">
-          {(["Port", "MaxPlayers", "Timeout", "Queue_Size"] as const).map(
+          {(["Port", "MaxPlayers", "Timeout", "Queue_Size", "Bind"] as const).map(
             (k) => (
               <ConfigField
                 key={k}
@@ -635,6 +751,7 @@ function CommandsTab({
                     : k === "MaxPlayers" ? "8（1–200）"
                     : k === "Timeout" ? "750（ms）"
                     : k === "Queue_Size" ? "8"
+                    : k === "Bind" ? "0.0.0.0（监听所有接口）"
                     : undefined
                 }
               />
@@ -660,6 +777,52 @@ function CommandsTab({
             />
           ))}
         </ConfigSection>
+        <ConfigSection title="日志">
+          <p className="text-xs mb-2" style={{ color: '#64748B' }}>
+            默认值（与 Unturned 服务端保持一致）：记录聊天/进离/死亡，不记录反作弊
+          </p>
+          {(
+            [
+              "LogChat",
+              "LogJoin",
+              "LogDeath",
+              "LogAnticheat",
+            ] as const
+          ).map((k) => (
+            <ConfigToggle
+              key={k}
+              label={FIELD_LABELS[k]}
+              checked={fields[k]}
+              onChange={(v) => onChange(k, v)}
+            />
+          ))}
+        </ConfigSection>
+        <ConfigSection title="投票">
+          <ConfigToggle
+            label={FIELD_LABELS.VotifyAllow}
+            checked={fields.VotifyAllow}
+            onChange={(v) => onChange("VotifyAllow", v)}
+          />
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-3">
+            {(
+              [
+                ["VotifyPassCooldown", "通过冷却(秒)", "5（ChatManager.cs:77）"],
+                ["VotifyFailCooldown", "失败冷却(秒)", "60（ChatManager.cs:78）"],
+                ["VotifyDuration", "持续时长(秒)", "15（ChatManager.cs:79）"],
+                ["VotifyPercentage", "通过百分比(0–100)", "75（ChatManager.cs:80）"],
+                ["VotifyPlayers", "最少玩家数", "3（ChatManager.cs:81）"],
+              ] as const
+            ).map(([k, label, ph]) => (
+              <ConfigField
+                key={k}
+                label={label}
+                value={String(fields[k as keyof CommandsFields])}
+                onChange={(v) => onChange(k as keyof CommandsFields, v)}
+                placeholder={ph}
+              />
+            ))}
+          </div>
+        </ConfigSection>
         <div className="md:col-span-2">
           <ConfigSection title="游戏参数">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -679,6 +842,12 @@ function CommandsTab({
               ))}
             </div>
           </ConfigSection>
+        </div>
+        <div className="md:col-span-2">
+          <LoadoutEditor
+            loadouts={fields.Loadout}
+            onChange={(next) => onChange("Loadout", next)}
+          />
         </div>
       </div>
     </div>

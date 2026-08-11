@@ -334,4 +334,72 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       timeout: 10_000,
     });
   });
+
+  // ─── #19 阶段4：LoadoutEditor 端到端（`#28` 回归）────────────────────
+  // 场景：登录 → ConfigPage → Commands.dat tab → 滚到「开局物品」区块 →
+  //       空状态下添加一条警察技能组 → 断言 chip 出现 → 删除 → 断言 chip 消失
+  test("Loadout 编辑器添加+删除条目（前端 UI 闭环）", async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // 登录
+    await page.goto("/");
+    await page.fill("#login-username", "admin");
+    await page.fill("#login-password", "123456");
+    await page
+      .getByRole("button", { name: /登录|Sign/i })
+      .first()
+      .click();
+    await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
+
+    // 进 ConfigPage（默认 tab = commands；路由精确 /:serverId/config/commands）
+    await page.goto("/_default/config/commands");
+    await expect(page.getByText("服务器配置")).toBeVisible({ timeout: 10_000 });
+
+    // Loadout 区块可见——若 _default 已有 Commands.dat，Loadout 列表可能非空，
+    // 用「数量先 N → 添加 → N+1」断言而非「从 0 开始」
+    const loadoutSection = page.locator("fieldset", {
+      hasText: "开局物品（Loadout）",
+    });
+    await expect(loadoutSection).toBeVisible({ timeout: 10_000 });
+
+    const chipLocator = loadoutSection.locator("span.font-mono");
+    const beforeCount = await chipLocator.count();
+
+    // 添加一条：选 SkillsetID「警察（ID 2）」 + 输入物品 ID「17 1064」
+    const skillsetSelect = loadoutSection.locator("select").first();
+    // _default 已有 Loadout 行时警察 ID 可能已被占用——选第一个可用的下拉项即可
+    const firstOptionValue = await skillsetSelect
+      .locator("option")
+      .first()
+      .getAttribute("value");
+    if (!firstOptionValue) throw new Error("Loadout 技能组下拉为空");
+    await skillsetSelect.selectOption(firstOptionValue);
+
+    await loadoutSection
+      .locator('input[placeholder*="物品 ID"], input[placeholder*="例如 5 18"]')
+      .first()
+      .fill("17 1064");
+
+    await loadoutSection.getByRole("button", { name: "添加" }).click();
+
+    // 添加成功：chip 数量 +1（chip 是 itemID 数字的 font-mono span）
+    await expect.poll(async () => chipLocator.count(), { timeout: 5_000 })
+      .toBe(beforeCount + 2); // 17 和 1064 两个 chip
+
+    // 删除按钮——每条 Loadout 行右侧的 trash 按钮（aria-label 含技能组名）
+    const trashBtn = loadoutSection
+      .locator('button[aria-label^="删除"]')
+      .first();
+    await trashBtn.click();
+
+    // 二次确认弹框（ConfirmDialog title = "删除开局物品"）
+    await expect(page.getByText("删除开局物品")).toBeVisible({
+      timeout: 5_000,
+    });
+    await page.getByRole("button", { name: /^删除$/ }).click();
+
+    // 删除成功：chip 数量回到 beforeCount
+    await expect.poll(async () => chipLocator.count(), { timeout: 5_000 })
+      .toBe(beforeCount);
+  });
 });

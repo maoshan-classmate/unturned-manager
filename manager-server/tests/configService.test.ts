@@ -117,4 +117,115 @@ describe('ConfigService — 5 种格式往返', () => {
     const back = await svc.readRocketModConfig(serverId, 'BasicChat');
     expect(back.PluginSettings).toBeDefined();
   });
+
+  // ─── Loadout 重复行（CommandLoadout.cs:13-49 + PlayerSkills.cs:43-97）────────
+
+  it('Loadout: 解析多行 Loadout 为结构化 loadouts 数组', async () => {
+    // 11 = 军人（合法），3 = 农民，255 = 默认全部技能组；itemID = ushort 0–65535
+    const input = [
+      'Name MyServer',
+      'Loadout 1/5/18/100',
+      'Loadout 4/255',
+      'Loadout 255/1/2/3',
+      'UnknownKey customValue',
+    ].join('\n') + '\n';
+    await fs.writeFile(path.join(serverDir, 'Server', 'Commands.dat'), input);
+
+    const record = await svc.readCommandsDat(serverId);
+
+    // Loadout 行不进 known（CLAUDE.md §4.3 解析器契约）
+    expect(record.known.Loadout).toBeUndefined();
+    // 结构化解析到 loadouts 数组
+    expect(record.loadouts).toEqual([
+      { skillsetId: 1, itemIds: [5, 18, 100] },
+      { skillsetId: 4, itemIds: [255] },
+      { skillsetId: 255, itemIds: [1, 2, 3] },
+    ]);
+    // 其他键不受影响
+    expect(record.known.Name).toBe('MyServer');
+    expect(record.unknown.UnknownKey).toBe('customValue');
+  });
+
+  it('Loadout: 非法 SkillsetID (>10 且非 255) 与非法 itemID (>65535) 行被丢弃', async () => {
+    const input = [
+      'Loadout 1/5',         // 合法 → 保留
+      'Loadout 11/100',      // 非法 skillsetId（>10 非 255） → 丢弃
+      'Loadout 256/100',     // 非法 skillsetId（byte 溢出）→ 丢弃
+      'Loadout 2/99999',     // 非法 itemID（>65535）→ 整行丢弃
+      'Loadout 5',           // 合法，无物品 → 保留
+    ].join('\n') + '\n';
+    await fs.writeFile(path.join(serverDir, 'Server', 'Commands.dat'), input);
+
+    const record = await svc.readCommandsDat(serverId);
+
+    expect(record.loadouts).toEqual([
+      { skillsetId: 1, itemIds: [5] },
+      { skillsetId: 5, itemIds: [] },
+    ]);
+  });
+
+  it('Loadout: 序列化多 loadouts → 每行 Loadout <id>/<item>/<item>... 写回', async () => {
+    await svc.writeCommandsDat(serverId, {
+      known: { Name: 'MyServer' },
+      unknown: {},
+      comments: [],
+      loadouts: [
+        { skillsetId: 1, itemIds: [5, 18] },
+        { skillsetId: 255, itemIds: [1, 2, 3] },
+      ],
+    });
+
+    const content = await fs.readFile(
+      path.join(serverDir, 'Server', 'Commands.dat'),
+      'utf-8',
+    );
+    const lines = content.trim().split('\n');
+
+    // Loadout 行存在且格式正确
+    expect(lines).toContain('Loadout 1/5/18');
+    expect(lines).toContain('Loadout 255/1/2/3');
+    // 已知键 Loadout 不进 known 行——所以不会同时出现单行 'Loadout ...'
+    expect(lines.filter((l) => l.startsWith('Loadout ')).length).toBe(2);
+  });
+
+  it('Loadout: 往返等价——读后写回内容稳定', async () => {
+    const input = [
+      'Name MyServer',
+      'Loadout 1/5/18',
+      'Loadout 255/1/2/3',
+      '# trailing comment',
+    ].join('\n') + '\n';
+    await fs.writeFile(path.join(serverDir, 'Server', 'Commands.dat'), input);
+
+    const first = await svc.readCommandsDat(serverId);
+    await svc.writeCommandsDat(serverId, first);
+    const second = await svc.readCommandsDat(serverId);
+
+    expect(second.loadouts).toEqual(first.loadouts);
+    expect(second.known).toEqual(first.known);
+    expect(second.unknown).toEqual(first.unknown);
+    expect(second.comments).toEqual(first.comments);
+  });
+
+  it('Loadout: 面板存非法 loadout 被序列化时跳过（防御层兜底）', async () => {
+    // 即使前端构造出非法 entry，后端 serialize 也兜底跳过，不污染 Commands.dat
+    await svc.writeCommandsDat(serverId, {
+      known: { Name: 'MyServer' },
+      unknown: {},
+      comments: [],
+      loadouts: [
+        { skillsetId: 1, itemIds: [5] },        // 合法
+        { skillsetId: 99, itemIds: [10] },      // 非法 skillsetId → 跳过
+        { skillsetId: 255, itemIds: [1, 2] },   // 合法
+      ],
+    });
+
+    const content = await fs.readFile(
+      path.join(serverDir, 'Server', 'Commands.dat'),
+      'utf-8',
+    );
+    expect(content).toContain('Loadout 1/5');
+    expect(content).toContain('Loadout 255/1/2');
+    expect(content).not.toContain('Loadout 99/');
+  });
 });

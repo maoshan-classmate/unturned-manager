@@ -7,18 +7,36 @@ export const KNOWN_COMMAND_KEYS = [
   'Name', 'Port', 'MaxPlayers', 'Map', 'Mode', 'Owner',
   'Perspective', 'Chatrate', 'Cycle', 'Timeout', 'Queue_Size',
   'Filter', 'Whitelisted', 'Gold', 'Hide_Admins', 'Sync',
-  'Cheats', 'GSLT', 'Log', 'Votify', 'Password',
+  'Cheats', 'GSLT', 'Log', 'Votify', 'Password', 'PvE', 'Bind',
+  'Loadout',
 ] as const;
 
 /** 纯开关型字段（无 value，出现即启用） */
 export const FLAG_ONLY_KEYS = new Set([
-  'Filter', 'Whitelisted', 'Gold', 'Hide_Admins', 'Sync', 'Cheats',
+  'Filter', 'Whitelisted', 'Gold', 'Hide_Admins', 'Sync', 'Cheats', 'PvE',
 ]);
+
+/** 允许重复出现的已知键（每条独立写一行） */
+export const REPEATABLE_KEYS = new Set(['Loadout']);
+
+/**
+ * 单条 Loadout 行结构（CommandLoadout.cs:13-49 / PlayerSkills.cs:43-97）。
+ * 权威约束：SkillsetID ∈ {0,1,2,3,4,5,6,7,8,9,10,255}（255 = 默认全部技能组），
+ *           ItemID ∈ [0, 65535] ushort。同一 SkillsetID 多行 = 后写覆盖前写。
+ */
+export const LoadoutEntrySchema = z.object({
+  /** 0–10 = 11 个技能组，255 = 默认全部技能组 */
+  skillsetId: z.number().int().min(0).max(255),
+  /** 该技能组开局携带的物品 ID 列表；空数组表示该技能组无物品加成 */
+  itemIds: z.array(z.number().int().min(0).max(65535)),
+});
 
 export const CommandsDatRecordSchema = z.object({
   known: z.record(z.string(), z.string()),
   unknown: z.record(z.string(), z.string()),
   comments: z.array(z.string()),
+  /** Loadout 重复行结构化结果——格式：Loadout <SkillsetID>/<itemID>/<itemID>... */
+  loadouts: z.array(LoadoutEntrySchema).optional(),
 });
 
 // ─── Config.txt ────────────────────────────────────────
@@ -65,6 +83,8 @@ export const WriteCommandsDatSchema = z.object({
   known: z.record(z.string(), z.string()),
   unknown: z.record(z.string(), z.string()),
   comments: z.array(z.string()),
+  /** Loadout 重复行结构化结果——格式：Loadout <SkillsetID>/<itemID>/<itemID>... */
+  loadouts: z.array(LoadoutEntrySchema).optional(),
   /** 文件 mtime（Unix ms），客户端读时拿到、服务端写时比对 */
   expectedMtime: z.number().nonnegative().optional(),
 });
