@@ -124,7 +124,7 @@
 | 后端框架 | Node.js 20 + Express 4 + TypeScript |
 | 进程/终端 | `node-pty`（PTY 模拟）+ `ws`（WebSocket 双向） |
 | 数据库 | better-sqlite3（同步 API）+ `user_version` PRAGMA 迁移 |
-| 配置解析 | `fast-xml-parser`（XML）+ `js-yaml`（YAML） |
+| 配置解析 | 面板自有行解析（Commands.dat / Config.txt / WorkshopDownloadConfig.json） |
 | 认证/安全 | argon2（Argon2id）、jsonwebtoken、helmet、cors |
 | 日志 | pino（结构化 JSON） |
 | 契约 | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0 |
@@ -177,7 +177,7 @@
 | **PtyManager** | PTY 进程生命周期管理（node-pty 封装）。spawn 永驻 bash、write 透传 stdin、resize、kill/forceKill、onData（按行切分）、onExit、waitExit | node-pty | ✅ destroy 全部 PTY 进程 |
 | **ProcessSupervisor** | 非 PTY 子进程管理——服务 SteamCMD（execFile/进程）。spawn、gracefulShutdown、waitForExit（返回退出码）、forceKill、onStdout、onCrash | child_process | ✅ |
 | **FileLockProvider** | 配置文件并发写锁（acquire/release/isLocked），配合乐观锁 mtime | — | — |
-| **ConfigService** | `Commands.dat` / `Config.txt` / `WorkshopDownloadConfig.json` / OpenMod / RocketMod 配置读写。乐观锁（expectedMtime）+ 备份 + 回滚 | FileLockProvider | — |
+| **ConfigService** | `Commands.dat` / `Config.txt` / `WorkshopDownloadConfig.json` 配置读写。乐观锁（expectedMtime）+ 备份 + 回滚 | FileLockProvider | — |
 | **FilesService** | 服务器文件浏览/读写/删除/重命名/建目录/权限/上传流（`IFilesService`），路径白名单防穿越 | FileLockProvider | — |
 | **AuthService** | JWT 认证：login/refresh/logout/changePassword/validateAccessToken。密码 Argon2id，refresh token 轮换 | DB | — |
 | **SteamCmdManager** | SteamCMD 长任务：install U3DS / update U3DS / downloadWorkshopItem（staging）/ checkUpdate / reinstall / setInstallPath。全异步返回 jobId | ProcessSupervisor、IBroadcaster、activeProbe（延迟绑定 → ServerManager） | — |
@@ -217,7 +217,7 @@
 /                               → DashboardPage（实例列表 + 统计）
 /:serverId/console              → ConsolePage（xterm.js 终端）
 /:serverId/mods                 → ModsPage（创意工坊浏览 + 已下载管理）
-/:serverId/config/commands      → ConfigPage（Commands.dat / Config.txt / Workshop / OpenMod / RocketMod Tab）
+/:serverId/config/commands      → ConfigPage（Commands.dat / Config.txt / Workshop Tab）
 /:serverId/files                → FilesPage（文件浏览器）
 /:serverId/server-setup         → ServerSetupPage（安装引导 + 实例控制 + 计划任务）
 /:serverId/settings             → SettingsPage（WebAPI Key / 改密）
@@ -336,7 +336,6 @@ interface IServerManager {
 - `readCommandsDat` / `writeCommandsDat(serverId, config, expectedMtime?)`——乐观锁：mtime 不一致抛 `config_conflict`。
 - `readConfigTxt` / `writeConfigTxt`；`readWorkshopConfig` / `writeWorkshopFileIds`（面板只写 File_IDs）。
 - `backup(serverId, filePath): Promise<string>` / `rollback(serverId, filePath, backupPath)`。
-- OpenMod / RocketMod 配置读写（`readOpenModConfig` / `writeRocketModConfig` 等）。
 
 ### 5.5 IPtyManager（`shared/contracts/pty.ts`）
 
@@ -713,7 +712,6 @@ CREATE TABLE settings (
 | SteamID64 | `/^7656119\d{10}$/` |
 | Workshop File ID | 正整数 |
 | 文件路径 | 拒绝 `\x00`、拒绝 `..` 穿越；`realpath` 解析后白名单前缀匹配（`resolveValidatedPath`） |
-| YAML/XML | 最大 1MB；js-yaml DEFAULT_SCHEMA（无 `!!js/*`）、fast-xml-parser 禁用 DTD |
 | 请求体 | JSON `10mb` 限制、octet-stream raw `100mb` 限制 |
 
 ### 8.5 命令鉴权（owner-trust）

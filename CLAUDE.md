@@ -15,7 +15,8 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | 术语 | 含义 |
 |---|---|
 | **U3DS** | Unturned 专用服务端二进制，Steam AppID `1110390` |
-| **U3-SDK** | 官方 Unity 客户端源码（`.research/U3-SDK`），**绝对不能编译来当服务端用** |
+| **U3-SDK** | 官方 Unity 客户端源码（`.research/U3-SDK`），**绝对不能编译来当服务端用**；仅作 schema 参考，可查阅任意类（真源行号引用依据） |
+| **LDM** | Legally-Distinct-Missile，Unturned 官方维护的 Mod 框架；插件配置走 `Rocket/` 目录 |
 | **ServerID** | `Servers/` 下的子目录，代表一个服务端实例 |
 | **GSM** | `GameServerManager`（`.research/GameServerManager`），只参考技术栈 |
 | **PTY 终端** | 持久 bash + xterm.js 双向链路——发命令到服务端的唯一通道（ADR-0004 取代 RCON/A2S） |
@@ -38,7 +39,7 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 |---|---|
 | **前端** | React 18 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui（基于 @base-ui/react）+ Motion (framer-motion v13) + @tanstack/react-table + recharts + lucide-react |
 | **后端** | Node.js 20 + Express 4 + TypeScript + `ws` + better-sqlite3 + pino |
-| **游戏集成** | 持久 PTY bash（`node-pty` + `ws` 双向，xterm.js 前端渲染）——ADR-0004 取代 RCON/A2S 通道；`fast-xml-parser` + `js-yaml` |
+| **游戏集成** | 持久 PTY bash（`node-pty` + `ws` 双向，xterm.js 前端渲染）——ADR-0004 取代 RCON/A2S 通道 |
 | **API 契约** | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0，前后端共用 |
 | **部署** | Docker Compose（panel + U3DS 同主机、共享卷、同 bridge 网络）；Caddy/nginx 反向代理 TLS 终结 |
 

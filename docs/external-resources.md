@@ -42,14 +42,13 @@
 | U3-SDK（客户端源码） | `.research/U3-SDK` | AppID `304930`，仅供 schema 参考、禁止编译 |
 | WorkshopDownloadConfig.cs | `.research/U3-SDK/Assets/Runtime/Assembly-CSharp/Unturned/Provider/WorkshopDownloadConfig.cs` | WorkshopDownloadConfig.json 的 schema 权威来源 |
 
-### 1.4 OpenMod / RocketMod
+### 1.4 Mod 框架（LDM）
 
-> ⚠️ **RocketMod 已过期**——本项目打算采用 OpenMod 框架，不采用 RocketMod。原仓库已停止维护，官方维护的分叉为 Legally-Distinct-Missile（LDM）。以下 RocketMod 条目仅作历史参考。
+> **LDM（Legally-Distinct-Missile）**——Unturned 官方维护的 Mod 框架，本项目唯一采用的框架。
 
 | 资源 | 链接 | 说明 |
 |---|---|---|
-| OpenMod 文档 | https://openmod.github.io/openmod-docs/ | C# Mod 框架（本项目采用；其 RCON 通道已随 ADR-0004 Phase 6 移除，命令走 PTY 终端） |
-| RocketMod 仓库（已过期） | https://github.com/SmartlyDressedGames/Legally-Distinct-Missile | 旧 Mod 框架，Lua 插件，Telnet RCON；SDG 官方维护分叉（LDM），仅历史参考 |
+| LDM 仓库 | https://github.com/SmartlyDressedGames/Legally-Distinct-Missile | Unturned 官方维护的 Mod 框架；插件配置走 `Rocket/` 目录（`Rocket.config.xml`） |
 
 ---
 
@@ -79,14 +78,7 @@
 | node-pty (npm) | https://www.npmjs.com/package/node-pty | PTY 模拟终端（U3DS 需要 isatty 才输出彩色进度条） |
 | xterm.js | https://xtermjs.org/ | 前端终端渲染（输出流 + onData 键盘输入） |
 
-### 2.4 配置解析
-
-| 资源 | 链接 | 说明 |
-|---|---|---|
-| js-yaml (npm) | https://github.com/nodeca/js-yaml | YAML 解析（OpenMod config.yaml） |
-| fast-xml-parser (npm) | https://github.com/NaturalIntelligence/fast-xml-parser | XML 解析（RocketMod Configuration.xml） |
-
-### 2.5 日志 & 安全
+### 2.4 日志 & 安全
 
 | 资源 | 链接 | 说明 |
 |---|---|---|
@@ -94,7 +86,7 @@
 | argon2 (npm) | https://github.com/ranisalt/node-argon2 | 密码哈希（Argon2id） |
 | jsonwebtoken (npm) | https://github.com/auth0/node-jsonwebtoken | JWT 签发与校验 |
 
-### 2.6 WebSocket
+### 2.5 WebSocket
 
 | 资源 | 链接 | 说明 |
 |---|---|---|
@@ -150,7 +142,7 @@
 |---|---|---|
 | DST 管理平台 | `.research/dst-management-platform-api` | Go 实现，Mod 管理链路参考 |
 | GameServerManager | `.research/GameServerManager` | 通用游戏管理面板，技术栈参考 |
-| U3-SDK | `.research/U3-SDK` | Unity 客户端源码，**只能看 WorkshopDownloadConfig.cs** |
+| U3-SDK | `.research/U3-SDK` | Unity 客户端源码，仅作 schema 参考，可查阅任意类（严禁编译/导入） |
 
 ---
 

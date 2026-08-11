@@ -22,14 +22,14 @@
 | 抄 GSM 里其他游戏的专门实现 | minecraft-server-api / factorio-deployer / mrpack-server-api / tmodloader-server-api |
 | 给每个服起一个 U3DS 容器 | 违反多 ServerID 共装决策（省 10GB/服） |
 | 承诺"无停机换 Mod" | 热重载不存在，参 U3-SDK/Issues/#1794 |
-| 自动跑 `rocket reload` | OpenMod reload 仅作可选，RocketMod reload 直接禁用 |
+| 自动跑 `rocket reload` | LDM 插件 reload 无官方热重载支持，改配置必须重启生效 |
 | 明文存密码 | 用户密码用 Argon2id 落库 |
 
 ## 绝对不能
 
 - U3-SDK **绝对不能编译来当服务端用**——它是客户端 Unity 工程（AppID `304930`）
 - U3-SDK 文件**绝对不能导入、编译、复制到本项目源码树**
-- U3-SDK **只能当 schema 参考用**——`WorkshopDownloadConfig.cs` 是唯一可查阅的文件
+- U3-SDK **只能当 schema 参考用**——可查阅任意类（如 `Provider.cs` / `CommandLoadout.cs`，文档真源行号引用依据），但文件**绝不能导入、编译、复制到本项目源码树**
 - `.claude/` **绝对不能提交个人 token**
 - 打印日志时**绝不能**带凭证/密钥部分（密码、token、GSLT、Steam WebAPI Key 等）
 

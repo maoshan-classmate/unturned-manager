@@ -19,12 +19,9 @@ Servers/
     │   ├── Whitelist.dat          # 白名单
     │   └── WorkshopDownloadConfig.json  # Mod 订阅清单
     ├── Config.txt                 # 游戏玩法/浏览器配置
-    ├── Rocket/                    # RocketMod（老的、兼容用）
+    ├── Rocket/                    # LDM（官方 Mod 框架）插件配置
     │   ├── Rocket.config.xml
     │   └── Plugins/<Name>/Configuration.xml
-    ├── openmod/                   # OpenMod（新的、推荐）
-    │   ├── openmod.yaml
-    │   └── plugins/<Id>/config.yaml
     ├── Workshop/                  # SteamCMD 下载的 Workshop 内容
     ├── Bundles/Workshop/          # 手动放的 .unity3d 包
     └── Logs/                      # 面板 tail 的日志目录
