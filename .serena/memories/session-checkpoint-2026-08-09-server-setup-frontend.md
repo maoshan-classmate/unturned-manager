@@ -6,8 +6,8 @@
 
 ### 后端现状（目录真源，ADR-0003 B2）
 - `ServerManager.listServers` 启动时 `loadServersFromDisk()` 扫描 `Servers/` 目录（`Commands.dat` 存在性 = 实例成立）→ 内存 Map，**不读 SQLite**
-- `createServer` 建 `Servers/<id>/Server/Commands.dat` + RCON 凭证落 settings K-V（AES-GCM）；重复创建 409 `server-exists`；`installDir` 一律取全局，忽略客户端传入值
-- `removeServer` 停服（若运行中）→ `fs.rm` 删目录 → 清凭证 → 注销 RCON/A2S
+- `createServer` 建 `Servers/<id>/Server/Commands.dat`；重复创建 409 `server-exists`；`installDir` 一律取全局，忽略客户端传入值
+- `removeServer` 停服（若运行中）→ `fs.rm` 删目录 → 清理该实例的设置键值与终端会话记录
 - `DELETE /servers/:id` 挂 `validate(DeleteServerSchema, 'params')`（shared schema 新增 `DeleteServerSchema`）；servers router 在 `index.ts` 先于 files router 挂载，不会被 `DELETE /:id` 抢匹配
 
 ### useServer 去轮询（保留）
@@ -20,4 +20,4 @@
 
 ### 其他变更
 - toast 位置：`components/ui/sonner.tsx` `bottom-right` → `top-center`
-- 创建弹窗新增 OpenMod RCON 凭证字段（ADR-17 双协议分离，`SteamID:密码` 格式）
+- 创建弹窗曾有 OpenMod 远程控制台凭证字段，已随 ADR-0004 Phase 6 删除（见 [[session-checkpoint-2026-08-11-phase6-rcon-removal]]）

@@ -13,7 +13,7 @@ ADR-0004 §4 Phase 3（前端 xterm.js 终端 + WS terminal_input 双向链路�
 
 ## 前端组件
 
-`manager-web/src/components/console/Terminal.tsx`：xterm.js wrapper——增量写入（writtenRef）、clearLines 长度骤减先 clear 重置游标、FitAddon + ResizeObserver fit、theme 对齐全局色值（背景 #0F172A / 前景 #94A3B8 / 强调 #22C55E）、`data-testid="terminal-container"`、dispose 清理完整。ConsolePage 用 `<Terminal>` 替换 `<pre>`，保留结构化 RCON 通道 + ConfirmDialog。
+`manager-web/src/components/console/Terminal.tsx`：xterm.js wrapper——增量写入（writtenRef）、clearLines 长度骤减先 clear 重置游标、FitAddon + ResizeObserver fit、theme 对齐全局色值（背景 #0F172A / 前景 #94A3B8 / 强调 #22C55E）、`data-testid="terminal-container"`、dispose 清理完整。ConsolePage 用 `<Terminal>` 替换 `<pre>`，当时保留结构化远程控制台通道 + ConfirmDialog（该通道已于 Phase 6 删除，见 [[session-checkpoint-2026-08-11-phase6-rcon-removal]]）。
 
 ## 验证证据
 

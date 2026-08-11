@@ -15,6 +15,7 @@ import {
   type IAuthService,
   type IPtyManager,
   type ISessionManager,
+  type IU3dsStatusProvider,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -34,6 +35,7 @@ import { WorkshopApplyService } from "./modules/workshop/WorkshopApplyService.js
 import { WorkshopDeleteService } from "./modules/workshop/WorkshopDeleteService.js";
 import { LogStreamer } from "./modules/logs/LogStreamer.js";
 import { SessionManager } from "./modules/sessions/SessionManager.js";
+import { U3dsStatusProvider } from "./modules/u3ds/U3dsStatusProvider.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -53,6 +55,7 @@ export interface AppContainer {
   processSupervisor: IProcessSupervisor;
   ptyManager: IPtyManager;
   sessionManager: ISessionManager;
+  u3dsStatus: IU3dsStatusProvider;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -93,6 +96,9 @@ export function buildContainer(db: Database.Database): AppContainer {
   // Phase 7：终端会话持久化（1:1 GSM3 TerminalSessionManager）
   const sessionManager = new SessionManager(logger, config.dataDir);
 
+  // Unturned 服务端（U3DS）安装状态查询器——读启动脚本 + Status.json + 安装清单
+  const u3dsStatus = new U3dsStatusProvider(logger);
+
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
   // ★ ADR-0004 Phase 2：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
   // ★ ADR-0004 Phase 6：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
@@ -125,5 +131,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     processSupervisor,
     ptyManager,
     sessionManager,
+    u3dsStatus,
   };
 }

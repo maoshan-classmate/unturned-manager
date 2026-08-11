@@ -162,7 +162,7 @@ export function ServerControlCard({
               disabled={startCommandSaving}
               className="h-7 text-[11px] font-mono flex-1"
               spellCheck={false}
-              aria-label="U3DS 启动命令"
+              aria-label="Unturned 服务端启动命令"
             />
             <Button
               variant="secondary"

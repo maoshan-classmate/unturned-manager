@@ -73,6 +73,8 @@ export class AppError extends Error {
 ### 使用规范
 
 - 所有业务错误**必须**通过 `throw new AppError(code, message, status)` 抛出
+
+> **跨层注意**：`AppError.message` 会被前端原样弹成 toast 给用户看（前端 catch 块读 `err.response.data.error.message` 后塞进 sonner），属于用户可见文案。措辞遵循 `frontend-development.md` §界面文案规范——界面不出现项目内部术语、缩写、代号。
 - **禁止** `throw new Error()` 裸抛（路由无法区分错误类型）
 - **禁止** `Object.assign(new Error(), { status })` 模式
 

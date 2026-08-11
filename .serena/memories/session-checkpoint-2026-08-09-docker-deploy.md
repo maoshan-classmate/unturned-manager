@@ -25,7 +25,7 @@
 
 ### 默认值（快速启动 + 安全警告）
 - JWT_SECRET/ENCRYPTION_KEY/ADMIN_PASSWORD 带默认值（沿用 manager-server/.env 开发值），compose `:-` 缺失/留空可用 → 零配置 `docker compose up`
-- ⚠️ 固定默认值 = 所有未覆盖部署共享同一密钥（JWT 可伪造、落库 RCON 凭证可解密）——生产必须 `.env` 覆盖，警告已写进 compose 注释 + .env.example 顶部
+- ⚠️ 固定默认值 = 所有未覆盖部署共享同一密钥（JWT 可伪造、落库的加密设置值可解密）——生产必须 `.env` 覆盖，警告已写进 compose 注释 + .env.example 顶部
 
 ### 验证证据（2026-08-09）
 - 后端 `tsc --noEmit` 零错误；前端 `npm run build -w manager-web` 成功（即 builder 阶段命令）

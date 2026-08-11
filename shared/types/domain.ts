@@ -106,3 +106,22 @@ export interface SteamCmdStatus {
   installPath?: string;
   lastChecked?: string;
 }
+
+// Unturned 服务端（U3DS）安装状态——与上面的 SteamCmdStatus 是两回事：
+// 前者是下载工具装没装，本类型是被下载的服务端程序装没装。
+export interface U3dsStatus {
+  /** Steam 应用编号，恒为 STEAM_APP_IDS.U3DS_SERVER */
+  appId: string;
+  /** 是否已安装——判据是安装目录下有无启动脚本 */
+  isInstalled: boolean;
+  /** 安装根目录 */
+  installPath: string;
+  /** 游戏版本号，形如 `3.24.5.0`；读不到版本文件时为 undefined */
+  version?: string;
+  /** Steam 构建号，用于检查更新时比对（同版本号可能对应多次构建） */
+  buildId?: string;
+  /** 上次更新时间（ISO 字符串）；取自安装清单，回落清单文件自身修改时间 */
+  lastUpdated?: string;
+  /** 模组数——当前不由后端填充：模组按实例统计，而本类型是安装级 */
+  modCount?: number;
+}

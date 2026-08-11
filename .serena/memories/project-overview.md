@@ -1,44 +1,34 @@
 ## 项目概述
 Unturned Manager — Unturned Linux 专用服务器的 Web UI 管理面板。前端 React + shadcn/ui + Tailwind，后端 Node.js + Express + TypeScript，Docker Compose 部署。
 
-## Sprint 2 实现进度 (2026-08-07)
+## 实现现状（2026-08-11，Phase 0-7 落地后）
 
-### 后端模块 (12/12 real) ✅
-- ✅ AuthService — JWT + Argon2id + token rotation
-- ✅ ServerManager — 五状态机 + activeOperation 竞态防护 + audit_log
-- ✅ ProcessSupervisor — child_process.spawn + 优雅关停 + cwd
-- ✅ RconManager — OpenMod→RocketMod 自动探测 + 凭证分离 + 心跳
-- ✅ A2SClient — UDP A2S_INFO 查询 (30s 超时)
-- ✅ FileLockProvider — 进程内文件互斥锁
-- ✅ ConfigService — 5 种格式（Commands.dat/Config.txt/Workshop.json/OpenMod yaml/Rocket xml）+ 备份 + 乐观锁
-- ✅ FilesService — 路径白名单 + realpath 防护 + 敏感字段脱敏 + 7 REST 端点
-- ✅ SteamCmdManager — getStatus + updateU3DS 安全门控（spawn 留 Sprint 3）
-- ✅ WorkshopMetadataService — Steam WebAPI IPublishedFileService 拉取（需 WebAPI Key）+ DB LRU 缓存 + stale-while-revalidate
-- ✅ LogStreamer — 脱敏管道 + 文件 tail 轮询（PTY 留 Sprint 3）
-- ✅ WsBroadcaster — 单例接线，JWT 认证 + 按 ServerID 订阅广播
+### 后端模块目录（11 个，`manager-server/src/modules/`）
+认证 / 配置 / 文件锁 / 文件 / 日志 / 进程 / 服务端管理 / 会话 / 设置 / SteamCMD / 创意工坊
 
-### 前端页面 (10/10 real) ✅
-- ✅ LoginPage — shadcn/ui + Motion + RHF + Zod + 401 自动刷新
-- ✅ DashboardPage — StatCard×4 + QuickActions + loading/error/empty 三态
-- ✅ ConsolePage — ServerTabBar + 8 预设命令 + Output (WS+REST) + Input (↑↓历史+危险确认)
-- ✅ ModsPage — Mod 卡片网格 + 搜索 + AddModDialog + PendingBar
-- ✅ PlayersPage — 玩家表格 + Kick/Ban + ConfirmDialog
-- ✅ ConfigPage — Commands/Txt/Workshop 三 Tab 编辑器 + dirty tracking
-- ✅ FilesPage — 面包屑 + 文件网格 + 右键菜单 + 新建/删除/查看
-- ✅ ServerSetupPage — 实例管理 + SteamCMD 状态 + 更新触发
-- ✅ SettingsPage — 5 张卡片（账户/安全/网页/日志/游戏默认值）
-- ✅ Permissions — 路由重定向到 Files 页面
+其中：
+- 服务端管理——4 态状态机 + `activeOperation` 竞态防护 + 目录扫描为实例真源
+- 会话——终端会话元数据持久化（ADR-0005 Phase 7）
+- 日志——脱敏管道 + 文件尾随；持久终端输出经 WebSocket 推送
+- 创意工坊——Steam 网页接口拉元数据（需接口密钥）
+- 已删除：远程控制台管理器、状态查询客户端（ADR-0004 Phase 6）
+
+### 前端页面（8 个，`manager-web/src/pages/`）
+登录 / 仪表盘 / 控制台 / 模组 / 配置 / 文件 / 服务端设置 / 系统设置
+
+已删除：玩家管理页（ADR-0004 Phase 6，随远程控制台通道一并删除）
 
 ## 技术选型（已确认）
-- 前端：React 18 + TypeScript + Vite + Tailwind CSS 3 + shadcn/ui
-- 图表：recharts
-- 图标：lucide-react
-- 表格：@tanstack/react-table
-- 后端：Node.js + Express 4 + TypeScript + ws (WebSocket)
-- 数据库：SQLite (better-sqlite3)
-- RCON：rcon-srcds (OpenMod Valve Source RCON) + net 模块 (RocketMod Telnet fallback)
-- 进程管理：dockerode (Docker SDK)
-- 部署：Docker Compose (panel 容器 + U3DS 容器，共享卷 + 同 bridge 网络)
+- 前端：React 18 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui（基于 `@base-ui/react`）
+- 图表：recharts；图标：lucide-react；表格：`@tanstack/react-table`；动画：Motion (framer-motion v13)
+- 终端渲染：xterm.js
+- 后端：Node.js 20 + Express 4 + TypeScript + `ws`
+- 数据库：SQLite（better-sqlite3），收敛为 3 表：用户 / 刷新令牌 / 设置键值
+- 命令通道：`node-pty` 持久终端（owner-trust 模型）——远程控制台与状态查询通道已删除，`rcon-srcds` 不再是依赖
+- 进程管理：Node.js 原生子进程派生——`dockerode` 未采用
+- 配置解析：`fast-xml-parser` + `js-yaml`
+- 契约：zod + zod-openapi，`shared/schemas/` 派生类型与 OpenAPI 文档
+- 部署：Docker Compose（面板与服务端同主机、共享卷、同桥接网络）
 
 ## 部署模式
 - Docker 部署，同局域网内

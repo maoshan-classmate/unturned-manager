@@ -29,7 +29,7 @@
 - Workshop 管"装不装": 下载/更新/启用/禁用/移除，状态: 已启用/未启用/下载中
 - OpenMod/RocketMod 管"怎么用": 框架RCON + 每个插件的YAML/XML业务配置
 - Workshop "配置"按钮已删除，统一入口在 OpenMod/RocketMod Tab
-- Commands.dat RCON 标注"实验性，面板通过 OpenMod RCON 通信"
+- Commands.dat 中的远程控制台开关：⛔ 原标注「实验性，面板通过 OpenMod 远程控制台通信」已失效——ADR-0004 Phase 6 后面板不再走该通道，命令统一经持久终端；该开关仅作为服务端自身配置项展示
 - 一个服务器只能装 OpenMod 或 RocketMod 之一，两个Tab同时存在供用户选择
 
 ### 关键设计决策

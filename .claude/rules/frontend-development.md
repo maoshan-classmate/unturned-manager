@@ -60,6 +60,55 @@ export type LoginFormValues = z.infer<typeof loginSchema>;
 - WebSocketContext 需升级为 AuthContext 的 null-guard 模式
 - 后续服务端数据迁移到 TanStack Query（`useQuery` / `useMutation`）
 
+## 界面文案规范
+
+> 用户来用面板，不读项目文档。所有可见文案必须按普通玩家能看懂的标准来写。
+
+### 总原则
+
+界面文案面向用户，不得出现项目内部术语、缩写、代号。**判据**：一个只想开服、没读过本项目任何文档的玩家，看到这行字能不能明白在说什么。
+
+### 术语对照表（可增长）
+
+| 内部术语（代码、文档、JSDoc 用） | 界面用语 |
+|---|---|
+| U3DS（Unturned Dedicated Server） | Unturned 服务端 |
+| ServerID / 实例 ID | 服务器名称 |
+| SteamCMD | 保留原文（官方工具名，用户装它时会在 SteamCMD 官方文档里看到同样的写法） |
+| 创意工坊 / Workshop | 创意工坊（Steam「创意工坊」是其官方中文译名，保留） |
+
+新增内部术语时，必须在这一节同步加对照——这条不是建议，是强制。
+
+### 适用范围
+
+凡是会渲染到屏幕或被屏幕阅读器读出的字符串：
+
+- 按钮文字、图标后的辅助说明
+- 卡片标题、表单标签、占位符
+- 提示消息（toast、sonner 等）
+- 确认弹窗的标题与正文
+- 无障碍标签（`aria-label`、`aria-describedby`、`title` 等属性）
+- 错误提示文案
+
+### 不适用范围
+
+**保留内部术语是正确的**——项目宪法术语表（`CLAUDE.md` §1）钉死了这些名字，内部沟通需要精确：
+
+- 组件名、文件名、类型与接口名
+- 变量名、参数名、常量键
+- 提示消息的内部标识（sonner 的 `id`、React `key` 等）
+- 接口路径（`/api/steamcmd/install-u3ds` 等）
+- 代码注释、JSDoc
+- 日志文案（pino logger 调用）
+
+### 跨层提醒
+
+后端抛出的错误消息会被前端原样弹成提示（前端 catch 块读 `err.response.data.error.message` 后塞进 toast）。因此**后端错误消息也受本规范约束**。后端开发规范 (`backend-development.md`) 错误处理节有交叉引用。
+
+### 自查方式
+
+新增或修改界面文案后，按对照表左列逐个在本文件作用域内全局搜索，确认未落到用户可见位置（搜索范围：`manager-web/src/` 与 `manager-web/e2e/`，排除 JSDoc/注释）。命中则改写为人话再提交。
+
 ## 组件导出
 
 - **命名导出**——禁止 `export default`（`App.tsx` 除外）

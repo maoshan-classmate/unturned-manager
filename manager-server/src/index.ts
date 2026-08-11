@@ -46,6 +46,7 @@ import { createSteamCmdRouter } from "./routes/steamcmd.js";
 import { createWorkshopRouter } from "./routes/workshop.js";
 import { createSettingsRouter } from "./routes/settings.js";
 import { createSessionsRouter } from "./routes/sessions.js";
+import { createU3dsRouter } from "./routes/u3ds.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
 
@@ -143,6 +144,8 @@ app.use(
   "/api/sessions",
   createSessionsRouter(container.sessionManager, container.ptyManager),
 );
+// Unturned 服务端（U3DS）安装状态查询——修第 11 项
+app.use("/api/u3ds", createU3dsRouter(container.u3dsStatus));
 
 // WebSocket
 wsBroadcaster.init(

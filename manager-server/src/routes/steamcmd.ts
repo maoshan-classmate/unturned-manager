@@ -54,7 +54,7 @@ export function createSteamCmdRouter(
         res.status(202).json({
           data: {
             jobId,
-            message: "U3DS 更新已启动，进度由 WS steamcmd_progress 推送",
+            message: "Unturned 服务端更新已启动，进度由 WS steamcmd_progress 推送",
           },
         });
       } catch (err) {
@@ -99,7 +99,7 @@ export function createSteamCmdRouter(
         res.status(202).json({
           data: {
             jobId,
-            message: "U3DS 检查更新已启动，结果由 WS steamcmd_progress 推送",
+            message: "Unturned 服务端检查更新已启动，结果由 WS steamcmd_progress 推送",
           },
         });
       } catch (err) {
@@ -122,14 +122,14 @@ export function createSteamCmdRouter(
         res.status(202).json({
           data: {
             jobId,
-            message: "U3DS 安装已启动，进度由 WS steamcmd_progress 推送",
+            message: "Unturned 服务端安装已启动，进度由 WS steamcmd_progress 推送",
           },
         });
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw new AppError(
           "u3ds-install-failed",
-          err instanceof Error ? err.message : "U3DS 安装失败",
+          err instanceof Error ? err.message : "Unturned 服务端安装失败",
           500,
         );
       }

@@ -328,7 +328,7 @@ export class ServerManager implements IServerManager {
       if (err instanceof AppError) throw err;
       throw new AppError(
         "u3ds-start-failed",
-        `U3DS 启动失败: ${err instanceof Error ? err.message : String(err)}`,
+        `Unturned 服务端启动失败: ${err instanceof Error ? err.message : String(err)}`,
         500,
       );
     } finally {
@@ -604,7 +604,7 @@ export class ServerManager implements IServerManager {
       // status 409（前置条件不满足）：U3DS 二进制尚未安装或安装不完整。
       throw new AppError(
         "start-script-not-found",
-        `U3DS 未安装或安装不完整（${installDir} 下未找到 ServerHelper.sh/ExampleServer.sh）。请先在「服务器设置」页点击「安装 U3DS」后再启动。`,
+        `Unturned 服务端未安装或安装不完整（${installDir} 下未找到 ServerHelper.sh/ExampleServer.sh）。请先在「服务器设置」页点击「安装 Unturned 服务端」后再启动。`,
         409,
       );
     }

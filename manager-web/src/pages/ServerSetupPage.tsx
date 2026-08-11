@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Rocket, Plus, Server, Trash2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useParams, useNavigate } from "react-router-dom";
+import type { U3dsStatus } from "@unturned-manager/shared";
 import { Button } from "../components/ui/button.js";
 import { Card } from "../components/shared/Card.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
@@ -56,6 +57,18 @@ export function ServerSetupPage() {
 
   // ── SteamCMD 状态(由 SteamCmdCard 通过 onStatusChange 回流) ──
   const [steamCmd, setSteamCmd] = useState<SteamCmdStatus | null>(null);
+
+  // ── Unturned 服务端（U3DS）安装状态 ──
+  const [u3ds, setU3ds] = useState<U3dsStatus | null>(null);
+  const refreshU3ds = useCallback(async () => {
+    try {
+      const res = await apiClient.get<{ data: U3dsStatus }>("/u3ds/status");
+      setU3ds(res.data.data);
+    } catch {
+      // 取不到时让卡片落到「未安装」分支；不弹错避免骚扰用户
+      setU3ds(null);
+    }
+  }, []);
 
   // 创建实例 Dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -113,6 +126,9 @@ export function ServerSetupPage() {
   useEffect(() => {
     fetchSteamCmd();
   }, [fetchSteamCmd]);
+  useEffect(() => {
+    refreshU3ds();
+  }, [refreshU3ds]);
   useEffect(() => {
     if (currentId) fetchCommands(currentId);
   }, [currentId, fetchCommands]);
@@ -215,7 +231,7 @@ export function ServerSetupPage() {
             <SteamCmdCard status={steamCmd} onStatusChange={setSteamCmd} />
 
             {/* Card - U3DS(右上) */}
-            <U3dsCard status={null} />
+            <U3dsCard status={u3ds} onStatusChange={setU3ds} />
 
             {/* Card - Server Control(左下) */}
             {currentServer ? (

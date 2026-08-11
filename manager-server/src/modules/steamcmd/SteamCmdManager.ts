@@ -181,7 +181,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     if (activeIds.length > 0) {
       throw new AppError(
         "servers-active",
-        `以下服务端仍在运行，无法安装 U3DS：${activeIds.join(", ")}。请先停止所有实例。`,
+        `以下服务端仍在运行，无法安装 Unturned 服务端：${activeIds.join(", ")}。请先停止所有实例。`,
         409,
       );
     }
@@ -341,7 +341,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     if (activeIds.length > 0) {
       throw new AppError(
         "servers-active",
-        `以下服务端仍在运行，无法更新 U3DS：${activeIds.join(", ")}。请先停止所有实例。`,
+        `以下服务端仍在运行，无法更新 Unturned 服务端：${activeIds.join(", ")}。请先停止所有实例。`,
         409,
       );
     }

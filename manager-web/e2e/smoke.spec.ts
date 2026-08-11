@@ -265,7 +265,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     await expect(page.getByText("SteamCMD").first()).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByText("Unturned 专用服务器").first()).toBeVisible({
+    await expect(page.getByText("Unturned 服务端").first()).toBeVisible({
       timeout: 10_000,
     });
     await expect(page.getByText("服务器控制").first()).toBeVisible({
