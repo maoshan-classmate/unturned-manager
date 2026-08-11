@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | Devlog #012 JSON HTTP API 存在？ | ❌ 不存在。Unturned II（4.0）专属，已取消。 | 高 | SDG 官方博客 |
 | 2 | Config.txt 含 RCON 段？ | ❌ 不含。 | 高 | SDG 官方 Server Configuration 文档 |
-| 3 | Should_Monitor_Updates 精确行为？ | ✅ 已确认：检测→广播→倒计时→强制踢出→关机。SDG 有官方文档页。 | 高 | SDG `dedicated-workshop-update-monitor.html` |
+| 3 | Should_Monitor_Updates 精确行为？ | ✅ 已确认：检测→广播→倒计时→强制踢出→关机。SDG 有官方文档页。 | 高 | U3-SDK `WorkshopDownloadConfig.cs` 源码 |
 | 4 | 原生 RCON 配置指令存在？ | ✅ 存在（Commands.dat: `RCON Enabled/Port/Password`）。线协议细节仍未知。 | 中 | Zonely 托管面板文档 |
 | 5 | Steam WebAPI `IPublishedFileService` 需要 Key？ | ✅ **需要**。`GetDetails/v1` / `QueryFiles/v1` 均要求 `key` 参数（参考仓 DST 管理平台实证）。**原「`GetPublishedFileDetails` 无需 Key」条目作废**（该接口非元数据主路径）。 | 高 | `.research/dst-management-platform-api/app/mod/utils.go`、`claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1 |
 | 6 | `?xml=1` 零凭证获取是否可用？ | ❌ **已失效（2026-08-08 实测）**。3 个 Mod ID 全部返回 HTML 而非 XML（46KB 网页），`<title>Steam Community :: Screenshot</title>`。私有 Mod 更早确认需认证。→ 迁移 WebAPI Key 主路径。 | 高 | 实测 + `claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1 |

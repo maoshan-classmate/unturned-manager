@@ -21,6 +21,19 @@
 | ServerState 枚举（STOPPED/STARTING/RUNNING/STOPPING） | 已停止 / 启动中 / 运行中 / 停止中（后端拼中文，用 `formatServerState`） |
 | OperationType 枚举（manual_start/.../mod_apply） | 启动 / 停止 / 重启 / 应用 Mod 变更（后端拼中文，用 `formatOperationType`） |
 | Login Token（Config.txt 浏览器列表字段） | Steam 浏览器登录令牌 |
+| Loadout | 开局物品 |
+| SkillsetID 0（none） | 无技能 |
+| SkillsetID 1（fire） | 消防员 |
+| SkillsetID 2（police） | 警察 |
+| SkillsetID 3（army） | 军人 |
+| SkillsetID 4（farm） | 农民 |
+| SkillsetID 5（fishing） | 渔夫 |
+| SkillsetID 6（camp） | 露营者 |
+| SkillsetID 7（worker） | 工匠 |
+| SkillsetID 8（chef） | 厨师 |
+| SkillsetID 9（thief） | 盗贼 |
+| SkillsetID 10（doctor） | 医生 |
+| SkillsetID 255（default loadout） | 默认（所有技能组） |
 
 ## 维护规则
 

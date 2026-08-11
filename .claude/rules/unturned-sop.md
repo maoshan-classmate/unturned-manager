@@ -67,9 +67,9 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 
 ## Commands.dat 样板
 
-> **以下为示例值**——玩家可直接复制作为起步配置。**真实默认值（Unturned 服务端空 Commands.dat 时 SDK 自动填的）见** `@claudedocs/reference_config_files.md` §1。
+> **以下为示例值**——玩家可直接复制作为起步配置。**真实默认值 + SDK 真源（U3-SDK 代码行号）见** `@claudedocs/reference_config_files.md` §1（每个字段有独立「SDK 真源」列）。
 >
-> 注意：样板的 `MaxPlayers 16` / `Queue_Size 0` / `Perspective Both` 与 SDK 默认值（8 / 8 / `FIRST`——专用服务器默认视角，非单机 `BOTH`）不同，是常见的社区教程示例值。**面板如不显式配置，行为以 SDK 默认值为准**。
+> 注意：样板的 `MaxPlayers 16` / `Queue_Size 0` / `Perspective Both` 与 SDK 默认值（`Provider.cs:6615` `maxPlayers=8` / `Provider.cs:6616` `queueSize=8` / `Provider.cs:6645` `cameraMode=FIRST`——专用服务器默认视角，非单机 `BOTH`）不同，是常见的社区教程示例值。**面板如不显式配置，行为以 SDK 默认值为准**。
 
 ```
 Name My Unturned Server
@@ -91,10 +91,31 @@ Sync
 Cheats
 GSLT <your_gslt_here>
 Log Y Y Y N
-Votify N 60 60 30 60 1
+Votify N 5 60 15 75 3
 ```
 
 **解析器契约**：每行 `指令 值`（单独一个词就是开关）；用 `#` 或 `;` 起注释；**必须保留未知键**——面板不能把不认识的指令删了。
+
+### Loadout 样板（开局物品）
+
+> **允许重复行**——每个技能组（ID 0–10 或 255）单独一行；U3DS 同 ID 多行后写覆盖前写（`CommandLoadout.cs:42-49`）。  
+> **真源**：`PlayerSkills.cs:43-97`（11 个技能组枚举），`CommandLoadout.cs:13-49`（解析/写入逻辑）。  
+> **SDK 默认**：不写 Loadout 行 = `LOADOUT = {}` + `SKILLSETS_SERVER = [[]×11]`（`PlayerInventory.cs:30-32`），玩家开局无任何额外物品。
+
+```
+# 警察开局配一把手枪 + 一件防弹衣（itemID 仅为示例，按需替换）
+Loadout 2/17/1064
+# 农民开局带工具斧 + 种子
+Loadout 4/62/1118
+# 全部技能组（255）默认带基本医疗包 + 绷带
+Loadout 255/1100/1101
+```
+
+格式：`Loadout <SkillsetID>/<itemID>/<itemID>/...`  
+- SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=默认全部技能组  
+- ItemID：`0`–`65535` ushort，可在游戏内 `Items.asset` 查到；非法 ItemID 会触发该条 Loadout 命令报错中止（`CommandLoadout.cs:33-39`）；合法 ushort 但指向不存在物品的 ID 命令层不校验
+
+面板编辑器：`claudedocs/reference_config_files.md` §1.8 + Figma ConfigPage Tab「Commands.dat」→「开局物品（Loadout）」区块。
 
 ## WorkshopDownloadConfig.json 规则
 

@@ -32,6 +32,8 @@
 | 资源 | 链接 | 说明 |
 |---|---|---|
 | SDG 官方文档站 | https://docs.smartlydressedgames.com/ | Unturned 服务端/Mod 开发官方文档总入口 |
+| SDG 文档站 — 稳定版 | https://docs.smartlydressedgames.com/en/stable/ | Read the Docs 托管的稳定版分支（推荐默认引用） |
+| SDG 文档站 — 最新版 | https://docs.smartlydressedgames.com/en/latest/ | Read the Docs 托管的最新版分支（含未稳定内容） |
 | 服务端搭建指南 | https://docs.smartlydressedgames.com/en/stable/servers/server-hosting.html | 官方服务端托管教程（U3DS 安装/配置/端口/GSLT） |
 | GSLT 指南 | https://docs.smartlydressedgames.com/en/latest/servers/game-server-login-tokens.html | Game Server Login Token 配置说明 |
 | 官方文档 GitHub | https://github.com/SmartlyDressedGames/Unturned-Docs | SDG 官方文档源仓库（可提 PR 贡献） |
@@ -42,10 +44,12 @@
 
 ### 1.4 OpenMod / RocketMod
 
+> ⚠️ **RocketMod 已过期**——本项目打算采用 OpenMod 框架，不采用 RocketMod。原仓库已停止维护，官方维护的分叉为 Legally-Distinct-Missile（LDM）。以下 RocketMod 条目仅作历史参考。
+
 | 资源 | 链接 | 说明 |
 |---|---|---|
-| OpenMod 文档 | https://openmod.github.io/openmod-docs/ | C# Mod 框架，原生 Valve Source RCON |
-| RocketMod 仓库 | https://github.com/SmartlyDressedGames/Rocket | 旧 Mod 框架，Lua 插件，Telnet RCON |
+| OpenMod 文档 | https://openmod.github.io/openmod-docs/ | C# Mod 框架（本项目采用；其 RCON 通道已随 ADR-0004 Phase 6 移除，命令走 PTY 终端） |
+| RocketMod 仓库（已过期） | https://github.com/SmartlyDressedGames/Legally-Distinct-Missile | 旧 Mod 框架，Lua 插件，Telnet RCON；SDG 官方维护分叉（LDM），仅历史参考 |
 
 ---
 
@@ -151,3 +155,4 @@
 ---
 
 *创建日期：2026-08-08 · 维护：每次新增外部依赖必须同步本文档*
+*最后更新：2026-08-12 — 补 SDG 文档站版本根链接*
