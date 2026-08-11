@@ -1,7 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import yaml from 'js-yaml';
-import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import type {
   ServerId,
   WorkshopFileId,
@@ -391,73 +389,6 @@ export class ConfigService implements IConfigService {
     logger.warn({ serverId, filePath, backupPath }, '配置文件已从备份回滚');
   }
 
-  // ── OpenMod YAML ──────────────────────────────────────
-
-  async readOpenModConfig(
-    serverId: ServerId,
-    pluginId: string,
-  ): Promise<Record<string, unknown>> {
-    const absPath = this.resolvePath(
-      serverId,
-      'openmod/plugins/' + pluginId + '/config.yaml',
-    );
-
-    try {
-      const raw = await fs.readFile(absPath, 'utf-8');
-      return yaml.load(raw) as Record<string, unknown>;
-    } catch {
-      logger.warn({ serverId, pluginId, path: absPath }, 'OpenMod 插件配置不存在');
-      return {};
-    }
-  }
-
-  async writeOpenModConfig(
-    serverId: ServerId,
-    pluginId: string,
-    config: Record<string, unknown>,
-  ): Promise<void> {
-    const yamlStr = yaml.dump(config, { indent: 2 });
-    await this.atomicWrite(
-      serverId,
-      'openmod/plugins/' + pluginId + '/config.yaml',
-      yamlStr,
-    );
-  }
-
-  // ── RocketMod XML ─────────────────────────────────────
-
-  async readRocketModConfig(
-    serverId: ServerId,
-    pluginName: string,
-  ): Promise<Record<string, unknown>> {
-    const absPath = this.resolvePath(
-      serverId,
-      'Rocket/Plugins/' + pluginName + '/Configuration.xml',
-    );
-
-    try {
-      const raw = await fs.readFile(absPath, 'utf-8');
-      const parser = new XMLParser({ ignoreAttributes: false });
-      return parser.parse(raw) as Record<string, unknown>;
-    } catch {
-      logger.warn({ serverId, pluginName, path: absPath }, 'RocketMod 插件配置不存在');
-      return {};
-    }
-  }
-
-  async writeRocketModConfig(
-    serverId: ServerId,
-    pluginName: string,
-    config: Record<string, unknown>,
-  ): Promise<void> {
-    const builder = new XMLBuilder({ format: true, ignoreAttributes: false });
-    const xmlStr = builder.build(config) as string;
-    await this.atomicWrite(
-      serverId,
-      'Rocket/Plugins/' + pluginName + '/Configuration.xml',
-      xmlStr,
-    );
-  }
 }
 
 // ─── Commands.dat 行解析（导出纯函数——ServerDiscovery 复用）──────────────

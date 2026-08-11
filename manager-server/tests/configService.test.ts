@@ -99,25 +99,6 @@ describe('ConfigService — 5 种格式往返', () => {
     expect(parsed.Shutdown_Update_Detected_Message).toBe('msg1');  // 未被改写
   });
 
-  it('OpenMod YAML: 写入+读回等价', async () => {
-    await fs.mkdir(path.join(serverDir, 'openmod', 'plugins', 'Economy'), { recursive: true });
-
-    const input = { Rate: 100, Enabled: true, Name: 'economy' };
-    await svc.writeOpenModConfig(serverId, 'Economy', input);
-    const back = await svc.readOpenModConfig(serverId, 'Economy');
-    expect(back.Rate).toBe(100);
-    expect(back.Enabled).toBe(true);
-    expect(back.Name).toBe('economy');
-  });
-
-  it('Rocket XML: 写入+读回关键字段', async () => {
-    await fs.mkdir(path.join(serverDir, 'Rocket', 'Plugins', 'BasicChat'), { recursive: true });
-    const input = { PluginSettings: { MaxMessageLength: 200, AllowLinks: false } };
-    await svc.writeRocketModConfig(serverId, 'BasicChat', input);
-    const back = await svc.readRocketModConfig(serverId, 'BasicChat');
-    expect(back.PluginSettings).toBeDefined();
-  });
-
   // ─── Loadout 重复行（CommandLoadout.cs:13-49 + PlayerSkills.cs:43-97）────────
 
   it('Loadout: 解析多行 Loadout 为结构化 loadouts 数组', async () => {

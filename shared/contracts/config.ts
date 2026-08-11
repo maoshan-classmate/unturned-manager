@@ -24,9 +24,4 @@ export interface IConfigService {
    * @param backupPath - backup() 返回的绝对路径
    */
   rollback(serverId: ServerId, filePath: string, backupPath: string): Promise<void>;
-
-  readOpenModConfig(serverId: ServerId, pluginId: string): Promise<Record<string, unknown>>;
-  writeOpenModConfig(serverId: ServerId, pluginId: string, config: Record<string, unknown>): Promise<void>;
-  readRocketModConfig(serverId: ServerId, pluginName: string): Promise<Record<string, unknown>>;
-  writeRocketModConfig(serverId: ServerId, pluginName: string, config: Record<string, unknown>): Promise<void>;
 }

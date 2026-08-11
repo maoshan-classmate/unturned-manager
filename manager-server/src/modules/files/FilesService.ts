@@ -16,7 +16,7 @@ import { AppError } from '../../utils/AppError.js';
 
 /** 路径白名单前缀（架构 spec §5.8） */
 const ALLOWED_PREFIXES = [
-  'Server/', 'Workshop/', 'Logs/', 'Rocket/', 'openmod/', 'Bundles/',
+  'Server/', 'Workshop/', 'Logs/', 'Rocket/', 'Bundles/',
 ];
 
 /** 敏感字段脱敏正则（架构 spec §5.8 第 4 条） */

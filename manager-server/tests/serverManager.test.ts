@@ -109,10 +109,6 @@ function makeMockConfig(): IConfigService {
     })),
     writeWorkshopFileIds: vi.fn(async () => {}),
     backup: vi.fn(async () => "/tmp/backup.json"),
-    readOpenModConfig: vi.fn(async () => ({})),
-    writeOpenModConfig: vi.fn(async () => {}),
-    readRocketModConfig: vi.fn(async () => ({})),
-    writeRocketModConfig: vi.fn(async () => {}),
   };
 }
 

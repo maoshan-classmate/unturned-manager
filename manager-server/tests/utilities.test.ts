@@ -125,10 +125,10 @@ describe("FilesService", () => {
   it("敏感字段 GSLT/Password 脱敏", async () => {
     await svc.writeFile(
       "FilesServer" as ServerId,
-      "openmod.yaml",
+      "config.txt",
       new TextEncoder().encode("GSLT mySecretToken123456\nPassword hunter2\n"),
     );
-    const buf = await svc.readFile("FilesServer" as ServerId, "openmod.yaml");
+    const buf = await svc.readFile("FilesServer" as ServerId, "config.txt");
     const text = new TextDecoder().decode(buf);
     expect(text).toContain("GSLT [REDACTED]");
     expect(text).toContain("Password [REDACTED]");
