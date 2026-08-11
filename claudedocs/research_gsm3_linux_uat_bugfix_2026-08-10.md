@@ -22,7 +22,7 @@
 | 10 Dockerfile 镜像源慢 | 🟡 改后抄 | GSM3 `Dockerfile:84` 已 `npm config set registry https://registry.npmmirror.com`；apt 没换 | 低 |
 | 1 附 SteamCMD 重装 404 | 🟢 1:1 抄 | `routes/steamcmd.ts:34-62` `install` 端点 | 低 |
 
-**🔴 2 个不能抄**：BUG-5、BUG-6 —— **GSM3 走 SteamCMD 集成（preset 模式），不是 Steam Workshop 浏览器**。GSM3 的「Mods」是 preset 文件树（preset 目录 = Mod 集合），它**不调 Steam WebAPI**，**不扫 appworkshop_1110390.acf**。架构差异决定这是「不同的产品设计」，不是代码复用。
+**🔴 2 个不能抄**：BUG-5、BUG-6 —— **GSM3 走 SteamCMD 集成（preset 模式），不是 Steam Workshop 浏览器**。GSM3 的「Mods」是 preset 文件树（preset 目录 = Mod 集合），它**不调 Steam WebAPI**，**不扫 acf**。架构差异决定这是「不同的产品设计」，不是代码复用。（⚠️ 2026-08-11：本项目 workshop 链路已修正为 appid 304930，acf 名 `appworkshop_304930.acf`）
 
 ---
 
@@ -502,7 +502,7 @@ RUN wget -t 5 --retry-connrefused --waitretry=1 -O steamcmd_linux.tar.gz https:/
 | Mod 来源 | **SteamCMD 预设集合**（preset） | **Steam Workshop 浏览器**（WebAPI） |
 | Mod 列表 UI | `client/src/pages/Instance.tsx` 用 preset 选择器 | `manager-web/src/pages/ModsPage.tsx` 用 WebAPI 搜索 |
 | 下载方式 | `SteamCMDManager.installOnline(preset)` | `/mods/download` → SteamCMD `workshop_download_item` |
-| "已下载"判定 | preset 目录存在 | `appworkshop_1110390.acf` 文件 |
+| "已下载"判定 | preset 目录存在 | `appworkshop_304930.acf` 文件（⚠️ 2026-08-11 修正：304930=游戏本体，非 1110390） |
 | 推送 WS | 无（走 SSE） | `steamcmd_progress` 事件 |
 
 **GSM3 没有 Mods 浏览 UI**（`grep "WorkshopDownloadConfig" .research/GameServerManager/` 无结果）—— 它走的是「服务器模板」模式：
@@ -544,7 +544,7 @@ interface ModCardProps {
 **根因**（已 verify）：ACF 文件未生成 + 前端强行标 `status: 'enabled' as const`。
 
 **为什么不能抄 GSM3**（同 BUG-5）：
-- GSM3 不扫 `appworkshop_1110390.acf`
+- GSM3 不扫 acf
 - GSM3 不区分「已下载 / 已应用」三态
 - GSM3 的 preset 模型在面板内是「配置集合」，不是 Steam Workshop 元数据
 

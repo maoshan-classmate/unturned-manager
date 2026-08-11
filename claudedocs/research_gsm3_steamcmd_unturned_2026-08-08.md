@@ -330,7 +330,7 @@ libxrandr2 libxcursor1 libxi6 libxtst6
 
 **借鉴** `getSteamUpdateCommand()` 和 `createSteamCMDRunScript()` 的模式：
 - U3DS 安装：`app_update 1110390 validate`
-- Workshop 下载：`workshop_download_item 1110390 <id>`（但 staging 路径用 `force_install_dir` 指定）
+- Workshop 下载：`workshop_download_item 304930 <id>`（⚠️ 2026-08-11 修正：必须用游戏本体 304930，非服务端 1110390；staging 路径用 `force_install_dir` 指定）
 - 用脚本文件 + `+runscript` 替代字符串拼接（更安全）
 
 ### 7.3 PTY 自举

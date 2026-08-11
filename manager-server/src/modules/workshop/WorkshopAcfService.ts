@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { STEAM_APP_IDS } from '@unturned-manager/shared';
 import type {
   ServerId,
   WorkshopFileId,
@@ -14,14 +15,13 @@ import { resolveServerPath } from '../server/pathResolver.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** U3DS AppID（WorkshopDownloadConfig + acf 命名都用此 ID） */
-const U3DS_APPID = '1110390';
+// AppID 唯一真源 = shared/constants.ts STEAM_APP_IDS.UNTURNED_GAME=304930
 
 /** acf 文件相对 Servers/<ID>/ 目录的路径 */
-const WORKSHOP_ACF_REL_PATH = path.join('Workshop', 'steamapps', 'workshop', `appworkshop_${U3DS_APPID}.acf`);
+const WORKSHOP_ACF_REL_PATH = path.join('Workshop', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
 
 /** staging 目录 acf（SteamCMD 下载完成后生成） */
-const STAGING_ACF_REL_PATH = path.join('Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${U3DS_APPID}.acf`);
+const STAGING_ACF_REL_PATH = path.join('Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
 
 /** acf 根 key（VDF 格式约束：根必须只有一个 key） */
 const ACF_ROOT_KEY = 'AppWorkshop';
@@ -37,7 +37,7 @@ const ACF_ROOT_KEY = 'AppWorkshop';
  * - 原子写 + 自动备份
  * - 失败回滚
  *
- * 路径：`Servers/<ID>/Workshop/steamapps/workshop/appworkshop_1110390.acf`
+ * 路径：`Servers/<ID>/Workshop/steamapps/workshop/appworkshop_304930.acf`
  */
 export class WorkshopAcfService implements IWorkshopAcfService {
   constructor(
@@ -59,7 +59,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         // acf 不存在 = 空 acf
-        return { appid: U3DS_APPID, items: new Map() };
+        return { appid: STEAM_APP_IDS.UNTURNED_GAME, items: new Map() };
       }
       throw err;
     }
@@ -232,10 +232,10 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     const root = parsed[ACF_ROOT_KEY] as Record<string, unknown> | undefined;
     if (!root || typeof root !== 'object') {
       // 非预期结构，视为空
-      return { appid: U3DS_APPID, items: new Map() };
+      return { appid: STEAM_APP_IDS.UNTURNED_GAME, items: new Map() };
     }
 
-    const appid = typeof root.appid === 'string' ? root.appid : U3DS_APPID;
+    const appid = typeof root.appid === 'string' ? root.appid : STEAM_APP_IDS.UNTURNED_GAME;
     const items = new Map<WorkshopFileId, WorkshopAcfItem>();
 
     const installed = root.WorkshopItemsInstalled as Record<string, Record<string, string>> | undefined;

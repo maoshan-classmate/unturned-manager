@@ -10,17 +10,17 @@ describe('VdfParser · parseVdf', () => {
   it('解析简单键值对', () => {
     const text = `"AppWorkshop"
 {
-    "appid"        "1110390"
+    "appid"        "304930"
 }`;
     expect(parseVdf(text)).toEqual({
-      AppWorkshop: { appid: '1110390' },
+      AppWorkshop: { appid: '304930' },
     });
   });
 
   it('解析嵌套对象（3 层）', () => {
     const text = `"AppWorkshop"
 {
-    "appid"        "1110390"
+    "appid"        "304930"
     "WorkshopItemsInstalled"
     {
         "1753134636"
@@ -33,7 +33,7 @@ describe('VdfParser · parseVdf', () => {
 }`;
     expect(parseVdf(text)).toEqual({
       AppWorkshop: {
-        appid: '1110390',
+        appid: '304930',
         WorkshopItemsInstalled: {
           '1753134636': {
             timeupdated: '1722612345',
@@ -95,7 +95,7 @@ describe('VdfParser · parseVdf', () => {
   it('处理真实 acf fixture（SteamCMD 实际输出格式）', () => {
     const text = `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"1753134636"
@@ -115,7 +115,7 @@ describe('VdfParser · parseVdf', () => {
     const parsed = parseVdf(text);
     expect(parsed).toEqual({
       AppWorkshop: {
-        appid: '1110390',
+        appid: '304930',
         WorkshopItemsInstalled: {
           '1753134636': {
             timeupdated: '1722612345',
@@ -160,7 +160,7 @@ describe('VdfParser · serializeVdf', () => {
   it('序列化后 parseVdf 还原（往返一致）', () => {
     const original = {
       AppWorkshop: {
-        appid: '1110390',
+        appid: '304930',
         WorkshopItemsInstalled: {
           '1753134636': {
             timeupdated: '1722612345',

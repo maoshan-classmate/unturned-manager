@@ -16,7 +16,7 @@ import type { ServerId } from '@unturned-manager/shared';
  *   <installDir>/Servers/<ServerID>/Config.txt
  *   <installDir>/Servers/<ServerID>/Server/WorkshopDownloadConfig.json
  *   <installDir>/Servers/<ServerID>/Logs/
- *   <installDir>/Servers/<ServerID>/Workshop/steamapps/workshop/content/1110390/
+ *   <installDir>/Servers/<ServerID>/Workshop/steamapps/workshop/content/304930/
  *   <installDir>/Servers/<ServerID>/Workshop/staging/...
  */
 

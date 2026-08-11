@@ -5,6 +5,9 @@ export * from "./types/branded.js";
 export * from "./types/state.js";
 export * from "./types/domain.js";
 
+// Constants（AppID 等全局唯一真源）
+export * from "./constants.js";
+
 // Contracts
 export type { IServerManager } from "./contracts/server.js";
 export type {

@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import { STEAM_APP_IDS } from '@unturned-manager/shared';
 import type {
   ServerId,
   WorkshopFileId,
@@ -15,13 +16,13 @@ import { resolveInstallDir, resolveServerPath } from '../server/pathResolver.js'
 
 const execFileAsync = promisify(execFile);
 
-const U3DS_APPID = '1110390';
+// AppID 唯一真源 = shared/constants.ts STEAM_APP_IDS.UNTURNED_GAME=304930
 
 /** staging acf 内容目录（SteamCMD 下载后落点） */
-const STAGING_CONTENT_SUBDIR = path.join('Workshop', 'staging', 'steamapps', 'workshop', 'content', U3DS_APPID);
+const STAGING_CONTENT_SUBDIR = path.join('Workshop', 'staging', 'steamapps', 'workshop', 'content', STEAM_APP_IDS.UNTURNED_GAME);
 
 /** content acf 内容目录（U3DS 启动读取） */
-const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
+const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', STEAM_APP_IDS.UNTURNED_GAME);
 
 /** WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径（注意：在 Server/ 下，不在 Workshop/ 下） */
 const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Server', 'WorkshopDownloadConfig.json');
@@ -138,7 +139,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
   private async parseStagingAcf(serverId: ServerId): Promise<{ acf: { items: Map<string, { fileId: WorkshopFileId; timeupdated: number; size: number; manifest?: string }> } }> {
     // 收集所有 staging 中已下载的 mod（acf 给元数据 + content/ 目录给存在性）
     const { stagingDir, installDir } = await this.resolvePaths(serverId);
-    const stagingAcfPath = path.join(installDir, 'Servers', serverId, 'Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${U3DS_APPID}.acf`);
+    const stagingAcfPath = path.join(installDir, 'Servers', serverId, 'Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
 
     let content: string;
     try {

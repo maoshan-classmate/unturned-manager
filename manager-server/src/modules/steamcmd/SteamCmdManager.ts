@@ -6,6 +6,7 @@ import { createWriteStream } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as tar from "tar";
+import { STEAM_APP_IDS } from "@unturned-manager/shared";
 import type {
   ISteamCmdManager,
   IProcessSupervisor,
@@ -45,8 +46,8 @@ const PROGRESS_RE =
   /\b(downloading|validating|installed|preallocating|checking|updating|update complete|deprecated)\b/i;
 const PERCENT_RE = /(\d{1,3})\s*%/;
 
-/** U3DS AppID（CLAUDE.md §4 锁定） */
-const U3DS_APPID = "1110390";
+// AppID 唯一真源 = shared/constants.ts 的 STEAM_APP_IDS——
+// U3DS_SERVER=1110390（app_update/查版本），UNTURNED_GAME=304930（workshop 全链路）
 
 /** 下载超时（Cardinal）/ 验证超时 */
 const UPDATE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -208,7 +209,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       "@NoPromptForPassword 1",
       `force_install_dir "${installDir}"`,
       "login anonymous",
-      `app_update ${U3DS_APPID}`, // ★ 首次安装：去掉 validate
+      `app_update ${STEAM_APP_IDS.U3DS_SERVER}`, // ★ 首次安装：去掉 validate
       "quit",
     ].join("\n");
     const scriptPath = path.join(installDir, ".steamcmd-install.scf");
@@ -368,7 +369,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       "@NoPromptForPassword 1",
       `force_install_dir "${installDir}"`,
       "login anonymous",
-      `app_update ${U3DS_APPID} validate`,
+      `app_update ${STEAM_APP_IDS.U3DS_SERVER} validate`,
       "quit",
     ].join("\n");
     const scriptPath = path.join(installDir, ".steamcmd-update.scf");
@@ -448,7 +449,7 @@ export class SteamCmdManager implements ISteamCmdManager {
 
   /**
    * 卡 C #6：下载 Workshop Mod 到 staging 目录（不停服）。
-   * 命令：steamcmd +force_install_dir <staging> +login anonymous +workshop_download_item 1110390 <id> +quit
+   * 命令：steamcmd +force_install_dir <staging> +login anonymous +workshop_download_item 304930 <id> +quit
    * 应用由 ServerManager.applyModChanges 流水线负责（卡 B 已实装）。
    *
    * BUG-5/6 修复：**异步启动**——spawn 后立即返回 jobId，不等待 SteamCMD 退出。
@@ -498,7 +499,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       "@NoPromptForPassword 1",
       `force_install_dir "${stagingDir}"`,
       "login anonymous",
-      ...itemIds.map((id) => `workshop_download_item ${U3DS_APPID} ${id}`),
+      ...itemIds.map((id) => `workshop_download_item ${STEAM_APP_IDS.UNTURNED_GAME} ${id}`),
       "quit",
     ].join("\n");
     const scriptPath = path.join(stagingDir, ".steamcmd-download.scf");
@@ -556,6 +557,8 @@ export class SteamCmdManager implements ISteamCmdManager {
         //   WorkshopItemDetails 元数据缓存，WorkshopItemsInstalled 空、SizeOnDisk 0，
         //   前端却收到 completed 误报「下载成功」。
         //   只查 exitCode 不可靠：必须验证 content/<appid>/<id>/ 目录落盘且非空。
+        //   （「假成功」的总根因 = 下载命令误用服务端 appid 1110390，已修正为游戏本体
+        //   304930；本落盘校验作兜底保留）
         const missing: string[] = [];
         for (const id of itemIds) {
           const itemDir = path.join(
@@ -563,7 +566,7 @@ export class SteamCmdManager implements ISteamCmdManager {
             "steamapps",
             "workshop",
             "content",
-            U3DS_APPID,
+            STEAM_APP_IDS.UNTURNED_GAME,
             id,
           );
           try {
@@ -641,25 +644,25 @@ export class SteamCmdManager implements ISteamCmdManager {
     const attempts: string[][] = [
       [
         "login anonymous",
-        `app_info_request ${U3DS_APPID}`,
+        `app_info_request ${STEAM_APP_IDS.U3DS_SERVER}`,
         "app_info_update 1",
-        `app_info_print ${U3DS_APPID}`,
+        `app_info_print ${STEAM_APP_IDS.U3DS_SERVER}`,
         "logoff",
         "quit",
       ],
       [
         "login anonymous",
-        `app_info_request ${U3DS_APPID}`,
+        `app_info_request ${STEAM_APP_IDS.U3DS_SERVER}`,
         "login anonymous",
-        `app_info_print ${U3DS_APPID}`,
-        `app_info_print ${U3DS_APPID}`,
+        `app_info_print ${STEAM_APP_IDS.U3DS_SERVER}`,
+        `app_info_print ${STEAM_APP_IDS.U3DS_SERVER}`,
         "logoff",
         "quit",
       ],
       [
         "login anonymous",
         "app_info_update 1",
-        `app_info_print ${U3DS_APPID}`,
+        `app_info_print ${STEAM_APP_IDS.U3DS_SERVER}`,
         "logoff",
         "quit",
       ],

@@ -1,13 +1,10 @@
-# Unturned Mod 管理系统 — 完整设计规格（v2.4 · 生产质量版）
+# Unturned Mod 管理系统 — 完整设计规格（v2.5 · 生产质量版）
 
-> **版本**：v2.4（2026-08-09，实现完成）
-> **v1 → v2 变更**：砍掉所有后端缓存 / 补 DST 三源合一哲学 / 加 acf 维护模块 / 接入 React Query
-> **v2 → v2.1 变更**（老板拍板）：ModsPage = 单 Tab（Steam 创意工坊浏览）+ 下载入口；已下载 Mod 的启用/禁用/删除/配置复用 Config > Workshop Tab（已有 `WorkshopTab` 组件，不新建）
-> **v2.1 → v2.2 变更**（老板拍板）：下载成功只弹 Toast（如 `Hawaii 下载成功`），**不调 `router.push`、不引导跳转、不弹第二条 toast.info**。Toast 即全部反馈，用户自主决定下一步。
-> **v2.2 → v2.3 变更**：全部 Phase A-F 实现完成并通过验证——后端 73 单测 + 16 API e2e；前端 29 单测 + 5 浏览器 UI e2e；typecheck 前后端 0 错误。
+> **版本**：v2.5（2026-08-11，AppID 全局真源提取）
+> **v2.4 → v2.5 变更**：AppID 全局唯一真源 `shared/constants.ts`（`STEAM_APP_IDS`）——`U3DS_SERVER=1110390`（安装/更新）、`UNTURNED_GAME=304930`（workshop 全链路）。消除 5 处手写常量散落；前后端统一 import。
 > **v2.3 → v2.4 变更**：浏览链路改为**单次 QueryFiles**（不再调 GetDetails/GetPlayerSummaries，避免叠加超时）；评分星精确填充（2.7 分=2满+0.7部分）；列表/详情**不展示作者与 ID**；每页默认 12 条。
-> **设计原则**：DST 三源合一状态模型（WebAPI 元数据 + acf 真源 + File_IDs 启用列表）；零后端缓存；前端 React Query 防抖；acf 同步维护；**最小化用户打扰**；浏览单次调用避免超时
-> **状态**：✅ **已实现**（2026-08-09）
+> **设计原则**：DST 三源合一状态模型（WebAPI 元数据 + acf 真源 + File_IDs 启用列表）；零后端缓存；前端 React Query 防抖；acf 同步维护；**最小化用户打扰**；浏览单次调用避免超时；**AppID 全局唯一真源禁止手写**
+> **状态**：✅ **已实现**（2026-08-09）+ v2.5 AppID 真源提取（2026-08-11）
 > **核心参考**：DST 全链路分析 `claudedocs/research_dst_mod_reference_2026-08-08.md`
 
 ---
@@ -192,10 +189,10 @@ POST /api/servers/:id/mods/download { fileId }
   │
   ▼
 routes/mods.ts → SteamCmdManager.downloadWorkshopItem(installDir, [fileId])
-  │   · spawn steamcmd +workshop_download_item 1110390 <id>
+  │   · spawn steamcmd +workshop_download_item 304930 <id>
   │   · 下载到 staging/Server/<ID>/Workshop/staging/
   │   · WS 推 steamcmd_progress（实时进度）
-  │   · 完成 → staging/appworkshop_1110390.acf 自动生成
+  │   · 完成 → staging/appworkshop_304930.acf 自动生成
   │
   ▼
 [响应] { success: true, fileId, acfItem: { size, timeupdated, manifest } }
@@ -231,10 +228,10 @@ ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec 
   │
   ├─ ⑦ **WorkshopApplyService.applyStaged(serverId)**   ← 新增
   │     ├─ 备份 acf → .bak.<UTC-ISO>
-  │     ├─ 解析 staging/appworkshop_1110390.acf
+  │     ├─ 解析 staging/appworkshop_304930.acf
   │     ├─ WorkshopAcfService.addItem(serverId, fileId, meta)
-  │     ├─ 原子写 content/.../appworkshop_1110390.acf
-  │     ├─ mv staging/content/1110390/<id>/ → content/1110390/<id>/
+  │     ├─ 原子写 content/.../appworkshop_304930.acf
+  │     ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
   │     ├─ 失败任一步 → 全部回滚（acf 备份 + Config 备份）
   │     └─ WS 推 mod_apply_progress { stage: 'moving' }
   │
@@ -548,11 +545,11 @@ manager-server/src/modules/workshop/
 
 **VDF 解析器设计**：
 
-输入示例（`appworkshop_1110390.acf` 真实结构）：
+输入示例（`appworkshop_304930.acf` 真实结构）：
 ```vdf
 "AppWorkshop"
 {
-    "appid"        "1110390"
+    "appid"        "304930"
     "WorkshopItemsInstalled"
     {
         "1753134636"

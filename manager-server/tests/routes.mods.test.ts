@@ -354,14 +354,14 @@ describe("routes/mods · 8 端点", () => {
       "steamapps",
       "workshop",
     );
-    const contentDir = path.join(workshopDir, "content", "1110390", "444");
+    const contentDir = path.join(workshopDir, "content", "304930", "444");
     await fs.mkdir(contentDir, { recursive: true });
     await fs.writeFile(path.join(contentDir, "dummy.txt"), "x", "utf-8");
     await fs.writeFile(
-      path.join(workshopDir, "appworkshop_1110390.acf"),
+      path.join(workshopDir, "appworkshop_304930.acf"),
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"444"
@@ -407,10 +407,10 @@ describe("routes/mods · 8 端点", () => {
     );
     await fs.mkdir(workshopDir, { recursive: true });
     await fs.writeFile(
-      path.join(workshopDir, "appworkshop_1110390.acf"),
+      path.join(workshopDir, "appworkshop_304930.acf"),
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"555"
@@ -448,10 +448,10 @@ describe("routes/mods · 8 端点", () => {
     );
     await fs.mkdir(stagingDir, { recursive: true });
     await fs.writeFile(
-      path.join(stagingDir, "appworkshop_1110390.acf"),
+      path.join(stagingDir, "appworkshop_304930.acf"),
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"666"

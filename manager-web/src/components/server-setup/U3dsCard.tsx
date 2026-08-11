@@ -7,6 +7,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
+import { STEAM_APP_IDS } from "@unturned-manager/shared";
 import { Card } from "../shared/Card.js";
 import { Button } from "../ui/button.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
@@ -40,7 +41,7 @@ export function U3dsCard({ status }: U3dsCardProps) {
 
   // fallback 数据：后端 /u3ds/status 不存在时，默认占位
   const data: U3dsStatus = status ?? {
-    appId: "1110390",
+    appId: STEAM_APP_IDS.U3DS_SERVER,
     version: "—",
     isInstalled: false,
     installPath: "/opt/unturned",

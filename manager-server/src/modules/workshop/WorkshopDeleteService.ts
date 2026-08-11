@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { STEAM_APP_IDS } from '@unturned-manager/shared';
 import type {
   ServerId,
   WorkshopFileId,
@@ -11,10 +12,10 @@ import type {
 import { logger } from '../../utils/logger.js';
 import { resolveServerPath } from '../server/pathResolver.js';
 
-const U3DS_APPID = '1110390';
+// AppID 唯一真源 = shared/constants.ts STEAM_APP_IDS.UNTURNED_GAME=304930
 
 /** content 目录（U3DS 实际加载的 mod 位置） */
-const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
+const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', STEAM_APP_IDS.UNTURNED_GAME);
 
 /** WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径（注意：在 Server/ 下，不在 Workshop/ 下） */
 const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Server', 'WorkshopDownloadConfig.json');

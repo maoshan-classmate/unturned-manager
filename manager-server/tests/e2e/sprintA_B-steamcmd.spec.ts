@@ -145,10 +145,10 @@ test.describe('Sprint C 补强: /mods/downloaded staging 可见性 (BUG-5/6)', (
     );
     fs.mkdirSync(stagingDir, { recursive: true });
     fs.writeFileSync(
-      path.join(stagingDir, 'appworkshop_1110390.acf'),
+      path.join(stagingDir, 'appworkshop_304930.acf'),
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"666"

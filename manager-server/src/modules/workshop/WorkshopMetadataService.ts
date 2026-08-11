@@ -1,3 +1,4 @@
+import { STEAM_APP_IDS } from "@unturned-manager/shared";
 import type Database from 'better-sqlite3';
 import type {
   WorkshopFileId,
@@ -22,10 +23,7 @@ const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`
 /** 所有 Steam API 调用的客户端 timeout（45s = 国内网络访问 Steam 冷启动实测需 20-40s） */
 const FETCH_TIMEOUT_MS = 45_000;
 
-/** U3DS AppID = 1110390（服务端） */
-const U3DS_APPID = '1110390';
-/** Unturned 客户端 AppID = 304930（Workshop 搜索用此 ID） */
-const UNTURNED_CLIENT_APPID = '304930';
+// AppID 唯一真源 = shared/constants.ts（此处本地引用用于 WebAPI 参数拼装）
 
 // ─── 实现 ────────────────────────────────────────────────
 
@@ -121,7 +119,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       // ── 阶段 1: QueryFiles 获取 ID ──
       const qfUrl = new URL(API_QUERY_FILES);
       qfUrl.searchParams.set('key', apiKey);
-      qfUrl.searchParams.set('appid', UNTURNED_CLIENT_APPID);
+      qfUrl.searchParams.set('appid', STEAM_APP_IDS.UNTURNED_GAME);
       qfUrl.searchParams.set('numperpage', String(pageSize));
       qfUrl.searchParams.set('page', String(page));
       qfUrl.searchParams.set('return_vote_data', 'true');

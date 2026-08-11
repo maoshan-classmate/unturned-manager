@@ -20,7 +20,7 @@ const SERVER_ID = 'AcfServer' as ServerId;
 const installDir = resolveInstallDir();
 const serverDir = path.join(installDir, 'Servers', SERVER_ID);
 const workshopDir = path.join(serverDir, 'Workshop', 'steamapps', 'workshop');
-const acfPath = path.join(workshopDir, 'appworkshop_1110390.acf');
+const acfPath = path.join(workshopDir, 'appworkshop_304930.acf');
 
 let acfService: WorkshopAcfService;
 
@@ -42,7 +42,7 @@ afterEach(async () => {
 describe('WorkshopAcfService · parse', () => {
   it('acf 不存在返回空 acf', async () => {
     const acf = await acfService.parse(SERVER_ID);
-    expect(acf.appid).toBe('1110390');
+    expect(acf.appid).toBe('304930');
     expect(acf.items.size).toBe(0);
   });
 
@@ -51,7 +51,7 @@ describe('WorkshopAcfService · parse', () => {
       acfPath,
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"1753134636"
@@ -70,7 +70,7 @@ describe('WorkshopAcfService · parse', () => {
       'utf-8',
     );
     const acf = await acfService.parse(SERVER_ID);
-    expect(acf.appid).toBe('1110390');
+    expect(acf.appid).toBe('304930');
     expect(acf.items.size).toBe(2);
     expect(acf.items.get('1753134636' as WorkshopFileId)).toEqual({
       fileId: '1753134636' as WorkshopFileId,
@@ -86,16 +86,16 @@ describe('WorkshopAcfService · parse', () => {
 describe('WorkshopAcfService · write/addItem/removeItem', () => {
   it('write 原子写 + 创建备份', async () => {
     // 先创建原 acf
-    await fs.writeFile(acfPath, '"AppWorkshop"\n{\n  "appid"\t\t"1110390"\n}\n', 'utf-8');
+    await fs.writeFile(acfPath, '"AppWorkshop"\n{\n  "appid"\t\t"304930"\n}\n', 'utf-8');
 
     await acfService.write(SERVER_ID, {
-      appid: '1110390',
+      appid: '304930',
       items: new Map(),
     });
 
     // 备份存在
     const files = await fs.readdir(path.dirname(acfPath));
-    const backup = files.find((f) => f.startsWith('appworkshop_1110390.acf.bak.'));
+    const backup = files.find((f) => f.startsWith('appworkshop_304930.acf.bak.'));
     expect(backup).toBeDefined();
   });
 
@@ -201,12 +201,12 @@ describe('WorkshopAcfService · parseStagingItem', () => {
   it('staging acf 存在且包含该 mod 时返回元数据', async () => {
     const stagingAcfDir = path.join(serverDir, 'Workshop', 'staging', 'steamapps', 'workshop');
     await fs.mkdir(stagingAcfDir, { recursive: true });
-    const stagingAcfPath = path.join(stagingAcfDir, 'appworkshop_1110390.acf');
+    const stagingAcfPath = path.join(stagingAcfDir, 'appworkshop_304930.acf');
     await fs.writeFile(
       stagingAcfPath,
       `"AppWorkshop"
 {
-	"appid"		"1110390"
+	"appid"		"304930"
 	"WorkshopItemsInstalled"
 	{
 		"1753134636"

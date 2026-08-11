@@ -201,7 +201,7 @@ STOPPED ──spawn /bin/bash──> STARTING(PTY 刚创)──1s 塞 startComma
 
 RUNNING 的「业务含义」：PTY 进程在跑。**「玩家能不能连」由终端输出告诉用户**，不是状态字段。
 
-**Mod 应用判定**（用户决策 2026-08-10）：当 PTY 输出含「Server is ready」/「World saved」类 ready 信号 + `Servers/<id>/Workshop/steamapps/workshop/content/1110390/` 目录落盘 + acf 更新 = 应用成功。无 A2S 轮询。
+**Mod 应用判定**（用户决策 2026-08-10）：当 PTY 输出含「Server is ready」/「World saved」类 ready 信号 + `Servers/<id>/Workshop/steamapps/workshop/content/304930/` 目录落盘 + acf 更新 = 应用成功。无 A2S 轮询。
 
 > ⚠️ **Phase 1 落地需同步修 `unturned-sop.md` §「重启/改 Mod 流水线」**：将「轮询 A2S_INFO 直到就绪」改为「PTY 输出 ready 信号 + content 目录落盘 + acf 更新」。
 

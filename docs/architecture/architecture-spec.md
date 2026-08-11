@@ -53,14 +53,17 @@
 - **Steam WebAPI** ⇄ 面板：HTTPS 实时查询创意工坊元数据（`IPublishedFileService`），需要用户配置的 WebAPI Key。
 - **共享卷文件系统** ⇄ 面板：`config.installDir`（全局 U3DS 安装根目录，默认 `/opt/unturned`）下的 `Servers/<ServerID>/` 目录树是实例身份与配置的真源。
 
+> **AppID 唯一真源**：`U3DS_SERVER=1110390` / `UNTURNED_GAME=304930` 定义在 `shared/constants.ts`（`STEAM_APP_IDS`），
+> 前后端统一 `import { STEAM_APP_IDS } from "@unturned-manager/shared"`。禁止在模块内手写 appid 字面量。
+
 ### 1.2 外部系统表
 
 | 外部系统 | 交互方式 | 交互内容 |
 |---|---|---|
-| **U3DS 服务端**（Unturned 专用服务端，Steam AppID `1110390`） | 持久 PTY bash（`node-pty`，cwd = installDir） | 启动（1s 后写入 `startCommand`）、停止（PTY 写 `Save` + `Shutdown 30` + ctrl+c）、命令执行（WS `terminal_input` 直达 stdin）、控制台输出（PTY stdout 经 `console_line` 推送）。U3DS 是 TTY-only 进程，PTY 模拟让它的 ANSI 色彩/进度条正常输出 |
-| **SteamCMD** | 子进程 spawn（`ProcessSupervisor`） | 安装 U3DS（`+app_update 1110390`）、更新二进制、下载创意工坊内容到 staging、检查更新、重装 SteamCMD。所有操作异步启动 + jobId 关联 |
-| **Steam WebAPI** | HTTPS（`fetch`，直连不走代理） | 创意工坊搜索/详情/批量元数据（`QueryFiles` + `GetDetails` + `GetPlayerSummaries`） |
-| **共享卷文件系统** | 直接读写（`fs`） | `Servers/<ServerID>/` 目录树、`Workshop/steamapps/workshop/content/1110390/` 已装 Mod、`Workshop/staging/` 下载暂存、`Logs/*.log` 日志 |
+| **U3DS 服务端**（Unturned 专用服务端，AppID `1110390` = `STEAM_APP_IDS.U3DS_SERVER`） | 持久 PTY bash（`node-pty`，cwd = installDir） | 启动（1s 后写入 `startCommand`）、停止（PTY 写 `Save` + `Shutdown 30` + ctrl+c）、命令执行（WS `terminal_input` 直达 stdin）、控制台输出（PTY stdout 经 `console_line` 推送）。U3DS 是 TTY-only 进程，PTY 模拟让它的 ANSI 色彩/进度条正常输出 |
+| **SteamCMD** | 子进程 spawn（`ProcessSupervisor`） | 安装 U3DS（`+app_update 1110390`）、更新二进制、下载创意工坊内容到 staging（`+workshop_download_item 304930`——Workshop 归属游戏本体，非服务端工具）、检查更新、重装 SteamCMD。所有操作异步启动 + jobId 关联 |
+| **Steam WebAPI** | HTTPS（`fetch`，直连不走代理） | 创意工坊搜索/详情/批量元数据（`QueryFiles` + `GetDetails`，appid=`304930` = 游戏本体） |
+| **共享卷文件系统** | 直接读写（`fs`） | `Servers/<ServerID>/` 目录树、`Workshop/steamapps/workshop/content/304930/` 已装 Mod、`Workshop/staging/` 下载暂存、`Logs/*.log` 日志 |
 | **浏览器用户**（owner） | HTTP + WebSocket | 面板页面、实例启停、终端交互、配置编辑、Mod 管理 |
 
 ### 1.3 命令通道：PTY 终端 owner-trust 模型
@@ -78,8 +81,8 @@
 | 文件 | 面板操作 | 停服要求 | 说明 |
 |---|---|---|---|
 | `WorkshopDownloadConfig.json` 的 `File_IDs` | apply 流水线内原子写（带备份） | **是** | 写完后走「Mod 变更 + 重启流水线」（§6.2），重启后服务端读取生效 |
-| `Workshop/staging/`（SteamCMD 下载落点） | `steamcmd download-workshop` | **否** | U3DS 只加载 `content/1110390/`，不扫描 staging；下载可不停服 |
-| `Workshop/steamapps/workshop/content/1110390/`（已装 Mod） | apply 流水线移动 staging 内容 | **是** | 写入运行中服务端直接读取的位置有覆盖风险；进程停后方可移动 |
+| `Workshop/staging/`（SteamCMD 下载落点） | `steamcmd download-workshop` | **否** | U3DS 只加载 `content/304930/`，不扫描 staging；下载可不停服 |
+| `Workshop/steamapps/workshop/content/304930/`（已装 Mod） | apply 流水线移动 staging 内容 | **是** | 写入运行中服务端直接读取的位置有覆盖风险；进程停后方可移动 |
 | `Commands.dat` / `Config.txt` | 配置页编辑 | 面板不主动停服 | U3DS 启动时读取；编辑后由用户自行决定何时重启生效 |
 | U3DS 二进制 / `validate` | SteamCMD 更新 | **是** | 覆盖正在运行的二进制有风险 |
 

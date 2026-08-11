@@ -63,7 +63,7 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 - 一个 ServerID 一个进程。多个 ServerID 共用同一个 U3DS 安装目录。
 - **不要再用老命令行的 `-port -map -pvp` 参数**——所有可配置项都走 `Commands.dat`。
 - Mono **必须装**。
-- **SteamCMD 下载到 staging（`Workshop/staging/`）可不停服**；写入 `content/1110390/`、`validate`、更新 U3DS 二进制**必须停服**（见下文「Workshop 内容下载」）。
+- **SteamCMD 下载到 staging（`Workshop/staging/`）可不停服**；写入 `content/304930/`、`validate`、更新 U3DS 二进制**必须停服**（见下文「Workshop 内容下载」）。
 
 ## Commands.dat 样板
 
@@ -100,15 +100,17 @@ Votify N 60 60 30 60 1
 
 ## Workshop 内容下载（staging，下载可不停服）
 
-> 依据：U3-SDK `WorkshopDownloadConfig.Use_Cached_Downloads`——服务端**只在启动时**加载已安装 Mod（`content/1110390/`），运行中不重扫目录；`Should_Monitor_Updates` 官方行为 = 检测到更新 → 广播 → **关服应用**。即：**下载≠生效**，下载可不停服，生效必须重启。
+> 依据：U3-SDK `WorkshopDownloadConfig.Use_Cached_Downloads`——服务端**只在启动时**加载已安装 Mod（`content/304930/`），运行中不重扫目录；`Should_Monitor_Updates` 官方行为 = 检测到更新 → 广播 → **关服应用**。即：**下载≠生效**，下载可不停服，生效必须重启。
+
+> **AppID 分工（2026-08-11 实机教训，钉死）**：`app_update` 安装/更新用 `1110390`（服务端工具）；`workshop_download_item`、content 目录、acf 清单、WebAPI 搜索（`QueryFiles` / `GetDetails`）用 `304930`（游戏本体——workshop 内容归属它，1110390 名下无 workshop，误用只能拿到元数据缓存、拿不到内容）。
 
 - **下载新 Mod（不在 File_IDs 或未加载）**：SteamCMD 下载到 **staging 目录**，U3DS **可继续运行**。
-  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/steamapps/workshop/content/1110390/`，**不扫描 staging**）
-  - 命令：`steamcmd +force_install_dir <Servers/<ID>/Workshop/staging> +login anonymous +workshop_download_item 1110390 <id1> <id2> ... +quit`
+  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/steamapps/workshop/content/304930/`，**不扫描 staging**）
+  - 命令：`steamcmd +force_install_dir <Servers/<ID>/Workshop/staging> +login anonymous +workshop_download_item 304930 <id1> <id2> ... +quit`
   - 进度经 `steamcmd_progress` 事件推送；下载锁与 `activeOperation` 竞态门控合并。
-- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/steamapps/workshop/content/1110390/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
+- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/steamapps/workshop/content/304930/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
 - **validate / 更新已启用 Mod / 更新 U3DS 二进制**：**必须停服**（写入运行中服务端直接读取的位置，覆盖已加载文件有风险）。
-- staging 下载完成后，其中的 `appworkshop_1110390.acf` 可用于「已下载 Mod 清单」核对（参考 `claudedocs/research_dst_mod_reference_2026-08-08.md`）。
+- staging 下载完成后，其中的 `appworkshop_304930.acf` 可用于「已下载 Mod 清单」核对（参考 `claudedocs/research_dst_mod_reference_2026-08-08.md`）。
 
 ## 重启 / 改 Mod 流水线（唯一模式——没有热重载）
 
@@ -118,7 +120,7 @@ Votify N 60 60 30 60 1
   → 经 PTY 终端写入 "Save"（强制刷玩家数据到磁盘）
   → 经 PTY 终端写入 "Shutdown 10 <重启原因>"（10 秒优雅关服，对齐 applyModChanges 代码）
   → 等进程退出
-  → 移动 staging 内容 → Workshop/steamapps/workshop/content/1110390/（进程已停，零冲突）
+  → 移动 staging 内容 → Workshop/steamapps/workshop/content/304930/（进程已停，零冲突）
   → 再拉起新的
   → PTY 终端输出含 'Server is ready' / 'World saved' 类 ready 信号 + content 目录落盘 + acf 更新 = 成功。无 A2S 轮询（ADR-0004 §3.3）
   → 通过 WebSocket 广播"已恢复"事件给前端
