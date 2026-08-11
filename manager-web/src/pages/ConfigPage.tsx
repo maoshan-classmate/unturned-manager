@@ -607,6 +607,7 @@ function CommandsTab({
               value={String(fields[k])}
               onChange={(v) => onChange(k, v)}
               type={k === "Password" ? "password" : "text"}
+              placeholder={k === "Name" ? "Unturned（5–50 字符）" : k === "Owner" ? "17 位 Steam ID" : undefined}
             />
           ))}
         </ConfigSection>
@@ -617,6 +618,7 @@ function CommandsTab({
               label={FIELD_LABELS[k]}
               value={String(fields[k])}
               onChange={(v) => onChange(k, v)}
+              placeholder={k === "Map" ? "PEI" : k === "Mode" ? "Normal" : k === "Perspective" ? "FIRST（专用服务器默认）" : undefined}
             />
           ))}
         </ConfigSection>
@@ -628,6 +630,13 @@ function CommandsTab({
                 label={FIELD_LABELS[k]}
                 value={String(fields[k])}
                 onChange={(v) => onChange(k, v)}
+                placeholder={
+                  k === "Port" ? "27015（查询端口 = Port+1）"
+                    : k === "MaxPlayers" ? "8（1–200）"
+                    : k === "Timeout" ? "750（ms）"
+                    : k === "Queue_Size" ? "8"
+                    : undefined
+                }
               />
             ),
           )}
@@ -661,6 +670,11 @@ function CommandsTab({
                   value={String(fields[k])}
                   onChange={(v) => onChange(k, v)}
                   type={k === "GSLT" ? "password" : "text"}
+                  placeholder={
+                    k === "Chatrate" ? "0.25（秒）"
+                      : k === "Cycle" ? "3600（秒/昼夜循环）"
+                      : undefined
+                  }
                 />
               ))}
             </div>

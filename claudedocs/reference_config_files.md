@@ -15,14 +15,14 @@
 
 | 指令 | 参数 | 类型 | 默认值 | 范围 | 分类 | Web UI 控件 |
 |---|---|---|---|---|---|---|
-| `Name` | `<Text>` | string | `Unturned` | 5–50 字符 | any | 文本输入框 (maxlength=50) |
-| `Password` | `<Text>` | string | 无（开放） | 任意文本 | config | 密码输入框 (SHA-1 哈希存储) |
-| `Port` | `<Number>` | int | `27015` | 1024–65535 | config | 数字输入 + 提示"占用 2 个连续端口" |
-| `Bind` | `<IP>` | string | `0.0.0.0` | 有效 IP | config | 文本输入 (IP 格式校验) |
-| `MaxPlayers` | `<Number>` | int | `8` | 1–200 | any | 数字滑块 |
-| `Queue_Size` | `<Number>` | int | `0` | 0–64 | any | 数字滑块 |
-| `GSLT` | `<LoginToken>` | string | 无 | — | config | 密码输入框 + 链接到 steamcommunity.com/dev/managegameservers |
-| `Perspective` | `First\|Third\|Both\|Vehicle` | enum | `Both` | — | config | 下拉选择 |
+| `Name` | `<Text>` | string | `Unturned`（U3-SDK `Provider.cs:6617-6621`，EXPERIMENTAL 构建是 `Unturned Experimental`） | 5–50 字符（`CommandName.cs:11-12` `MIN_LENGTH`/`MAX_LENGTH`） | any | 文本输入框 (maxlength=50) |
+| `Password` | `<Text>` | string | 无（`""`，`Provider.cs:6622`） | 任意文本 | config | 密码输入框 (SHA-1 哈希存储) |
+| `Port` | `<Number>` | int | `27015`（`Provider.cs:6625`，**查询端口 = Port+1**，`Provider.cs:4476` `GetServerConnectionPort()`） | 1024–65535 | config | 数字输入 + 提示"占用 2 个连续端口" |
+| `Bind` | `<IP>` | string | `0`（`Provider.cs:6624` IPv4 = `0.0.0.0`，监听所有接口） | 有效 IP | config | 文本输入 (IP 格式校验) |
+| `MaxPlayers` | `<Number>` | int | `8`（U3-SDK `Provider.cs:6615`） | 1–200（`CommandMaxPlayers.cs:11-14`） | any | 数字滑块 |
+| `Queue_Size` | `<Number>` | int | `8`（U3-SDK `Provider.cs:6616`） | 0–64 | any | 数字滑块 |
+| `GSLT` | `<LoginToken>` | string | 无（`null`，`CommandGSLT.cs:11`） | — | config | 密码输入框 + 链接到 steamcommunity.com/dev/managegameservers |
+| `Perspective` | `First\|Third\|Both\|Vehicle` | enum | `FIRST`（U3-SDK `Provider.cs:6645`，**专用服务器默认值——与单机 `BOTH` 不同**） | — | config | 下拉选择 |
 
 ### 1.2 地图与游戏模式
 
@@ -31,14 +31,14 @@
 | `Map` | `<Level>` | string | `PEI` | 已安装地图 | config | 下拉选择（从 Maps/ 目录扫描） |
 | `Mode` | `Easy\|Normal\|Hard` | enum | `Normal` | — | config | 下拉选择 |
 | `GameMode` | `<ClassName>` | string | 无 | 已安装 GameMode | config | 下拉选择 |
-| `PvE` | 无参数 | flag | 关闭 | — | config | 开关 (PvP / PvE) |
+| `PvE` | 无参数 | flag | **关闭**（U3-SDK `Provider.cs:6637` `isPvP=true` 默认 PvP 模式，`CommandPvE.cs:24` 切换为 `isPvP=false`） | — | config | 开关 (PvP / PvE) |
 | `Cheats` | 无参数 | flag | 关闭 | — | config | 开关 |
 
 ### 1.3 管理权限
 
 | 指令 | 参数 | 类型 | 默认值 | 范围 | 分类 | Web UI 控件 |
 |---|---|---|---|---|---|---|
-| `Owner` | `<SteamID>` | SteamID64 | 无 | 单个 17 位 ID | config | 文本输入 (SteamID64 格式校验) |
+| `Owner` | `<SteamID>` | SteamID64 | 无（`CSteamID.Nil`，`SteamAdminlist.cs:19` `public static CSteamID ownerID;`） | 单个 17 位 ID | config | 文本输入 (SteamID64 格式校验) |
 
 ### 1.4 安全与过滤
 
@@ -64,22 +64,22 @@
 
 | 指令 | 参数 | 类型 | 默认值 | 范围 | 分类 | Web UI 控件 |
 |---|---|---|---|---|---|---|
-| `Timeout` | `<Number>` | int (ms) | `750` | 50–10000 | any | 数字滑块 |
-| `Chatrate` | `<Number>` | float (秒) | `0.25` | 0–60 | any | 数字输入 |
-| `Cycle` | `<Number>` | int (秒) | `3600` | >0 | any | 数字输入（含 "现实时间对照" 提示） |
-| `Loadout` | `<SkillsetID>/<ItemID>...` | list | 无 | SkillsetID 255=全部 | any | 多条目编辑器 |
+| `Timeout` | `<Number>` | int (ms) | `750`（`PlayConfigData.cs:404`，被 `CommandTimeout.cs:42` 写入 `Provider.configData.Server.Max_Ping_Milliseconds`） | 50–10000 | any | 数字滑块 |
+| `Chatrate` | `<Number>` | float (秒) | `0.25`（`ChatManager.cs:74`） | 0–60 | any | 数字输入 |
+| `Cycle` | `<Number>` | int (秒) | `3600`（`LightingManager.cs:852/883/973` 关卡初始化 `_cycle = 3600`） | >0 | any | 数字输入（含 "现实时间对照" 提示） |
+| `Loadout` | `<SkillsetID>/<ItemID>...` | list | `{}`（空数组，`PlayerInventory.cs:30` `public static readonly ushort[] LOADOUT = { };`——玩家按技能组出生装备，**Commands.dat 不写 Loadout 即用 SDK 内置默认**） | SkillsetID `0..10`=单技能组、`255`=覆盖全部技能组（`CommandLoadout.cs:42-49`） | any | 多条目编辑器（**前端待实现**） |
 
 ### 1.7 日志
 
 | 指令 | 参数 | 类型 | 默认值 | 分类 | Web UI 控件 |
 |---|---|---|---|---|---|
-| `Log` | `Chat Y/N, Join/Leave Y/N, Death Y/N, Anticheat Y/N` | 4×bool | `N/N/N/N` | any | 四个独立开关 |
+| `Log` | `Chat Y/N, Join/Leave Y/N, Death Y/N, Anticheat Y/N` | 4×bool | **`Y/Y/Y/N`**（U3-SDK `CommandWindow.cs:49-52`：`shouldLogChat`/`shouldLogJoinLeave`/`shouldLogDeaths` 默认 `true`，`shouldLogAnticheat` 默认 `false`） | any | 四个独立开关（**前端待实现**） |
 
 ### 1.8 投票
 
 | 指令 | 参数 | 类型 | 默认值 | 分类 | Web UI 控件 |
 |---|---|---|---|---|---|
-| `Votify` | `Allow Y/N, PassCooldown, FailCooldown, Duration, Percentage, Players` | mixed | 禁用 | any | 结构化表单 |
+| `Votify` | `Allow Y/N, PassCooldown, FailCooldown, Duration, Percentage, Players` | mixed | 禁用（`voteAllowed=false`，其它参数：`votePlayers=3`、`votePercentage=0.75`、`voteDuration=15`、`votePassCooldown=5`、`voteFailCooldown=60`，`ChatManager.cs:76-81`） | any | 结构化表单（**前端待实现**） |
 
 ---
 

@@ -67,6 +67,10 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 
 ## Commands.dat 样板
 
+> **以下为示例值**——玩家可直接复制作为起步配置。**真实默认值（Unturned 服务端空 Commands.dat 时 SDK 自动填的）见** `@claudedocs/reference_config_files.md` §1。
+>
+> 注意：样板的 `MaxPlayers 16` / `Queue_Size 0` / `Perspective Both` 与 SDK 默认值（8 / 8 / `FIRST`——专用服务器默认视角，非单机 `BOTH`）不同，是常见的社区教程示例值。**面板如不显式配置，行为以 SDK 默认值为准**。
+
 ```
 Name My Unturned Server
 Port 27015

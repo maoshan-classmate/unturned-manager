@@ -194,12 +194,16 @@ export function SettingsPage() {
             {[
               ['默认端口', '27015'],
               ['默认难度', 'Normal'],
-              ['默认视角', 'Both'],
+              ['默认视角', 'FIRST'],
               ['默认地图', 'PEI'],
-              ['最大玩家', '16'],
+              ['默认 PvP/PvE', 'PvP（开启）'],
+              ['最大玩家', '8'],
               ['昼夜循环', '3600s'],
               ['Ping 超时', '750ms'],
-              ['排队上限', '0（关闭）'],
+              ['排队上限', '8'],
+              ['聊天冷却', '0.25s'],
+              ['服务器密码', '无（开放）'],
+              ['监听地址', '0.0.0.0'],
             ].map(([label, value]) => (
               <div key={label} className="p-2 rounded" style={{ backgroundColor: '#0F172A' }}>
                 <div className="text-xs" style={{ color: '#64748B' }}>{label}</div>
