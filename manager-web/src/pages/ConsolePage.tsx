@@ -8,9 +8,11 @@ import {
 } from "lucide-react";
 import { useServer } from "../hooks/useServer.js";
 import { useConsole } from "../hooks/useConsole.js";
+import { useSessionManager } from "../hooks/useSessionManager.js";
 import { Button } from "../components/ui/button.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { Terminal } from "../components/console/Terminal.js";
+import { toast } from "sonner";
 
 // ─── 预设命令 ──────────────────────────────────────────
 
@@ -47,6 +49,8 @@ export function ConsolePage() {
   const { serverId } = useParams<{ serverId: string }>();
   const activeServerId = serverId ?? "_default";
   const { servers } = useServer();
+  // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
+  const { saved: savedSessions } = useSessionManager();
   const { lines, sendCommand, clearLines, connected, sendTerminalInput } =
     useConsole(activeServerId);
 
@@ -175,6 +179,38 @@ export function ConsolePage() {
           ))}
         </div>
       </div>
+
+      {/* ADR-0005 Phase 7.2：已保存的终端会话（PTY 已断开的会话列表） */}
+      {savedSessions.length > 0 && (
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          <span className="text-xs" style={{ color: "#64748B" }}>
+            历史终端:
+          </span>
+          {savedSessions
+            .filter((s) => s.id !== serverId)
+            .map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  toast.error(
+                    "这个终端已经断开，点「启动」重新打开",
+                    { duration: 4000 },
+                  );
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors"
+                style={{
+                  backgroundColor: "transparent",
+                  color: "#64748B",
+                  border: "1px dashed #334155",
+                }}
+                title={`最后活跃: ${new Date(s.lastActivity).toLocaleString("zh-CN")}`}
+              >
+                <TerminalIcon size={11} />
+                {s.name || s.id}
+              </button>
+            ))}
+        </div>
+      )}
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
