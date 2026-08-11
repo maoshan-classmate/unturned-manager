@@ -186,6 +186,7 @@
 | **ServerDiscovery**（辅助） | 目录扫描真源：扫 `installDir/Servers/`，`Commands.dat` 存在性 = 实例成立。纯同步 | fs | — |
 | **VdfParser**（辅助） | VDF 文件解析（acf） | — | — |
 | **settingsStorage**（辅助） | settings K-V 读写（AES-256-GCM 加密 + startCommand 明文），供 ServerManager / AuthService / 路由内部使用 | DB、cryptoBox | — |
+| **SessionManager** | 终端会话持久化（ADR-0005 Phase 7.1）：单 JSON 文件 + mutationQueue 串行 + 临时文件 rename 原子写 + 7 天过期清理 + touchActivity 节流刷新。面板重启后保留已开过的终端列表 | DB（不依赖）、pino logger、fs、config.dataDir（被 ServerManager 调用：PTY spawn/exit 时调 saveSession / setSessionActive） | — |
 
 ### 3.3 路由层
 
@@ -443,6 +444,7 @@ type ClientWsMessage =
 | | `PATCH /install-path` | 设置 SteamCMD 安装路径（内存态） |
 | `/api/workshop` | `GET /mods/:fileId` `GET /browse` | 旧版浏览端点（兼容） |
 | `/api/settings` | `POST /webapi-key` `GET /webapi-key` `DELETE /webapi-key` | WebAPI Key 加密存取 |
+| `/api/sessions` | `GET /` | 终端会话列表（ADR-0005 Phase 7）：返回 `{ active: 活跃会话, saved: 已断开会话 }`，前端 ConsolePage 用 saved 渲染「历史终端」按钮组（点击 toast「这个终端已经断开，点启动重新打开」） |
 | `/api/health` | `GET /` | 健康检查（无需认证） |
 
 ---
@@ -646,6 +648,15 @@ CREATE TABLE settings (
 - better-sqlite3 `user_version` PRAGMA 做版本管理；迁移脚本在 `manager-server/src/db/migrations/`，命名 `NNN-description.sql`。
 - 首次启动自动执行全部未执行迁移；每份迁移在事务内执行、幂等（`IF NOT EXISTS` / `DROP IF EXISTS`）。
 - 现状迁移序列：`001-initial-schema` → `002-add-install-dir` → `003-add-settings` → `004-drop-mod-cache-tables` → `005-drop-servers-tables`（收敛到 3 表）。
+
+### 7.5 终端会话存储（ADR-0005 Phase 7，JSON 文件不落 SQLite）
+
+- **路径**：`<config.dataDir>/terminal-sessions.json`
+- **结构**：`{ sessions: PersistedTerminalSession[], lastUpdated: ISO 8601 }`
+- **写入策略**：mutationQueue 串行 + 临时文件 + `rename` 原子写
+- **保留期**：7 天未活动自动清理（`cleanupExpiredSessions`，启动时每 24 小时跑一次）
+- **生命周期**：PTY spawn 成功后 `saveSession`、PTY 退出后 `setSessionActive(false)`、实例删除后 `removeSession`、面板优雅关闭时批量置 inactive
+- **不入 SQLite**：会话数量小（1 实例 1 会话），JSON 文件读写成本低；与 settings 表职责分离（settings 是凭证，sessions 是元数据）
 
 ---
 
