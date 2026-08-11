@@ -56,7 +56,7 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
   MaxPlayers: "最大玩家数",
   Map: "地图",
   Mode: "难度",
-  Owner: "服主 SteamID64",
+  Owner: "服主 Steam ID",
   Perspective: "视角限制",
   Chatrate: "聊天冷却(秒)",
   Cycle: "昼夜循环(秒)",
@@ -535,8 +535,16 @@ export function ConfigPage() {
             <p>修改配置后需点击「保存配置」才会生效。</p>
             <p>部分参数（端口、地图）需重启服务器才能应用。</p>
             <p>
-              GSLT 令牌在 steamcommunity.com/dev/managegameservers 申请，AppID
-              为 304930。
+              游戏服务器登录令牌在
+              <a
+                href="https://steamcommunity.com/dev/managegameservers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 underline"
+              >
+                Steam 服务器管理页面
+              </a>
+              申请（Steam 应用 ID 304930）。
             </p>
             <p>未知命令行参数会被保留，不会被面板删除。</p>
           </div>
@@ -677,7 +685,7 @@ function ConfigTxtTab({
         title="浏览器"
         fields={
           [
-            ["Login_Token", "Login Token", "text"],
+            ["Login_Token", "Steam 浏览器登录令牌", "text"],
             ["完整描述", "完整描述", "text"],
             ["列表描述", "列表描述", "text"],
             ["图标URL", "图标URL", "text"],
@@ -871,7 +879,7 @@ function WorkshopTab({
           columns={WS_COLUMNS}
           data={rowData}
           keyField="_key"
-          emptyText="暂无 Workshop Mod"
+          emptyText="暂无创意工坊 Mod"
           pagination={{
             page,
             pageSize: PAGE_SIZE,

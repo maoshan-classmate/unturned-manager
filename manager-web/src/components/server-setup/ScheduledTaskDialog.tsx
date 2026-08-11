@@ -98,7 +98,7 @@ export function ScheduledTaskDialog({ open, serverId, task, onClose, onSaved }: 
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1">执行时间(cron)</label>
+          <label className="block text-sm text-slate-400 mb-1">执行时间</label>
           <div className="grid grid-cols-5 gap-2">
             {CRON_FIELDS.map((field) => (
               <Controller

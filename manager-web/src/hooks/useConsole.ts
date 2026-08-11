@@ -137,7 +137,7 @@ export function useConsole(serverId: string): UseConsoleReturn {
           ...prev,
           {
             id: nextId++,
-            text: "[错误] WebSocket 未连接",
+            text: "[错误] 控制台未连接",
             source: "stdout",
             timestamp: Date.now(),
           },

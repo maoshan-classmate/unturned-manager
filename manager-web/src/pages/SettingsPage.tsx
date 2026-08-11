@@ -98,7 +98,7 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-auto">
-      <h1 className="text-2xl font-semibold" style={{ color: '#F1F5FB' }}>Settings</h1>
+      <h1 className="text-2xl font-semibold" style={{ color: '#F1F5FB' }}>系统设置</h1>
 
       {error && (
         <div className="flex items-center gap-2 p-3 rounded-lg text-xs"
@@ -139,24 +139,15 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        {/* 安全配置 */}
+        {/* 安全配置 —— 简化版：玩家无需了解算法名称，只看登录有效期 */}
         <Card icon={Shield} title="安全配置">
           <div className="space-y-2 text-sm" style={{ color: '#94A3B8' }}>
             <div className="flex items-center justify-between">
-              <span>凭据加密</span>
-              <span style={{ color: '#22C55E' }}>AES-GCM</span>
+              <span>登录有效期</span>
+              <span style={{ color: '#F1F5FB' }}>15 分钟</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span>JWT 有效期</span>
-              <span>15 分钟</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>密码哈希</span>
-              <span style={{ color: '#22C55E' }}>Argon2id</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>速率限制</span>
-              <span style={{ color: '#64748B' }}>暂未配置</span>
+            <div className="text-xs" style={{ color: '#64748B' }}>
+              凭据加密与密码哈希已启用行业标准算法，无需手动配置。
             </div>
           </div>
         </Card>
@@ -174,7 +165,7 @@ export function SettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <span>默认页面</span>
-              <span style={{ color: '#64748B' }}>Dashboard</span>
+              <span style={{ color: '#64748B' }}>仪表盘</span>
             </div>
           </div>
         </Card>
@@ -261,7 +252,7 @@ export function SettingsPage() {
                 className="underline" style={{ color: '#3B82F6' }}>
                 steamcommunity.com/dev/apikey
               </a>{' '}
-              免费申请（需要 Steam 账号，任意域名均可）。密钥存储在服务端，AES-GCM 加密。
+              免费申请（需要 Steam 账号，任意域名均可）。密钥存储在服务端加密保存。
             </p>
           </div>
         </Card>

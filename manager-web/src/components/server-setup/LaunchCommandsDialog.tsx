@@ -65,7 +65,7 @@ export function LaunchCommandsDialog({ open, serverId, currentCommands, onClose,
           {errors.commands && (
             <p role="alert" className="text-sm" style={{ color: '#EF4444' }}>{errors.commands.message}</p>
           )}
-          <p className="text-sm text-slate-500">此命令会在 ServerID 启动时拼到启动命令行末尾。</p>
+          <p className="text-sm text-slate-500">此命令会在实例启动时拼到启动命令行末尾。</p>
         </div>
 
         <Dialog.Footer>

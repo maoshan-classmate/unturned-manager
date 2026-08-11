@@ -100,10 +100,10 @@ export function CreateServerDialog({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-400 mb-1">
-              ServerID
+              实例标识
             </label>
             <Input
-              {...register("id", { required: "请输入 ServerID" })}
+              {...register("id", { required: "请输入实例标识" })}
               placeholder="MyServer"
               className="h-9 text-sm"
             />
@@ -149,11 +149,11 @@ export function CreateServerDialog({
           </div>
           <div>
             <label className="block text-sm text-slate-400 mb-1">
-              Owner SteamID64
+              服主 Steam ID
             </label>
             <Input
               {...register("ownerSteamId", {
-                required: "请输入 Owner SteamID64",
+                required: "请输入服主 Steam ID",
               })}
               placeholder="76561198000000000"
               className="h-9 text-sm font-mono"

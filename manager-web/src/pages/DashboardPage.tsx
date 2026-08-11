@@ -161,7 +161,7 @@ export function DashboardPage() {
             className="text-2xl font-semibold m-0"
             style={{ color: "#F1F5FB" }}
           >
-            {server.name || "Dashboard"}
+            {server.name || "仪表盘"}
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <span

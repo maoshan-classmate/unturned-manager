@@ -287,7 +287,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         if (!script) {
           throw new AppError(
             "install-script-missing",
-            `Unturned 服务端安装完成但未检测到启动脚本（${installDir}）。可能 Mono 兼容性问题或下载中断。`,
+            `Unturned 服务端安装完成但未检测到启动脚本（${installDir}）。可能系统运行时环境缺少必要的依赖库或下载未完成。`,
             500,
           );
         }

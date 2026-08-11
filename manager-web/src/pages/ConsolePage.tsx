@@ -152,7 +152,7 @@ export function ConsolePage() {
               style={{ backgroundColor: connected ? "#22C55E" : "#64748B" }}
             />
             <span className="text-xs" style={{ color: "#64748B" }}>
-              {connected ? "WebSocket 已连接" : "WebSocket 未连接"}
+              {connected ? "控制台已连接" : "控制台未连接"}
             </span>
           </div>
         </div>

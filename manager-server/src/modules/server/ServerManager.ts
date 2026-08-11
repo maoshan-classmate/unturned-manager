@@ -17,6 +17,7 @@ import type {
 import { ServerState } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
 import { AppError } from "../../utils/AppError.js";
+import { formatOperationType, formatServerState } from "../../utils/serverStateLabels.js";
 import { resolveInstallDir, resolveServerPath } from "./pathResolver.js";
 import {
   detectStartScript,
@@ -278,7 +279,7 @@ export class ServerManager implements IServerManager {
     if (entry.activeOperation.type !== "none") {
       throw new AppError(
         "operation-conflict",
-        `操作冲突: ${entry.activeOperation.type}`,
+        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
         409,
       );
     }
@@ -351,7 +352,7 @@ export class ServerManager implements IServerManager {
     if (entry.activeOperation.type !== "none") {
       throw new AppError(
         "operation-conflict",
-        `操作冲突: ${entry.activeOperation.type}`,
+        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
         409,
       );
     }
@@ -388,7 +389,7 @@ export class ServerManager implements IServerManager {
     if (entry.activeOperation.type !== "none") {
       throw new AppError(
         "operation-conflict",
-        `操作冲突: ${entry.activeOperation.type}`,
+        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
         409,
       );
     }
@@ -694,7 +695,7 @@ export class ServerManager implements IServerManager {
     if (entry.activeOperation.type !== "none") {
       throw new AppError(
         "operation-conflict",
-        `操作冲突: ${entry.activeOperation.type}`,
+        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
         409,
       );
     }
@@ -709,7 +710,7 @@ export class ServerManager implements IServerManager {
       entry.activeOperation = { type: "none" };
       throw new AppError(
         "server-not-running",
-        `Mod 应用要求服务器运行中，当前状态: ${entry.state}`,
+        `Mod 应用要求服务器处于运行中状态（当前：${formatServerState(entry.state)}）`,
         409,
       );
     }
