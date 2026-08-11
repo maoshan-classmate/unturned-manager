@@ -53,6 +53,12 @@ export type ServerEvent =
       percent?: number;
       jobId?: string;
       latestVersion?: string;
+      /**
+       * 失败时的根因描述（仅 failed 事件携带）——传给前端显示。
+       * 原实现只广播 `stage: "failed"`，前端 toast 只能硬编码通用文案，
+       * 对定位像 install-script-missing 这类后台诊断信息毫无价值。
+       */
+      errorMessage?: string;
     };
 
 export interface IBroadcaster {

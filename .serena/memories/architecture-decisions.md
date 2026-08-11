@@ -8,7 +8,7 @@
 4. 单用户 JWT 认证，数据库预留用户表支持未来多用户扩展
 5. 状态机 **4 态**：STOPPED→STARTING→RUNNING→STOPPING→STOPPED，由终端进程存活驱动（原 5 态中的 DEGRADED 已随 ADR-0004 Phase 6 删除）
 6. Files 页（Figma `12:16326`）从 P2 收回 P0——骨干交互功能，没有它无法上传 Mod、修改配置传播、调日志看创意工坊内容
-7. 设计源头权威在 `docs/architecture/design-system-mapping.md`（真 Figma 拉取）。PNG 截图只在 `claudedocs/figma-exports/` 当快照留档；实现时必须从 mapping 文件查色板与各类编号，不在 PNG 上猜
+7. 设计源头权威在 `docs/architecture/design-system-mapping.md`（真 Figma 拉取）。实现时必须从 mapping 文件查色板与各类编号，不在 PNG 上猜
 
 ## 关键竞态风险
 

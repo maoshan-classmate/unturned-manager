@@ -51,12 +51,7 @@ export function createSteamCmdRouter(
       try {
         // Phase 0 异步化：updateU3DS spawn 后立即返回 jobId，HTTP 202 不再等 30min
         const jobId = await steamCmdManager.updateU3DS(installDir);
-        res.status(202).json({
-          data: {
-            jobId,
-            message: "Unturned 服务端更新已启动，进度由 WS steamcmd_progress 推送",
-          },
-        });
+        res.status(202).json({ data: { jobId } });
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw err;
@@ -79,9 +74,7 @@ export function createSteamCmdRouter(
         installDir,
         itemIds,
       );
-      res.status(202).json({
-        data: { jobId, message: "Mod 下载已启动" },
-      });
+      res.status(202).json({ data: { jobId } });
     }),
   );
 
@@ -96,12 +89,7 @@ export function createSteamCmdRouter(
       const { installDir } = req.body as { installDir?: string };
       try {
         const jobId = await steamCmdManager.checkUpdate(installDir);
-        res.status(202).json({
-          data: {
-            jobId,
-            message: "Unturned 服务端检查更新已启动，结果由 WS steamcmd_progress 推送",
-          },
-        });
+        res.status(202).json({ data: { jobId } });
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw err;
@@ -119,12 +107,7 @@ export function createSteamCmdRouter(
       try {
         // BUG-2 异步化：installU3DS spawn 后立即返回 jobId，进度/完成/失败走 WS
         const jobId = await steamCmdManager.installU3DS(installDir);
-        res.status(202).json({
-          data: {
-            jobId,
-            message: "Unturned 服务端安装已启动，进度由 WS steamcmd_progress 推送",
-          },
-        });
+        res.status(202).json({ data: { jobId } });
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw new AppError(
@@ -144,12 +127,7 @@ export function createSteamCmdRouter(
       try {
         // Phase 0 异步化：reinstall 改为立即返回 jobId，下载/解压/初始化在后台跑
         const jobId = await steamCmdManager.reinstall(installDir);
-        res.status(202).json({
-          data: {
-            jobId,
-            message: "SteamCMD 重装已启动，进度由 WS steamcmd_progress 推送",
-          },
-        });
+        res.status(202).json({ data: { jobId } });
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw err;
@@ -165,7 +143,7 @@ export function createSteamCmdRouter(
     asyncHandler(async (req, res) => {
       const { installPath } = req.body as { installPath: string };
       steamCmdManager.setInstallPath(installPath);
-      res.json({ data: { message: "SteamCMD 路径已保存" } });
+      res.json({ data: { ok: true } });
     }),
   );
 

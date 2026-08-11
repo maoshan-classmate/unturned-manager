@@ -461,4 +461,4 @@ Phase 6: RCON 通道降级或删除（评估 RCON 是否仍必要）
 
 - **依赖**：ADR-0003 B2 目录扫描数据源（实例身份 = `<installDir>/Servers/<id>/Server/Commands.dat`）
 - **替代**：§7 否决的所有方案
-- **后续**：Phase 1-4 实施完成需补一份 `claudedocs/reference_pty_terminal.md` 活参考文档
+- **后续**：PTY 链路的完整描述已并入 `docs/architecture/architecture-spec.md`（§1.3 命令通道、§3.2 WS 协议、§5.5 PTY 进程生命周期、§6.4 错误处理），不另起 `claudedocs/reference_pty_terminal.md` 活参考——避免重复维护

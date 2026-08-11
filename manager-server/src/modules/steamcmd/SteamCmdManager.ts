@@ -282,7 +282,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         if (!script) {
           throw new AppError(
             "install-script-missing",
-            `U3DS 安装完成但未检测到启动脚本（${installDir}）。可能 Mono 兼容性问题或下载中断。`,
+            `Unturned 服务端安装完成但未检测到启动脚本（${installDir}）。可能 Mono 兼容性问题或下载中断。`,
             500,
           );
         }
@@ -295,7 +295,16 @@ export class SteamCmdManager implements ISteamCmdManager {
         );
       } catch (err) {
         callbacks?.onStatusChange?.("failed");
-        this.broadcastProgressWithJobId(jobId, 0, "failed");
+        // 失败时把 AppError.message 透传给前端——install-script-missing 这类后台诊断
+        // 信息此前只进 pino 日志，前端 toast 全靠硬编码通用文案，对定位根因无价值
+        const errorMessage =
+          err instanceof AppError || err instanceof Error ? err.message : undefined;
+        this.broadcastProgressWithJobId(
+          jobId,
+          0,
+          "failed",
+          errorMessage,
+        );
         this.loggerUpdate().error({ err, installDir }, "SteamCMD install 失败");
       } finally {
         this.activeJobs.delete(lockKey);
@@ -307,11 +316,13 @@ export class SteamCmdManager implements ISteamCmdManager {
 
   /** BUG-2 修复：广播带 jobId 的进度事件（多任务并发隔离）。
    *  review 修复（P2-1）：删死参数 stage——方法体只广播 label，原第一个 stage 参数完全被忽略，
-   *  调用者易误把 "completed"/"failed" 传进 stage 位导致广播错 stage。签名收敛为 (jobId, percent, label)。 */
+   *  调用者易误把 "completed"/"failed" 传进 stage 位导致广播错 stage。签名收敛为 (jobId, percent, label)。
+   *  errorMessage 仅 failed 时携带——前端 toast 显示真实根因（如 Mono 兼容性问题），替代硬编码通用文案。 */
   private broadcastProgressWithJobId(
     jobId: string,
     percent: number | undefined,
     label: string,
+    errorMessage?: string,
   ): void {
     try {
       this.broadcaster.broadcast({
@@ -319,6 +330,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         jobId,
         stage: label,
         ...(percent != null ? { percent } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
       });
     } catch {
       /* noop */

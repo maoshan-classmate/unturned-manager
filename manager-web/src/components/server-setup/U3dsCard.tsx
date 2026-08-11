@@ -71,7 +71,11 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
       });
     } else if (installProgress.stage === "failed") {
       // BUG-2 附带：必须带 id 替换残留的 loading toast（否则"安装中… spawned"一直挂着）
-      toast.error("Unturned 服务端安装失败", { id: "u3ds-install" });
+      // errorMessage 来自后端 SteamCmdManager 后台 catch 块——是真实根因
+      // （如 install-script-missing 提到的 Mono 兼容性问题或下载中断）
+      toast.error(installProgress.errorMessage ?? "Unturned 服务端安装失败", {
+        id: "u3ds-install",
+      });
       setInstalling(false);
     } else if (installing) {
       const pct =
@@ -93,7 +97,10 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
       onStatusChange?.({ ...data });
     } else if (updateProgress.stage === "failed") {
       // BUG-2 附带：带 id 替换残留的 loading toast
-      toast.error("Unturned 服务端更新失败", { id: "u3ds-update" });
+      // updateU3DS 后台 catch 也走同一个广播，errorMessage 在那也生效
+      toast.error(updateProgress.errorMessage ?? "Unturned 服务端更新失败", {
+        id: "u3ds-update",
+      });
       setUpdating(false);
     } else if (updating) {
       const pct =
@@ -164,7 +171,9 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
       );
       setChecking(false);
     } else if (checkProgress.stage === "failed") {
-      toast.error("检查 Unturned 服务端更新失败", { id: "u3ds-check" });
+      toast.error(checkProgress.errorMessage ?? "检查 Unturned 服务端更新失败", {
+        id: "u3ds-check",
+      });
       setChecking(false);
     }
   }, [checkProgress, checking]);

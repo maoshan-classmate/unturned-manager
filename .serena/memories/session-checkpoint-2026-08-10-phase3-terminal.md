@@ -24,4 +24,4 @@ ADR-0004 §4 Phase 3（前端 xterm.js 终端 + WS terminal_input 双向链路�
 
 ## 遗留
 
-`claudedocs/reference_pty_terminal.md` 活参考文档待 Phase 1-4 全部完成后补（ADR-0004 §8）。
+PTY 终端的完整链路已并入 `docs/architecture/architecture-spec.md`（Phase 7 重写后包含 node-pty + WS 双向 + 状态机驱动等），无需再单独补 reference 文档。

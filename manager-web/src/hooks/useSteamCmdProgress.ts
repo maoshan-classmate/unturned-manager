@@ -14,6 +14,11 @@ export interface SteamCmdProgress {
   percent?: number;
   jobId?: string;
   latestVersion?: string;
+  /**
+   * 失败时的真实根因描述（仅 stage === "failed" 携带）。
+   * 对应后端 install-script-missing 等后台诊断信息——前端 toast 用此替代硬编码通用文案。
+   */
+  errorMessage?: string;
   timestamp: string;
 }
 
@@ -89,6 +94,7 @@ export function useSteamCmdProgress(
             percent: msg.percent,
             jobId: msg.jobId,
             ...(msg.latestVersion ? { latestVersion: msg.latestVersion } : {}),
+            ...(msg.errorMessage ? { errorMessage: msg.errorMessage } : {}),
             timestamp: new Date().toISOString(),
           });
         } catch {
