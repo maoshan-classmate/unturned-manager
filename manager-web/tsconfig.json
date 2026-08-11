@@ -9,7 +9,8 @@
     "noImplicitAny": true,
     "esModuleInterop": true,
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "..",
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
