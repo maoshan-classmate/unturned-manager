@@ -68,26 +68,12 @@ export type LoginFormValues = z.infer<typeof loginSchema>;
 
 界面文案面向用户，不得出现项目内部术语、缩写、代号。**判据**：一个只想开服、没读过本项目任何文档的玩家，看到这行字能不能明白在说什么。
 
-### 术语对照表（可增长）
+### 术语对照表（独立维护）
 
-| 内部术语（代码、文档、JSDoc 用） | 界面用语 |
-|---|---|
-| U3DS（Unturned Dedicated Server） | Unturned 服务端 |
-| ServerID | 实例标识（表单字段）或 实例（叙述语境） |
-| SteamCMD | 保留原文（官方工具名，用户装它时会在 SteamCMD 官方文档里看到同样的写法） |
-| 创意工坊 / Workshop | 创意工坊（Steam「创意工坊」是其官方中文译名，保留） |
-| PTY / 持久终端 / 持久 PTY / 终端 | **统一改为「控制台」**（侧栏导航与页面标题已用；新规则生效后包括错误消息、placeholder、toast 全部统一）。玩家不会知道 pty(7) 是什么，「控制台」是 PC 游戏圈对「服务端后台」的共识说法 |
-| AppID / Application ID / Steam 应用 ID | 保留原文——「AppID」是 Steam 玩家用户识别 SteamDB、查询工坊内容归属的通用词，玩家圈层高识别度；改中文反而误读 |
-| SteamID64 | Steam ID（去掉 64，玩家不知道 64 是什么；Steam 官方文档也只称 "Steam ID"） |
-| WebSocket | 控制台（连接状态/错误文案）——已与 PTY 行统一 |
-| Mono | 依赖库（在错误消息里说"运行时环境缺少必要的依赖库"——Linux 部署术语，普通玩家不会知道 Mono 是 Mono 运行时兼容层） |
-| cron / Crontab | 执行时间（cron 表达式本身保留，括号里的英文标签去掉） |
-| AES-GCM / JWT / Argon2id / 密码学算法 | **不在 SettingsPage 安全卡片显示**（玩家不需要知道算法名称）。卡片只保留「登录有效期」等玩家真正关心的字段 |
-| ServerState 枚举（STOPPED/STARTING/RUNNING/STOPPING） | 已停止 / 启动中 / 运行中 / 停止中（后端拼中文，用 `formatServerState`） |
-| OperationType 枚举（manual_start/.../mod_apply） | 启动 / 停止 / 重启 / 应用 Mod 变更（后端拼中文，用 `formatOperationType`） |
-| Login Token（Config.txt 浏览器列表字段） | Steam 浏览器登录令牌 |
+行内术语 → 界面用语映射表不在此处维护，**权威在独立活参考文档**：
 
-新增内部术语时，必须在这一节同步加对照——这条不是建议，是强制。
+- **表见** `@claudedocs/reference_ui_terms.md`——一行一个内部术语，列为「内部术语 → 界面用语」两列
+- 新增内部术语时，必须在那张表同步加对照——这条不是建议，是强制
 
 ### 适用范围
 
