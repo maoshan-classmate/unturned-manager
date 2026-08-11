@@ -163,9 +163,12 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
   useEffect(() => {
     if (!checkProgress || !checking) return;
     if (checkProgress.stage === "completed") {
+      // 检查完成。后端通过 latestVersion 是否有值判断有无新版本——
+      // 但 buildId 是 Steam 内部构建编号，玩家看不到意义；toast 只显示语义提示
+      // 而不暴露具体数字。buildId 在后端日志里保留供升级比对。
       toast.success(
         checkProgress.latestVersion
-          ? `Unturned 服务端最新版本:${checkProgress.latestVersion}`
+          ? "Unturned 服务端有新版本可用，请点「更新 Unturned 服务端」"
           : "Unturned 服务端已是最新版本",
         { id: "u3ds-check" },
       );

@@ -18,7 +18,7 @@ const APP_MANIFEST_PREFIX = "appmanifest_";
 /** steamapps 目录名（标准 Steam 库布局） */
 const STEAMAPPS_DIR_NAME = "steamapps";
 
-/** 构建号字段名 */
+/** 构建号字段名——清单里有，但不向玩家暴露；保留常量供可能的内部比对 */
 const BUILD_ID_KEY = "buildid";
 
 /** 版本段字段（Status.json Game 段） */
@@ -92,8 +92,7 @@ export class U3dsStatusProvider implements IU3dsStatusProvider {
     const version = await this.readVersion();
     if (version !== undefined) result.version = version;
 
-    const { buildId, lastUpdated } = await this.readManifest();
-    if (buildId !== undefined) result.buildId = buildId;
+    const { lastUpdated } = await this.readManifest();
     if (lastUpdated !== undefined) result.lastUpdated = lastUpdated;
 
     return result;
@@ -148,13 +147,15 @@ export class U3dsStatusProvider implements IU3dsStatusProvider {
   }
 
   /**
-   * 读安装清单（acf）拿构建号和上次更新时间。
+   * 读安装清单（acf）拿上次更新时间。
    *
    * 路径约定：`<installDir>/steamapps/appmanifest_<U3DS_APP_ID>.acf`
    * ——用户实机已确认。如果清单里读不到时间戳字段，回落到清单文件自身的修改时间。
+   *
+   * 构建号（buildId）此前曾作为版本号对外暴露，玩家看到 1785799152 这类数字完全无意义；
+   * 现在构建号仅在日志中保留供 SteamCmdManager 检查更新比对，不出现在 UI 状态里。
    */
   private async readManifest(): Promise<{
-    buildId?: string;
     lastUpdated?: string;
   }> {
     const manifestPath = path.join(
@@ -182,8 +183,6 @@ export class U3dsStatusProvider implements IU3dsStatusProvider {
       const rootKey = Object.keys(parsed)[0];
       const root = rootKey ? (parsed[rootKey] as Record<string, unknown>) : undefined;
       if (root) {
-        const buildIdRaw = root[BUILD_ID_KEY];
-        if (typeof buildIdRaw === "string") buildId = buildIdRaw;
         // 清单文件里的时间戳是 Steam 的 Unix 时间戳（秒）
         const ts = this.extractTimestamp(root);
         if (ts !== undefined) {
@@ -214,7 +213,7 @@ export class U3dsStatusProvider implements IU3dsStatusProvider {
       }
     }
 
-    return { buildId, lastUpdated };
+    return { lastUpdated };
   }
 
   /**

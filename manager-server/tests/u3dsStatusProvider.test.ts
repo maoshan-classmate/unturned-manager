@@ -92,7 +92,8 @@ describe("U3dsStatusProvider", () => {
     expect(status.isInstalled).toBe(true);
     expect(status.appId).toBe("1110390");
     expect(status.version).toBe("3.24.5.0");
-    expect(status.buildId).toBe("1785799152");
+    // buildId 不再暴露给玩家——已从 U3dsStatus 移除
+    expect(status.buildId).toBeUndefined();
     // LastUpdated=1723412345 → ISO 字符串
     expect(status.lastUpdated).toBe(
       new Date(1723412345 * 1000).toISOString(),
@@ -112,7 +113,7 @@ describe("U3dsStatusProvider", () => {
     expect(status.buildId).toBeUndefined();
   });
 
-  it("已装但缺 Status.json：version 缺失，buildId 与 lastUpdated 仍有", async () => {
+  it("已装但缺 Status.json：version 缺失，lastUpdated 仍有", async () => {
     await makeInstalled(tempDir);
     await writeManifest(tempDir, MANIFEST_VDF);
 
@@ -120,13 +121,13 @@ describe("U3dsStatusProvider", () => {
 
     expect(status.isInstalled).toBe(true);
     expect(status.version).toBeUndefined();
-    expect(status.buildId).toBe("1785799152");
+    expect(status.buildId).toBeUndefined();
     expect(status.lastUpdated).toBe(
       new Date(1723412345 * 1000).toISOString(),
     );
   });
 
-  it("已装但缺安装清单：buildId 缺失，lastUpdated 也缺失（无文件可回落）", async () => {
+  it("已装但缺安装清单：lastUpdated 也缺失（无文件可回落）", async () => {
     await makeInstalled(tempDir);
     await fs.writeFile(path.join(tempDir, "Status.json"), STATUS_JSON);
 
@@ -138,7 +139,7 @@ describe("U3dsStatusProvider", () => {
     expect(status.lastUpdated).toBeUndefined();
   });
 
-  it("清单 VDF 损坏：buildId/lastUpdated 缺失但 lastUpdated 回落文件修改时间", async () => {
+  it("清单 VDF 损坏：lastUpdated 缺失且回落文件修改时间", async () => {
     await makeInstalled(tempDir);
     await fs.writeFile(path.join(tempDir, "Status.json"), STATUS_JSON);
     await writeManifest(tempDir, CORRUPT_VDF);
@@ -156,13 +157,14 @@ describe("U3dsStatusProvider", () => {
     expect(status.lastUpdated).toBe(manifestStat.mtime.toISOString());
   });
 
-  it("清单有 buildid 但时间戳字段不在候选名单：lastUpdated 回落文件修改时间", async () => {
+  it("清单有时间戳但其他字段不在候选名单：lastUpdated 正常", async () => {
     await makeInstalled(tempDir);
-    // 清单里只有一个 buildid，没有任何时间戳字段
+    // 清单里只有 buildid（不暴露给玩家）和时间戳，没有 lastUpdated 候选字段之一
     const manifestNoTs = `"AppState"
 {
   "appid"   "1110390"
   "buildid" "1785799152"
+  "LastUpdated"  "1723412345"
 }
 `;
     await writeManifest(tempDir, manifestNoTs);
@@ -170,12 +172,8 @@ describe("U3dsStatusProvider", () => {
     const status = await provider.getStatus();
 
     expect(status.isInstalled).toBe(true);
-    expect(status.buildId).toBe("1785799152");
-    expect(status.lastUpdated).toBeDefined();
-    const manifestStat = await fs.stat(
-      path.join(tempDir, "steamapps", "appmanifest_1110390.acf"),
-    );
-    expect(status.lastUpdated).toBe(manifestStat.mtime.toISOString());
+    expect(status.buildId).toBeUndefined();
+    expect(status.lastUpdated).toBe(new Date(1723412345 * 1000).toISOString());
   });
 
   it("Status.json 不是合法 JSON：version 缺失不影响其它字段", async () => {
@@ -187,7 +185,7 @@ describe("U3dsStatusProvider", () => {
 
     expect(status.isInstalled).toBe(true);
     expect(status.version).toBeUndefined();
-    expect(status.buildId).toBe("1785799152");
+    expect(status.buildId).toBeUndefined();
   });
 
   it("Status.json 的版本字段不齐全：version 缺失而非抛错", async () => {
@@ -202,6 +200,6 @@ describe("U3dsStatusProvider", () => {
     const status = await provider.getStatus();
 
     expect(status.version).toBeUndefined();
-    expect(status.buildId).toBe("1785799152");
+    expect(status.buildId).toBeUndefined();
   });
 });

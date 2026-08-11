@@ -118,8 +118,6 @@ export interface U3dsStatus {
   installPath: string;
   /** 游戏版本号，形如 `3.24.5.0`；读不到版本文件时为 undefined */
   version?: string;
-  /** Steam 构建号，用于检查更新时比对（同版本号可能对应多次构建） */
-  buildId?: string;
   /** 上次更新时间（ISO 字符串）；取自安装清单，回落清单文件自身修改时间 */
   lastUpdated?: string;
   /** 模组数——当前不由后端填充：模组按实例统计，而本类型是安装级 */
