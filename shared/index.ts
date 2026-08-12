@@ -58,6 +58,13 @@ export type {
   TerminalSessionsConfig,
 } from "./contracts/sessions.js";
 export type { IU3dsStatusProvider } from "./contracts/u3ds.js";
+export type {
+  ILdmDiscoveryService,
+  ILdmPluginCommandsService,
+  ILdmPluginSourceService,
+  ILdmAssemblyVersionReader,
+  LdmRuntimeStatusReader,
+} from "./contracts/ldm.js";
 
 // Schemas (Sprint 2: zod-openapi 契约层)
 export * from "./schemas/index.js";

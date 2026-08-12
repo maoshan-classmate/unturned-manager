@@ -148,3 +148,54 @@ export interface U3dsStatus {
   /** 模组数——当前不由后端填充：模组按实例统计，而本类型是安装级 */
   modCount?: number;
 }
+
+// ─── LDM（Legally-Distinct-Missile）Mod 框架 ─────────────────────────
+
+/**
+ * 插件运行时加载状态——/rocket plugins 分组的 4 态 + 未知。
+ * unknown = 实例非运行中 / 未解析到（列表加载时才同步解析一次，非实时）。
+ */
+export type PluginRuntimeStatus =
+  | 'loaded'
+  | 'unloaded'
+  | 'failure'
+  | 'cancelled'
+  | 'unknown';
+
+/**
+ * 已装插件描述（Phase 1 视图模型）。
+ * @field name 插件目录名 = 插件标识（Linux 大小写敏感）
+ * @field version .dll 元数据 AssemblyVersionAttribute；解析失败时 null，前端显示「未知」
+ * @field sizeBytes .dll 文件大小（前端做合规校验显示，非 LDM 自身关注）
+ * @field hasConfig <插件名>.configuration.xml 是否存在
+ * @field modifiedAtIso .dll 文件 mtime（ISO）—— 用户判断插件是否最近改过
+ * @field runtimeStatus 运行时加载状态；非 RUNNING 时（STOPPED/STARTING/STOPPING）为 unknown，UI 提示「实例未运行」
+ */
+export interface InstalledPlugin {
+  name: string;
+  version: string | null;
+  sizeBytes: number;
+  hasConfig: boolean;
+  modifiedAtIso: string;
+  runtimeStatus: PluginRuntimeStatus;
+}
+
+/**
+ * LDM-Community 公开插件条目（Phase 1 单端点）。
+ * @field slug 唯一键（用于详情抽屉——Phase 3 才接）
+ * @field name 显示名
+ * @field author GitHub 仓库 owner
+ * @field description 截断前 280 字
+ * @field repoUrl GitHub Releases 页（点击外链）
+ * @field latestVersion 来自 GitHub API releases/latest 的 tag_name；无 release 或拉取失败 = 'unknown'
+ * @field updatedAtIso 仓库最近 push 时间（GitHub API /repos/{owner}/{repo} pushed_at）
+ */
+export interface CommunityPlugin {
+  slug: string;
+  name: string;
+  author: string;
+  description: string;
+  repoUrl: string;
+  latestVersion: string;
+  updatedAtIso: string;
+}
