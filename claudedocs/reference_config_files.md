@@ -115,6 +115,26 @@
 | `Timeout_Queue_Seconds` | float | `15` | `PlayConfigData.cs:405` `Timeout_Queue_Seconds = 15` | — | 队列中无响应超时（秒） | 数字输入 |
 | `Timeout_Game_Seconds` | float | `30` | `PlayConfigData.cs:406` `Timeout_Game_Seconds = 30` | — | 游戏中无响应超时（秒） | 数字输入 |
 | `Max_Clients_With_Same_IP_Address` | int | `64` | `PlayConfigData.cs:279` `Max_Clients_With_Same_IP_Address = 64` | — | 同 IP 最大并发连接数 | 数字输入 |
+
+### 2.3 前后端契约（BUG-2 防回归，2026-08-13）
+
+> **契约形状**：Config.txt 读写两侧必须走 `shared/schemas/config.schema.ts` 的 `ConfigSectionSchema`——`sections: Record<sectionName, { name, entries: ConfigEntry[] }>`，**不是**裸 kv map。
+
+**踩坑实录（BUG-2）**：前端曾把 `sections` 写成 `{ "浏览器": { Login_Token: "..." } }`（裸 kv map），后端 Zod 校验 400 拒绝 + read 侧 `sections["浏览器"].Login_Token` 直接解构读不到值（实际在 `entries[]` 里）→ 保存必失败 + 编辑内容全空。
+
+**防回归铁律**：
+- 前端读写 Config.txt 走 `manager-web/src/pages/configTxtAdapter.ts` 的 5 个 helper（`readStringEntry` / `readBoolEntry` / `boolEntry` / `stringEntry` / `buildTxtSections`）——**禁止**手写 `sections[中文][字段]` 形态
+- UI 新增字段必须同步改 `buildTxtSections`（helper 文件有注释声明）
+- helper 的 owner 网：`manager-web/src/pages/configTxtAdapter.test.ts` 17 用例——新增/改 helper 必须同步更新单测
+- 后端 `ConfigService.parseConfigTxt` 输出 `{name, entries}`，`serializeConfigTxt` 接受同构——两侧契约以 schema 为唯一权威
+
+**bool 字段细节**：
+- 勾选 = `value: null` + `type: 'bool'`（后端 serialize 写裸 key 行 = 开关）
+- 未勾选 = `value: 'false'` + `type: 'bool'`（保留已知键，显式 false——CLAUDE.md §unturned-sop 解析器契约：面板不能把不认识的指令删了）
+- 空 string 字段 = `value: null`（避免空 `key=` 行污染文件）
+
+**TS 重载陷阱**：helper 曾用 TS 重载 `readSectionEntry(isBool: true/false)` 区分返回值——**运行时 JS 不区分重载**，`isBool=false` 时实际返回 `false` 而非 `''`（单测 1/14 失败捕获）。已拆为 `readStringEntry` / `readBoolEntry` 两个独立函数，**后续禁止用 TS 重载实现运行时类型分支**。
+
 ---
 
 ## 3. Rocket.config.xml — LDM 主框架配置
