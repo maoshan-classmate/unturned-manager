@@ -284,7 +284,7 @@
 | **插件配置编辑**（Configuration.xml） | ✅ 做 | 各插件字段由插件 schema 决定；面板做**通用 Monaco XML 编辑器**（不做字段 schema 自动发现——schema 演进跟插件版本走，维护成本高） |
 | **Rocket.config.xml 结构化编辑** | ✅ 做 | 字段表已确认（16 字段），逐字段控件 |
 | **Permissions.config.xml 树形编辑** | ✅ 做 | Groups / Members / Permissions / Color / ParentGroup / Priority 全字段结构化 |
-| **LDM 插件来源浏览** | ⚠️ 外链 + 列表展示 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览 |
+| **LDM 插件来源浏览** | ⚠️ 外链 + 列表展示 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览。<br>**双源融合**（2026-08-12 用户拍板）：LDM-Community 上游**无公开 JSON API**（静态 HTML 主页），**Phase 1 走 HTML 解析 + GitHub API 批量补充**——HTML 解析拿 `slug` / `name` / `author` / `description` / `repoUrl`；GitHub API 拿 `tag_name`（`latestVersion`）+ `pushed_at`（`updatedAtIso`）。**GitHub PAT 配置位置在 LdmPage「插件来源」Tab 顶部**（不是 SettingsPage）。详细规格见 `claudedocs/workflow_sprint5_ldm_phase1.md` §5 + 调研报告 `claudedocs/research_ldm_community_source_2026-08-12.md` |
 | **改 LDM 配置生效方式** | ✅ PTY 终端 owner-trust 重启流水线 | `Say "保存 LDM 变更"` + `Save` + `Shutdown 10 "LDM 变更重启"` → spawn 新进程；**不调 `/rocket reload` 全局**（Issue #1794 + prohibitions 钉死） |
 | **日志观察 LDM 启动加载/错误** | ✅ 复用现有 PTY 控制台 | U3DS stdout 已含 `[LDM] Loaded plugin X.Y.Z` / `[LDM] Plugin X error: ...`；前端 xterm.js 已实时渲染 |
 | **`/rocket` 命令输出解析**（插件状态列表） | ✅ 做 | 解析 `Loaded` / `Unloaded` / `Failure` / `Cancelled` 4 状态 |
@@ -986,6 +986,12 @@ LdmPage
 - 每行外链「前往 GitHub Releases 下载」→ 用户下载 .dll
 - 拖拽上传 .dll 到 `Rocket/Plugins/<Name>.dll`（Files API 复用；配置目录 `Plugins/<Name>/` 由框架首次加载自动创建，目录名须与 .dll 同名）
 
+**架构决策**（2026-08-12 用户拍板）：
+- **Tab 顶部固定 GitHub PAT 配置卡**——用于「提升 GitHub API 限流（60/h → 5000/h）」。PAT 只服务 LDM 社区插件列表，不属于「系统级设置」，**不放在 SettingsPage**（避免污染 Steam WebAPI Key 域）
+- **后端透传**：PAT 由前端 localStorage 持有 + 每次请求通过请求头 `X-GitHub-PAT` 透传，**后端不持久化**——用户改 PAT 立即生效，无需重启面板
+- **双源融合**：列表展示走 HTML 解析 + GitHub API 批量（25 仓库 × 2 端点 = 50 调用/全量，5min 进程内缓存复用，匿名 60/h 限流恰好够 1 次全量刷新；配 PAT 后 5000/h 零压力）
+- 详细规格（控件 / 字段 / 错误码 / 单测用例）见 `claudedocs/workflow_sprint5_ldm_phase1.md` §7.8
+
 ### 7.6 操作流（端到端）
 
 ```
@@ -1169,7 +1175,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 期 | 主题 | 能力切片 | 端点 | 前端组件 | 后端模块 | 工作量 |
 |---|---|---|---|---|---|---|
-| **Phase 1 — MVP** | 看得到 + 启停得了 | F1 / F2 / F3 + B1 / B3 + G1 + D1 | 4 端点 | `LdmPage` 1 Tab + 上传按钮 | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天 |
+| **Phase 1 — MVP** | 看得到 + 启停得了 | F1 / F2 / F3 + B1 / B3 + **G1 双源融合** + D1 | 4 端点 + 1 PAT-test | `LdmPage` **2 Tab**（已装插件 / 插件来源，Tab 2 顶部固定 GitHub PAT 卡） | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天 |
 | **Phase 2 — 完整配置** | 改得了配置 | A1 / A2 / A3 / A4 / C1–C4 + B2 / D2 / D3 / D4 / H1 | +6 端点（=10） | 4 Tab 齐 | + `LdmConfigWriter` / `RocketConfigXmlParser` / `LdmApplyService` / `applyChangesCore` 抽出 | +12–15 人天 |
 | **Phase 3 — 生态接入** | 找得到 + 下载方便 | G2 / G3 + 高级 UX（I1 引导 SOP 卡片 / F4 兼容信息展示） | +2 端点（=12） | 引导卡片 + 详情链接 | 无新模块（仅前端+已有模块拼接） | +5–7 人天 |
 | **Phase 4 — 高级能力** | 已知边界的能力 | B4 单插件 reload + 插件搜索/筛选 | +2 端点（=14） | 二次确认弹窗 + 筛选 chip | `LdmPluginCommandsService` 增 reload 方法 | +3–5 人天 |
@@ -1181,12 +1187,13 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 维度 | 内容 |
 |---|---|
-| **能力** | F1（运行时状态）+ F2（.dll 版本）+ F3（LDM 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ G1（社区列表）+ D1（`/rocket plugins` 解析） |
-| **端点** | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`<br>`GET /api/ldm/community-plugins` |
-| **前端** | `<LdmPage>` 1 Tab「已装插件」：列表（插件名 + .dll 版本 + 运行时状态 + 加载/卸载按钮 + 上传插件按钮 + 「社区列表」抽屉） |
-| **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（`pe-library` PE 元数据） / `LdmPluginSourceService`（拉取 + 5min 缓存） |
+| **能力** | F1（运行时状态）+ F2（.dll 版本）+ F3（LDM 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ **G1 走 HTML 解析 + GitHub API 双源融合**（用户拍板 2026-08-12；PAT 放 LdmPage Tab 顶部）+ D1（`/rocket plugins` 解析） |
+| **端点** | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`<br>`GET /api/ldm/community-plugins`（**双源融合**响应）<br>`POST /api/ldm/community-plugins/test-pat`（PAT 测连通性） |
+| **前端** | `<LdmPage>` 2 Tab：①「已装插件」②「插件来源」**顶部固定 GitHub PAT 配置卡**（PAT 输入 + 测试按钮 + 限流状态显示）。架构层决策：PAT 不进 SettingsPage。 |
+| **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（PE 元数据流式解析，零依赖） / `LdmPluginSourceService`（HTML 解析 + GitHub API 批量补充 + 5min 进程内缓存） |
 | **不做** | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3） |
-| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 6 用例覆盖真 .dll / 无属性 / 非 .NET / 不存在 / 损坏 / 并发）；E2E「上传 .dll → 列表出现 → load → 状态变 Loaded → unload → 状态变 Unloaded」 |
+| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 6 用例 / `LdmPluginSourceService` ≥ 13 用例含双源融合 + 限流处理 / `LdmPluginCommandsService` ≥ 4 用例 / `LdmDiscoveryService` ≥ 5 用例 = 28 用例）；E2E「上传 .dll → 列表出现 → load → 状态变 Loaded → unload → 状态变 Unloaded」+ E2E「配 PAT → 拉双源列表 → 限流显示 5000/h」 |
+| **详细规格** | `claudedocs/workflow_sprint5_ldm_phase1.md`（单期实施契约层）<br>调研证据：`claudedocs/research_ldm_community_source_2026-08-12.md` |
 
 ### 12.3 Phase 2 — 完整配置（+12–15 人天）
 
