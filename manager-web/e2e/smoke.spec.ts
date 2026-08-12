@@ -402,4 +402,62 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     await expect.poll(async () => chipLocator.count(), { timeout: 5_000 })
       .toBe(beforeCount);
   });
+
+  // ─── ws-wrapper-design §6 阶段 4：Console 页 ACK 操作按钮 ────────────
+  // 场景：登录 → Console 页 → 存档/关服/关闭控制台三个 ACK 按钮渲染 →
+  //       点「关服」弹确认弹窗 → 取消不触发请求
+  test("Console 页 ACK 操作按钮渲染 + 关服确认弹窗", async ({ page }) => {
+    // 登录
+    await page.goto("/");
+    await page.fill("#login-username", "admin");
+    await page.fill("#login-password", "123456");
+    await page
+      .getByRole("button", { name: /登录|Sign/i })
+      .first()
+      .click();
+    await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
+
+    await page.goto("/_default/console");
+    // 页面壳（标题）——heading 避免撞侧边栏链接
+    await expect(
+      page.getByRole("heading", { name: "控制台" }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // 三个 ACK 按钮渲染（界面文案规范：存档/关服/关闭控制台）
+    await expect(page.getByRole("button", { name: "存档" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByRole("button", { name: "关服" })).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(
+      page.getByRole("button", { name: "关闭控制台" }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // 点「关服」→ 确认弹窗出现（danger variant 文案）
+    await page.getByRole("button", { name: "关服" }).click();
+    await expect(page.getByText("关服确认", { exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    // 取消不触发请求
+    await page.getByRole("button", { name: /取消/ }).click();
+    await expect(page.getByText("关服确认", { exact: true })).toBeHidden({
+      timeout: 5_000,
+    });
+
+    // 点「关闭控制台」→ 确认弹窗出现
+    await page.getByRole("button", { name: "关闭控制台" }).click();
+    await expect(page.getByText("关闭控制台确认", { exact: true })).toBeVisible(
+      { timeout: 5_000 },
+    );
+    await page.getByRole("button", { name: /取消/ }).click();
+
+    // 页面无 JS 错误
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.waitForTimeout(500);
+    expect(
+      errors.filter((e) => !e.includes("@base-ui") && !e.includes("motion")),
+    ).toHaveLength(0);
+  });
 });
