@@ -54,6 +54,10 @@ export function ConsolePage() {
   const { serverId } = useParams<{ serverId: string }>();
   const activeServerId = serverId ?? "_default";
   const { servers } = useServer();
+  // ★ S4 修复：找到当前 serverId 对应的运行态——STOPPED 时给用户明确提示
+  // 否则 PTY 没跑时敲命令静默丢失，用户不知道发生了什么
+  const currentServer = servers.find((s) => s.id === serverId);
+  const isServerRunning = currentServer?.state === "RUNNING";
   // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
   const { saved: savedSessions } = useSessionManager();
   const {
@@ -239,6 +243,12 @@ export function ConsolePage() {
             <span className="text-xs" style={{ color: "#64748B" }}>
               {connected ? "控制台已连接" : "控制台未连接"}
             </span>
+            {/* ★ S4 修复：服务器未运行时明确提示——PTY 没跑时敲命令静默丢失 */}
+            {currentServer && !isServerRunning && (
+              <span className="text-xs" style={{ color: "#EF4444" }}>
+                · 当前服务器未运行（状态：{currentServer.state ?? "未知"}），请先启动
+              </span>
+            )}
           </div>
         </div>
 

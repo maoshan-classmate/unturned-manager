@@ -44,6 +44,25 @@ export function isAccessTokenExpired(token: string): boolean {
 }
 
 /**
+ * 读取 JWT accessToken 的 exp 字段（秒）——主动 refresh 调度用。
+ * 解码失败返回 null，由调用方决定降级策略（立即 refresh / 等下次 401）。
+ *
+ * @param token - accessToken（JWT）
+ * @returns exp 时间戳（毫秒）；解码失败返回 null
+ */
+export function getAccessTokenExpMs(token: string): number | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64));
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 确保拿到一个可用的 accessToken——内存里没有 **或已过期** 都主动用 refreshToken 刷新一次。
  *
  * ★ BUG-FIX（WS 断线重连）：原实现 `if (accessToken) return accessToken` 不检查 15 分钟过期——

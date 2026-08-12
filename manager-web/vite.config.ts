@@ -38,6 +38,10 @@ export default defineConfig({
         target: 'ws://localhost:3001',
         ws: true,
         agent: localAgent,
+        // ★ 修复 vite proxy ECONNRESET：透传 Origin 头 + 代理层错误自动重连 + 关闭空闲超时
+        rewriteWsOrigin: false,
+        reconnectOnError: () => true,
+        timeout: 0,
       },
     },
   },

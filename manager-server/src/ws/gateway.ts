@@ -119,7 +119,13 @@ class WsBroadcaster implements IBroadcaster {
       ws.on("message", (raw) => {
         try {
           const msg = JSON.parse(raw.toString()) as ClientWsMessage;
-          if (msg.type === "subscribe") {
+          if ((msg as { type: string }).type === "ping") {
+            // ★ S2 修复：应用层 ping/pong——前端每 25s 发 ping 防反向代理空闲切断。
+            // 直接回 pong，不进 broadcast / 不进 request handler。
+            // type-narrow 绕过：ping 不在 ClientWsMessage 契约里，gateway 显式路由
+            ws.send(JSON.stringify({ type: "pong" }));
+            return;
+          } else if (msg.type === "subscribe") {
             const subs = wsSubscriptions.get(ws);
             if (subs) {
               // serverIds 接受 string[]，空数组 = 不订阅任何 serverId 的事件

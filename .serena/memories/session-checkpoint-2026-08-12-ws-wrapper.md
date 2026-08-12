@@ -36,3 +36,8 @@
 - `shutdown` 先 `Save` 再 `Shutdown`，对齐 SOP 重启流水线与 REST stop 同序
 - 处理器注册放 `composition-root.ts` 而非 gateway 内（网关保持协议层职责）
 - `architecture-spec.md` §3.4 / §4.3 已同步更新
+
+## 文档归档收尾（commit 998427c）
+
+- `claudedocs/research_ws_socketio_decision_2026-08-12.md` 按规范归档至 `claudedocs/archive/`（git 识别 100% rename）——它命名是 research 类型但状态已「✅ 已决策」且结论已吸收进 ws-wrapper-design.md，符合「调研结论已吸收 → 归档」触发条件
+- `ws-wrapper-design.md` 中 4 处 `claudedocs/` 根引用同步改为 `claudedocs/archive/`，doc-outdated-guard 二次验证无死引用

@@ -6,7 +6,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ensureAccessToken } from "../api/client.js";
+import {
+  ensureAccessToken,
+  getAccessToken,
+  getAccessTokenExpMs,
+} from "../api/client.js";
 import { useAuth } from "./AuthContext.js";
 
 /**
@@ -91,6 +95,12 @@ const MIN_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 30_000;
 /** request() 默认本地超时（服务端不强制响应时限，超时由前端兜底） */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+/** accessToken 主动 refresh 提前量——过期前 3min 刷新，留缓冲给 WS 重连 */
+const REFRESH_BEFORE_EXPIRY_MS = 3 * 60 * 1000;
+/** refresh 调度允许的最小间隔（防止 setTimeout drift 触发紧循环） */
+const MIN_REFRESH_INTERVAL_MS = 30 * 1000;
+/** 应用层 ping 间隔——25s 远小于任何反向代理默认 idle 超时（nginx 60s / caddy 5min） */
+const PING_INTERVAL_MS = 25_000;
 
 interface PendingRequest {
   resolve: (result: WsRequestResult<unknown>) => void;
@@ -111,6 +121,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const retryTimer = useRef<ReturnType<typeof setTimeout>>();
   const retryDelay = useRef(MIN_RETRY_DELAY_MS);
   const intentionalClose = useRef(false);
+  // ★ S5 修复：accessToken 主动 refresh 定时器——过期前 3min 调 ensureAccessToken
+  // 让 accessToken 永远新鲜，WS 重连不串行等 refresh（之前重连慢的根因之一）
+  const refreshTimer = useRef<ReturnType<typeof setTimeout>>();
+  // ★ S2 修复：应用层 ping 定时器——25s 间隔保活防反向代理空闲切断
+  const pingTimer = useRef<ReturnType<typeof setInterval>>();
   // 事件订阅表：eventType → handler 集合（ref 模式：永远 latest，避免重渲注册）
   const listenersRef = useRef<
     Map<string, Set<(msg: ServerEventMessage) => void>>
@@ -172,6 +187,39 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     },
   ).current;
 
+  /**
+   * 主动 refresh 调度器（S5）：根据当前 accessToken 的 exp 计算到「过期前 3min」
+   * 的毫秒数，setTimeout 到点调 ensureAccessToken；refresh 完递归排下一次。
+   *
+   * 好处：
+   * - accessToken 永远新鲜，WS 重连拿到永远有效的 token → 0 抖动
+   * - 不依赖 HTTP 401 拦截器被动刷新（拦截器只在请求时才触发）
+   * - 不依赖 WS 重连时串行 refresh（之前 WS 重连慢的根因之一）
+   *
+   * 边界：解码失败 → 立即 refresh 兜底；token 缺失 → no-op；间隔 < 30s 强制拉长
+   * 防 setTimeout drift 触发紧循环。
+   */
+  const scheduleRefresh = useRef<() => void>(undefined);
+  scheduleRefresh.current = () => {
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = undefined;
+    }
+    const token = getAccessToken();
+    if (!token) return; // 未登录，AuthContext 会兜底
+    const expMs = getAccessTokenExpMs(token);
+    if (expMs === null) {
+      // 解码失败 → 立即 refresh 兜底
+      void ensureAccessToken().then(() => scheduleRefresh.current?.());
+      return;
+    }
+    const delay = Math.max(expMs - Date.now() - REFRESH_BEFORE_EXPIRY_MS, 0);
+    const safeDelay = Math.max(delay, MIN_REFRESH_INTERVAL_MS);
+    refreshTimer.current = setTimeout(() => {
+      void ensureAccessToken().then(() => scheduleRefresh.current?.());
+    }, safeDelay);
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       wsRef.current?.close();
@@ -209,6 +257,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             eventTypes: null,
           }),
         );
+        // ★ S2 修复：建连后启动应用层 ping——25s 间隔远小于任何反向代理 idle 超时，
+        // 防止 nginx/caddy 把 WS 误判为空闲切断。
+        pingTimer.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, PING_INTERVAL_MS);
       };
 
       ws.onmessage = (event) => {
@@ -250,6 +305,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onclose = () => {
         setConnected(false);
         rejectAllPending(new Error("连接已断开，请求未完成"));
+        // ★ S2 修复：连接关闭时清掉 ping 定时器，避免泄漏；下次 connect 时 onopen 重建
+        if (pingTimer.current) {
+          clearInterval(pingTimer.current);
+          pingTimer.current = undefined;
+        }
         if (intentionalClose.current) return;
         // accessToken 过期(15min)后服务端会 401 → WS 断开。
         // 退避重连:重连前 ensureAccessToken() 会自动 /auth/refresh 拿新 token。
@@ -271,14 +331,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     intentionalClose.current = false;
     connect();
+    // ★ S5 修复：挂载即排好 refresh 调度——accessToken 过期前 3min 自动刷新
+    scheduleRefresh.current?.();
 
     return () => {
       intentionalClose.current = true;
       clearTimeout(retryTimer.current);
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = undefined;
+      if (pingTimer.current) {
+        clearInterval(pingTimer.current);
+        pingTimer.current = undefined;
+      }
       rejectAllPending(new Error("连接已断开，请求未完成"));
       wsRef.current?.close();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, scheduleRefresh]);
 
   return (
     <WebSocketContext.Provider value={{ connected, subscribe, send, request }}>
