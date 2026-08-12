@@ -16,13 +16,13 @@ Servers/
     │   ├── Commands.dat           # 启动参数
     │   ├── Adminlist.dat          # 管理员 SteamID64 名单
     │   ├── Blacklist.dat          # 黑名单
-    │   ├── Whitelist.dat          # 白名单
-    │   └── WorkshopDownloadConfig.json  # Mod 订阅清单
+    │   └── Whitelist.dat          # 白名单
+    ├── WorkshopDownloadConfig.json  # Mod 订阅清单（★ 在 <ServerID>/ 根，不在 Server/ 子目录——U3-SDK WorkshopDownloadConfig.cs:99）
     ├── Config.txt                 # 游戏玩法/浏览器配置
     ├── Rocket/                    # LDM（官方 Mod 框架）插件配置
     │   ├── Rocket.config.xml
     │   └── Plugins/<Name>/Configuration.xml
-    ├── Workshop/                  # SteamCMD 下载的 Workshop 内容
+    ├── Workshop/                  # SteamCMD 下载的 Workshop 内容（★ 实际加载在 Workshop/Steam/steamapps/...，DedicatedUGC.cs:560）
     ├── Bundles/Workshop/          # 手动放的 .unity3d 包
     └── Logs/                      # 面板 tail 的日志目录
 ```
@@ -57,6 +57,7 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 多个 ServerID 共用同一个 U3DS 安装目录，省 10GB×N 磁盘。
 
 **硬规则**：
+
 - 一个 ServerID 一个进程。多个 ServerID 共用同一个 U3DS 安装目录。
 - **不要再用老命令行的 `-port -map -pvp` 参数**——所有可配置项都走 `Commands.dat`。
 - Mono **必须装**。
@@ -108,8 +109,9 @@ Loadout 4/62/1118
 Loadout 255/1100/1101
 ```
 
-格式：`Loadout <SkillsetID>/<itemID>/<itemID>/...`  
-- SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=默认全部技能组  
+格式：`Loadout <SkillsetID>/<itemID>/<itemID>/...`
+
+- SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=默认全部技能组
 - ItemID：`0`–`65535` ushort，可在游戏内 `Items.asset` 查到；非法 ItemID 会触发该条 Loadout 命令报错中止（`CommandLoadout.cs:33-39`）；合法 ushort 但指向不存在物品的 ID 命令层不校验
 
 面板编辑器：`claudedocs/reference_config_files.md` §1.8 + Figma ConfigPage Tab「Commands.dat」→「开局物品（Loadout）」区块。
@@ -127,12 +129,21 @@ Loadout 255/1100/1101
 > **AppID 分工（2026-08-11 实机教训，钉死）**：`app_update` 安装/更新用 `1110390`（服务端工具）；`workshop_download_item`、content 目录、acf 清单、WebAPI 搜索（`QueryFiles` / `GetDetails`）用 `304930`（游戏本体——workshop 内容归属它，1110390 名下无 workshop，误用只能拿到元数据缓存、拿不到内容）。
 
 - **下载新 Mod（不在 File_IDs 或未加载）**：SteamCMD 下载到 **staging 目录**，U3DS **可继续运行**。
-  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/steamapps/workshop/content/304930/`，**不扫描 staging**）
+  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/Steam/steamapps/workshop/content/304930/`，**不扫描 staging**）
   - 命令：`steamcmd +force_install_dir <Servers/<ID>/Workshop/staging> +login anonymous +workshop_download_item 304930 <id1> <id2> ... +quit`
   - 进度经 `steamcmd_progress` 事件推送；下载锁与 `activeOperation` 竞态门控合并。
-- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/steamapps/workshop/content/304930/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
+- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/Steam/steamapps/workshop/content/304930/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
 - **validate / 更新已启用 Mod / 更新 U3DS 二进制**：**必须停服**（写入运行中服务端直接读取的位置，覆盖已加载文件有风险）。
 - staging 下载完成后，其中的 `appworkshop_304930.acf` 可用于「已下载 Mod 清单」核对（参考 `claudedocs/research_dst_mod_reference_2026-08-08.md`）。
+
+### 旧版面板升级须知（2026-08-13）
+
+旧版面板内容在缺 `Steam/` 层的位置，升级后纠正命令（停服后执行）：
+
+```bash
+mv Servers/<ID>/Workshop/steamapps Servers/<ID>/Workshop/Steam/steamapps
+mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownloadConfig.json
+```
 
 ## 重启 / 改 Mod 流水线（唯一模式——没有热重载）
 
@@ -142,7 +153,7 @@ Loadout 255/1100/1101
   → 经 PTY 终端写入 "Save"（强制刷玩家数据到磁盘）
   → 经 PTY 终端写入 "Shutdown 10 <重启原因>"（10 秒优雅关服，对齐 applyModChanges 代码）
   → 等进程退出
-  → 移动 staging 内容 → Workshop/steamapps/workshop/content/304930/（进程已停，零冲突）
+  → 移动 staging 内容 → Workshop/Steam/steamapps/workshop/content/304930/（进程已停，零冲突）
   → 再拉起新的
   → PTY 终端输出含 'Server is ready' / 'World saved' 类 ready 信号 + content 目录落盘 + acf 更新 = 成功。无 A2S 轮询（ADR-0004 §3.3）
   → 通过 WebSocket 广播"已恢复"事件给前端
@@ -217,17 +228,17 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 
 ### 关键约束
 
-| 约束 | 说明 |
-|---|---|
-| **Rocket/ 必须首次启动 U3DS 自动生成** | **不可手写预创建**——gameserverkings.com 警告 |
-| **Linux 大小写敏感** | `Plugins/Uconomy/` ≠ `Plugins/uconomy/`；.dll 文件名必须与子目录名严格一致 |
-| **多实例隔离** | `Modules/Rocket.Unturned/` 全 U3DS 共享一份；`Servers/<ID>/Rocket/` 每实例独立（真源：`Rocket/Rocket.Core/Environment.cs` `RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId = Dedicator.serverID = +InternetServer/<ID>`） |
-| **LDM 插件不上 Steam Workshop** | 走 GitHub Releases + LDM-Community；Workshop Asset Type 只有 Map/Item/Vehicle/Skin/Object/Localization/Server Curation 7 类 |
-| **改配置生效 = 重启** | LDM 无官方热重载（U3-SDK Issue #1794）；走 ADR-0004 §重启流水线（Save + Shutdown 10 + forceKill + spawn） |
-| **不暴露 `/rocket reload`（全局）** | LDM 官方已删；prohibitions.md 钉死；提示 "Please reload individual plugins instead" |
-| **单插件 reload 不保证成功** | `/rocket reload <plugin>` 暴露但加警告 |
-| **不接管 .dll 编译/分发** | 二进制风险；编译/分发不是面板职责 |
-| **不接管全局 `rocket reload`** | 钉死 |
+| 约束                                   | 说明                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rocket/ 必须首次启动 U3DS 自动生成** | **不可手写预创建**——gameserverkings.com 警告                                                                                                                                                                                                |
+| **Linux 大小写敏感**                   | `Plugins/Uconomy/` ≠ `Plugins/uconomy/`；.dll 文件名必须与子目录名严格一致                                                                                                                                                                  |
+| **多实例隔离**                         | `Modules/Rocket.Unturned/` 全 U3DS 共享一份；`Servers/<ID>/Rocket/` 每实例独立（真源：`Rocket/Rocket.Core/Environment.cs` `RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId = Dedicator.serverID = +InternetServer/<ID>`） |
+| **LDM 插件不上 Steam Workshop**        | 走 GitHub Releases + LDM-Community；Workshop Asset Type 只有 Map/Item/Vehicle/Skin/Object/Localization/Server Curation 7 类                                                                                                                 |
+| **改配置生效 = 重启**                  | LDM 无官方热重载（U3-SDK Issue #1794）；走 ADR-0004 §重启流水线（Save + Shutdown 10 + forceKill + spawn）                                                                                                                                   |
+| **不暴露 `/rocket reload`（全局）**    | LDM 官方已删；prohibitions.md 钉死；提示 "Please reload individual plugins instead"                                                                                                                                                         |
+| **单插件 reload 不保证成功**           | `/rocket reload <plugin>` 暴露但加警告                                                                                                                                                                                                      |
+| **不接管 .dll 编译/分发**              | 二进制风险；编译/分发不是面板职责                                                                                                                                                                                                           |
+| **不接管全局 `rocket reload`**         | 钉死                                                                                                                                                                                                                                        |
 
 ### LDM 与 Commands.dat / Config.txt 的关系
 
@@ -237,24 +248,24 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 
 ### LDM 管理命令（PTY 终端 owner-trust 唯一通道）
 
-| 命令 | 用途 | 面板处理 |
-|---|---|---|
-| `/rocket`（空参） | 输出版本信息 `Rocket v<版本> for Unturned v<游戏版本>` | 「关于 LDM」卡片 |
-| `/rocket plugins` | 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | 解析 stdout 展示 |
-| `/rocket load <name>` | 加载已卸载插件（子串匹配 + 大小写不敏感） | 前端按钮 + 调 PTY |
-| `/rocket unload <name>` | 卸载指定插件 | 前端按钮 + 调 PTY |
-| `/rocket reload <name>` | 重新加载指定插件（不保证成功） | 前端按钮 + 调 PTY（加警告） |
-| `/rocket reload`（全局） | 重载所有插件 | ❌ 不暴露（Issue #1794 + 钉死） |
-| `/modules` | U3DS 原生命令，验证 Rocket.Unturned 是否加载 | 「LDM 状态」卡片 |
-| `/p reload` | 重新加载 `Permissions.config.xml` | 前端按钮 + 调 PTY |
+| 命令                     | 用途                                                        | 面板处理                        |
+| ------------------------ | ----------------------------------------------------------- | ------------------------------- |
+| `/rocket`（空参）        | 输出版本信息 `Rocket v<版本> for Unturned v<游戏版本>`      | 「关于 LDM」卡片                |
+| `/rocket plugins`        | 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | 解析 stdout 展示                |
+| `/rocket load <name>`    | 加载已卸载插件（子串匹配 + 大小写不敏感）                   | 前端按钮 + 调 PTY               |
+| `/rocket unload <name>`  | 卸载指定插件                                                | 前端按钮 + 调 PTY               |
+| `/rocket reload <name>`  | 重新加载指定插件（不保证成功）                              | 前端按钮 + 调 PTY（加警告）     |
+| `/rocket reload`（全局） | 重载所有插件                                                | ❌ 不暴露（Issue #1794 + 钉死） |
+| `/modules`               | U3DS 原生命令，验证 Rocket.Unturned 是否加载                | 「LDM 状态」卡片                |
+| `/p reload`              | 重新加载 `Permissions.config.xml`                           | 前端按钮 + 调 PTY               |
 
 ### 配置文件原子写 + 备份策略
 
 ```typescript
 // 写入前必走流程（复用 ConfigService.atomicWrite）
 const file = `Servers/${serverId}/Rocket/${name}`;
-await fs.copy(file, `${file}.bak.${new Date().toISOString()}`);  // 备份
-await atomicWrite(file, newContent);                              // 原子写
+await fs.copy(file, `${file}.bak.${new Date().toISOString()}`); // 备份
+await atomicWrite(file, newContent); // 原子写
 ```
 
 适用范围：`Rocket.config.xml` / `Rocket.Unturned.config.xml` / `Permissions.config.xml` / 所有 `<Plugin>.configuration.xml`。

@@ -11,17 +11,17 @@
 
 本文档用 **C4 模型**组织，从系统整体逐层下沉到组件与契约：
 
-| 层级 | 章节 | 回答的问题 |
-|---|---|---|
-| Level 1 系统上下文 | §1 | 系统边界在哪？和哪些外部系统交互？ |
-| Level 2 容器 | §2 | 系统由哪些可部署单元组成？用什么技术栈？ |
-| Level 3a 后端组件 | §3 | 后端有哪些模块？各自职责与依赖？ |
-| Level 3b 前端组件 | §4 | 前端有哪些页面、组件、hooks？ |
-| 模块接口契约 | §5 | 各接口的方法签名与数据形状？ |
-| 关键数据流 | §6 | 启动、Mod 流水线、日志、命令怎么走？ |
-| 数据库 | §7 | 持久化了什么？真源在哪？ |
-| 安全 | §8 | 认证、凭证、校验、命令鉴权怎么守？ |
-| 横切关注点 | §9 | 日志、错误、DI、测试的全局约定 |
+| 层级               | 章节 | 回答的问题                               |
+| ------------------ | ---- | ---------------------------------------- |
+| Level 1 系统上下文 | §1   | 系统边界在哪？和哪些外部系统交互？       |
+| Level 2 容器       | §2   | 系统由哪些可部署单元组成？用什么技术栈？ |
+| Level 3a 后端组件  | §3   | 后端有哪些模块？各自职责与依赖？         |
+| Level 3b 前端组件  | §4   | 前端有哪些页面、组件、hooks？            |
+| 模块接口契约       | §5   | 各接口的方法签名与数据形状？             |
+| 关键数据流         | §6   | 启动、Mod 流水线、日志、命令怎么走？     |
+| 数据库             | §7   | 持久化了什么？真源在哪？                 |
+| 安全               | §8   | 认证、凭证、校验、命令鉴权怎么守？       |
+| 横切关注点         | §9   | 日志、错误、DI、测试的全局约定           |
 
 **真源原则**：本文档是架构层的权威来源之一（与 `design-system-mapping.md` 并列）。架构变更必须先改本文档、再改代码。文档描述的是 **当前系统的事实状态**——以代码、契约文件、ADR 为对照基准。
 
@@ -58,13 +58,13 @@
 
 ### 1.2 外部系统表
 
-| 外部系统 | 交互方式 | 交互内容 |
-|---|---|---|
+| 外部系统                                                                              | 交互方式                                      | 交互内容                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **U3DS 服务端**（Unturned 专用服务端，AppID `1110390` = `STEAM_APP_IDS.U3DS_SERVER`） | 持久 PTY bash（`node-pty`，cwd = installDir） | 启动（1s 后写入 `startCommand`）、停止（PTY 写 `Save` + `Shutdown 30` + ctrl+c）、命令执行（WS `terminal_input` 直达 stdin）、控制台输出（PTY stdout 经 `console_line` 推送）。U3DS 是 TTY-only 进程，PTY 模拟让它的 ANSI 色彩/进度条正常输出 |
-| **SteamCMD** | 子进程 spawn（`ProcessSupervisor`） | 安装 U3DS（`+app_update 1110390`）、更新二进制、下载创意工坊内容到 staging（`+workshop_download_item 304930`——Workshop 归属游戏本体，非服务端工具）、检查更新、重装 SteamCMD。所有操作异步启动 + jobId 关联 |
-| **Steam WebAPI** | HTTPS（`fetch`，直连不走代理） | 创意工坊搜索/详情/批量元数据（`QueryFiles` + `GetDetails`，appid=`304930` = 游戏本体） |
-| **共享卷文件系统** | 直接读写（`fs`） | `Servers/<ServerID>/` 目录树、`Workshop/steamapps/workshop/content/304930/` 已装 Mod、`Workshop/staging/` 下载暂存、`Logs/*.log` 日志 |
-| **浏览器用户**（owner） | HTTP + WebSocket | 面板页面、实例启停、终端交互、配置编辑、Mod 管理 |
+| **SteamCMD**                                                                          | 子进程 spawn（`ProcessSupervisor`）           | 安装 U3DS（`+app_update 1110390`）、更新二进制、下载创意工坊内容到 staging（`+workshop_download_item 304930`——Workshop 归属游戏本体，非服务端工具）、检查更新、重装 SteamCMD。所有操作异步启动 + jobId 关联                                   |
+| **Steam WebAPI**                                                                      | HTTPS（`fetch`，直连不走代理）                | 创意工坊搜索/详情/批量元数据（`QueryFiles` + `GetDetails`，appid=`304930` = 游戏本体）                                                                                                                                                        |
+| **共享卷文件系统**                                                                    | 直接读写（`fs`）                              | `Servers/<ServerID>/` 目录树、`Workshop/Steam/steamapps/workshop/content/304930/` 已装 Mod、`Workshop/staging/` 下载暂存、`Logs/*.log` 日志                                                                                                   |
+| **浏览器用户**（owner）                                                               | HTTP + WebSocket                              | 面板页面、实例启停、终端交互、配置编辑、Mod 管理                                                                                                                                                                                              |
 
 ### 1.3 命令通道：PTY 终端 owner-trust 模型
 
@@ -78,13 +78,13 @@
 
 面板写 U3DS 相关文件时，按「运行时读取 vs 启动时读取」区分停服要求：
 
-| 文件 | 面板操作 | 停服要求 | 说明 |
-|---|---|---|---|
-| `WorkshopDownloadConfig.json` 的 `File_IDs` | apply 流水线内原子写（带备份） | **是** | 写完后走「Mod 变更 + 重启流水线」（§6.2），重启后服务端读取生效 |
-| `Workshop/staging/`（SteamCMD 下载落点） | `steamcmd download-workshop` | **否** | U3DS 只加载 `content/304930/`，不扫描 staging；下载可不停服 |
-| `Workshop/steamapps/workshop/content/304930/`（已装 Mod） | apply 流水线移动 staging 内容 | **是** | 写入运行中服务端直接读取的位置有覆盖风险；进程停后方可移动 |
-| `Commands.dat` / `Config.txt` | 配置页编辑 | 面板不主动停服 | U3DS 启动时读取；编辑后由用户自行决定何时重启生效 |
-| U3DS 二进制 / `validate` | SteamCMD 更新 | **是** | 覆盖正在运行的二进制有风险 |
+| 文件                                                            | 面板操作                       | 停服要求       | 说明                                                            |
+| --------------------------------------------------------------- | ------------------------------ | -------------- | --------------------------------------------------------------- |
+| `WorkshopDownloadConfig.json` 的 `File_IDs`                     | apply 流水线内原子写（带备份） | **是**         | 写完后走「Mod 变更 + 重启流水线」（§6.2），重启后服务端读取生效 |
+| `Workshop/staging/`（SteamCMD 下载落点）                        | `steamcmd download-workshop`   | **否**         | U3DS 只加载 `content/304930/`，不扫描 staging；下载可不停服     |
+| `Workshop/Steam/steamapps/workshop/content/304930/`（已装 Mod） | apply 流水线移动 staging 内容  | **是**         | 写入运行中服务端直接读取的位置有覆盖风险；进程停后方可移动      |
+| `Commands.dat` / `Config.txt`                                   | 配置页编辑                     | 面板不主动停服 | U3DS 启动时读取；编辑后由用户自行决定何时重启生效               |
+| U3DS 二进制 / `validate`                                        | SteamCMD 更新                  | **是**         | 覆盖正在运行的二进制有风险                                      |
 
 ---
 
@@ -114,21 +114,21 @@
 
 ### 2.2 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端框架 | React 18 + TypeScript + Vite |
-| 前端 UI | Tailwind CSS 4 + shadcn/ui（基于 `@base-ui/react`）+ Motion（framer-motion v13） |
+| 层            | 技术                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------- |
+| 前端框架      | React 18 + TypeScript + Vite                                                           |
+| 前端 UI       | Tailwind CSS 4 + shadcn/ui（基于 `@base-ui/react`）+ Motion（framer-motion v13）       |
 | 前端组件/图表 | `@tanstack/react-table`（DataTable）、recharts（Dashboard 图表）、lucide-react（图标） |
-| 前端表单 | react-hook-form + zod（zod schema 放页面同级 `xxxSchema.ts`） |
-| 前端终端 | xterm.js（`console/Terminal.tsx`） |
-| 后端框架 | Node.js 20 + Express 4 + TypeScript |
-| 进程/终端 | `node-pty`（PTY 模拟）+ `ws`（WebSocket 双向） |
-| 数据库 | better-sqlite3（同步 API）+ `user_version` PRAGMA 迁移 |
-| 配置解析 | 面板自有行解析（Commands.dat / Config.txt / WorkshopDownloadConfig.json） |
-| 认证/安全 | argon2（Argon2id）、jsonwebtoken、helmet、cors |
-| 日志 | pino（结构化 JSON） |
-| 契约 | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0 |
-| 测试 | Vitest（后端单元 + supertest API）、Vitest（前端）+ Playwright（e2e） |
+| 前端表单      | react-hook-form + zod（zod schema 放页面同级 `xxxSchema.ts`）                          |
+| 前端终端      | xterm.js（`console/Terminal.tsx`）                                                     |
+| 后端框架      | Node.js 20 + Express 4 + TypeScript                                                    |
+| 进程/终端     | `node-pty`（PTY 模拟）+ `ws`（WebSocket 双向）                                         |
+| 数据库        | better-sqlite3（同步 API）+ `user_version` PRAGMA 迁移                                 |
+| 配置解析      | 面板自有行解析（Commands.dat / Config.txt / WorkshopDownloadConfig.json）              |
+| 认证/安全     | argon2（Argon2id）、jsonwebtoken、helmet、cors                                         |
+| 日志          | pino（结构化 JSON）                                                                    |
+| 契约          | zod + zod-openapi——`shared/schemas/` 定义 Zod schema，派生 TS 类型 + OpenAPI 3.0       |
+| 测试          | Vitest（后端单元 + supertest API）、Vitest（前端）+ Playwright（e2e）                  |
 
 ---
 
@@ -171,25 +171,25 @@
 
 > 每个模块是 `class`，实现 `shared/contracts/` 中对应的 `I*` 接口；依赖全部经 `composition-root.ts` 手动构造注入。有状态模块实现 `destroy()`。
 
-| 模块 | 职责 | 依赖 | destroy |
-|---|---|---|---|
-| **ServerManager** | 聚合根。实例生命周期（start/stop/restart/forceStop）、4 态状态机、Mod 应用流水线、目录扫描加载、startCommand 持久化 | ServerDiscovery、PtyManager、ConfigService、IBroadcaster、WorkshopApplyService（可选）、DB | 无（PTY 由 PtyManager 统一 destroy） |
-| **PtyManager** | PTY 进程生命周期管理（node-pty 封装）。spawn 永驻 bash、write 透传 stdin、resize、kill/forceKill、onData（按行切分）、onExit、waitExit | node-pty | ✅ destroy 全部 PTY 进程 |
-| **ProcessSupervisor** | 非 PTY 子进程管理——服务 SteamCMD（execFile/进程）。spawn、gracefulShutdown、waitForExit（返回退出码）、forceKill、onStdout、onCrash | child_process | ✅ |
-| **FileLockProvider** | 配置文件并发写锁（acquire/release/isLocked），配合乐观锁 mtime | — | — |
-| **ConfigService** | `Commands.dat` / `Config.txt` / `WorkshopDownloadConfig.json` 配置读写。乐观锁（expectedMtime）+ 备份 + 回滚 | FileLockProvider | — |
-| **FilesService** | 服务器文件浏览/读写/删除/重命名/建目录/权限/上传流（`IFilesService`），路径白名单防穿越 | FileLockProvider | — |
-| **AuthService** | JWT 认证：login/refresh/logout/changePassword/validateAccessToken。密码 Argon2id，refresh token 轮换 | DB | — |
-| **SteamCmdManager** | SteamCMD 长任务：install U3DS / update U3DS / downloadWorkshopItem（staging）/ checkUpdate / reinstall / setInstallPath。全异步返回 jobId | ProcessSupervisor、IBroadcaster、activeProbe（延迟绑定 → ServerManager） | — |
-| **WorkshopMetadataService** | Steam WebAPI 元数据：getModDetails / browseMods / batchGetDetails。**0 缓存**，每次实时查 WebAPI | DB（读 WebAPI Key） | — |
-| **WorkshopAcfService** | acf 真源维护：parse / write / listItems / listStagingItems / addItem / removeItem / backup / rollback。每次实时读盘解析 | ConfigService | — |
-| **WorkshopApplyService** | apply 流水线：staging acf → content acf 合并 + `mv` staging 内容 → 同步 File_IDs，任一失败全回滚 | WorkshopAcfService、ConfigService、IBroadcaster | — |
-| **WorkshopDeleteService** | Mod 删除：acf 删项 + content 目录删 + File_IDs 同步 | WorkshopAcfService、ConfigService | — |
-| **LogStreamer** | 日志文件 tail（`Servers/<ID>/Logs/*.log`，500ms 轮询）+ 凭证脱敏 + 速率限制（100 行/秒）→ `console_line` 广播 | IBroadcaster、ProcessSupervisor | — |
-| **ServerDiscovery**（辅助） | 目录扫描真源：扫 `installDir/Servers/`，`Commands.dat` 存在性 = 实例成立。纯同步 | fs | — |
-| **VdfParser**（辅助） | VDF 文件解析（acf） | — | — |
-| **settingsStorage**（辅助） | settings K-V 读写（AES-256-GCM 加密 + startCommand 明文），供 ServerManager / AuthService / 路由内部使用 | DB、cryptoBox | — |
-| **SessionManager** | 终端会话持久化（ADR-0005 Phase 7.1）：单 JSON 文件 + mutationQueue 串行 + 临时文件 rename 原子写 + 7 天过期清理 + touchActivity 节流刷新。面板重启后保留已开过的终端列表 | DB（不依赖）、pino logger、fs、config.dataDir（被 ServerManager 调用：PTY spawn/exit 时调 saveSession / setSessionActive） | — |
+| 模块                        | 职责                                                                                                                                                                     | 依赖                                                                                                                       | destroy                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **ServerManager**           | 聚合根。实例生命周期（start/stop/restart/forceStop）、4 态状态机、Mod 应用流水线、目录扫描加载、startCommand 持久化                                                      | ServerDiscovery、PtyManager、ConfigService、IBroadcaster、WorkshopApplyService（可选）、DB                                 | 无（PTY 由 PtyManager 统一 destroy） |
+| **PtyManager**              | PTY 进程生命周期管理（node-pty 封装）。spawn 永驻 bash、write 透传 stdin、resize、kill/forceKill、onData（按行切分）、onExit、waitExit                                   | node-pty                                                                                                                   | ✅ destroy 全部 PTY 进程             |
+| **ProcessSupervisor**       | 非 PTY 子进程管理——服务 SteamCMD（execFile/进程）。spawn、gracefulShutdown、waitForExit（返回退出码）、forceKill、onStdout、onCrash                                      | child_process                                                                                                              | ✅                                   |
+| **FileLockProvider**        | 配置文件并发写锁（acquire/release/isLocked），配合乐观锁 mtime                                                                                                           | —                                                                                                                          | —                                    |
+| **ConfigService**           | `Commands.dat` / `Config.txt` / `WorkshopDownloadConfig.json` 配置读写。乐观锁（expectedMtime）+ 备份 + 回滚                                                             | FileLockProvider                                                                                                           | —                                    |
+| **FilesService**            | 服务器文件浏览/读写/删除/重命名/建目录/权限/上传流（`IFilesService`），路径白名单防穿越                                                                                  | FileLockProvider                                                                                                           | —                                    |
+| **AuthService**             | JWT 认证：login/refresh/logout/changePassword/validateAccessToken。密码 Argon2id，refresh token 轮换                                                                     | DB                                                                                                                         | —                                    |
+| **SteamCmdManager**         | SteamCMD 长任务：install U3DS / update U3DS / downloadWorkshopItem（staging）/ checkUpdate / reinstall / setInstallPath。全异步返回 jobId                                | ProcessSupervisor、IBroadcaster、activeProbe（延迟绑定 → ServerManager）                                                   | —                                    |
+| **WorkshopMetadataService** | Steam WebAPI 元数据：getModDetails / browseMods / batchGetDetails。**0 缓存**，每次实时查 WebAPI                                                                         | DB（读 WebAPI Key）                                                                                                        | —                                    |
+| **WorkshopAcfService**      | acf 真源维护：parse / write / listItems / listStagingItems / addItem / removeItem / backup / rollback。每次实时读盘解析                                                  | ConfigService                                                                                                              | —                                    |
+| **WorkshopApplyService**    | apply 流水线：staging acf → content acf 合并 + `mv` staging 内容 → 同步 File_IDs，任一失败全回滚                                                                         | WorkshopAcfService、ConfigService、IBroadcaster                                                                            | —                                    |
+| **WorkshopDeleteService**   | Mod 删除：acf 删项 + content 目录删 + File_IDs 同步                                                                                                                      | WorkshopAcfService、ConfigService                                                                                          | —                                    |
+| **LogStreamer**             | 日志文件 tail（`Servers/<ID>/Logs/*.log`，500ms 轮询）+ 凭证脱敏 + 速率限制（100 行/秒）→ `console_line` 广播                                                            | IBroadcaster、ProcessSupervisor                                                                                            | —                                    |
+| **ServerDiscovery**（辅助） | 目录扫描真源：扫 `installDir/Servers/`，`Commands.dat` 存在性 = 实例成立。纯同步                                                                                         | fs                                                                                                                         | —                                    |
+| **VdfParser**（辅助）       | VDF 文件解析（acf）                                                                                                                                                      | —                                                                                                                          | —                                    |
+| **settingsStorage**（辅助） | settings K-V 读写（AES-256-GCM 加密 + startCommand 明文），供 ServerManager / AuthService / 路由内部使用                                                                 | DB、cryptoBox                                                                                                              | —                                    |
+| **SessionManager**          | 终端会话持久化（ADR-0005 Phase 7.1）：单 JSON 文件 + mutationQueue 串行 + 临时文件 rename 原子写 + 7 天过期清理 + touchActivity 节流刷新。面板重启后保留已开过的终端列表 | DB（不依赖）、pino logger、fs、config.dataDir（被 ServerManager 调用：PTY spawn/exit 时调 saveSession / setSessionActive） | —                                    |
 
 ### 3.3 路由层
 
@@ -246,15 +246,15 @@ components/
 
 ### 4.3 Hooks 与 Context
 
-| Hook / Context | 职责 |
-|---|---|
-| `useServer()` | 实例列表。挂载拉一次 + 手动 refresh（不轮询）；订阅 WS `state_change` 实时更新单个实例状态；addServer/removeServer/updateServer 走真实 API |
-| `useServerActions()` | 实例 start / stop / restart，错误抛后端中文 message |
-| `useConsole(serverId)` | 控制台输出缓冲（最多 500 行）+ 命令发送（WS `terminal_input`，拼 `\r`）+ `sendTerminalInput`（xterm 原始输入）+ ACK 操作 `save` / `shutdown` / `closeTerminal`（ws-wrapper-design §2.5）。共享全局单连接订阅 `console_line`（不再独立建连） |
-| `useConsoleHistory()` | 命令历史（↑↓ 翻页） |
-| `useSteamCmdProgress({ jobId })` | SteamCMD 进度订阅（共享全局单连接订阅 `steamcmd_progress` + jobId 过滤；不再独立建连） |
-| `AuthContext` | JWT 会话：登录/恢复/注销，`useAuth()` null-guard |
-| `WebSocketContext` | WS 事件总线（ws-wrapper-design §3）：`connected` + `subscribe(type, handler) => unsubscribe` + `send`（fire-and-forget）+ `request`（ACK，UUID requestId / 默认 30s 超时 / 断线 reject）。单连接 + 指数退避重连（1s→30s），重连自动重发 subscribe |
+| Hook / Context                   | 职责                                                                                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useServer()`                    | 实例列表。挂载拉一次 + 手动 refresh（不轮询）；订阅 WS `state_change` 实时更新单个实例状态；addServer/removeServer/updateServer 走真实 API                                                                                                        |
+| `useServerActions()`             | 实例 start / stop / restart，错误抛后端中文 message                                                                                                                                                                                               |
+| `useConsole(serverId)`           | 控制台输出缓冲（最多 500 行）+ 命令发送（WS `terminal_input`，拼 `\r`）+ `sendTerminalInput`（xterm 原始输入）+ ACK 操作 `save` / `shutdown` / `closeTerminal`（ws-wrapper-design §2.5）。共享全局单连接订阅 `console_line`（不再独立建连）       |
+| `useConsoleHistory()`            | 命令历史（↑↓ 翻页）                                                                                                                                                                                                                               |
+| `useSteamCmdProgress({ jobId })` | SteamCMD 进度订阅（共享全局单连接订阅 `steamcmd_progress` + jobId 过滤；不再独立建连）                                                                                                                                                            |
+| `AuthContext`                    | JWT 会话：登录/恢复/注销，`useAuth()` null-guard                                                                                                                                                                                                  |
+| `WebSocketContext`               | WS 事件总线（ws-wrapper-design §3）：`connected` + `subscribe(type, handler) => unsubscribe` + `send`（fire-and-forget）+ `request`（ACK，UUID requestId / 默认 30s 超时 / 断线 reject）。单连接 + 指数退避重连（1s→30s），重连自动重发 subscribe |
 
 ---
 
@@ -270,12 +270,12 @@ components/
 
 ```typescript
 interface ServerConfig {
-  id: ServerId;              // ServerID，对应 Servers/<ServerID> 目录名
+  id: ServerId; // ServerID，对应 Servers/<ServerID> 目录名
   name: string;
-  gamePort: Port;            // 游戏监听端口
-  ownerSteamId: SteamId64;   // 服主 SteamID64
-  installDir: string;        // 全局 U3DS 安装根目录
-  startCommand?: string;     // U3DS 启动命令；留空 = 探测生成默认模板
+  gamePort: Port; // 游戏监听端口
+  ownerSteamId: SteamId64; // 服主 SteamID64
+  installDir: string; // 全局 U3DS 安装根目录
+  startCommand?: string; // U3DS 启动命令；留空 = 探测生成默认模板
 }
 ```
 
@@ -316,13 +316,18 @@ interface IServerManager {
   getActiveOperation(serverId: ServerId): ActiveOperation;
   listServers(): Promise<ServerConfig[]>;
   listServersSync(): string[];
-  listActiveServerIds(): ServerId[];   // 状态非 STOPPED 的实例
+  listActiveServerIds(): ServerId[]; // 状态非 STOPPED 的实例
 
   createServer(config: ServerConfig): Promise<void>;
-  configureServer(serverId: ServerId, patch: Partial<ServerConfig>): Promise<void>;
+  configureServer(
+    serverId: ServerId,
+    patch: Partial<ServerConfig>,
+  ): Promise<void>;
   removeServer(serverId: ServerId): Promise<void>;
 
-  start(serverId: ServerId): Promise<{ terminalSessionId: string; pid: number }>;
+  start(
+    serverId: ServerId,
+  ): Promise<{ terminalSessionId: string; pid: number }>;
   stop(serverId: ServerId, reason: string): Promise<void>;
   restart(serverId: ServerId, reason: string): Promise<void>;
   forceStop(serverId: ServerId): Promise<void>;
@@ -341,16 +346,21 @@ interface IServerManager {
 ### 5.5 IPtyManager（`shared/contracts/pty.ts`）
 
 ```typescript
-type PtyKey = ServerId | string;   // ServerId（实例）或 jobId（SteamCMD 长任务）
+type PtyKey = ServerId | string; // ServerId（实例）或 jobId（SteamCMD 长任务）
 
 interface IPtyManager {
-  spawn(serverId: PtyKey, file: string, args: string[], options?): Promise<number>;  // → PID
-  write(serverId: PtyKey, data: string): void;   // 同步，原样写入 stdin，不自动加 \r
+  spawn(
+    serverId: PtyKey,
+    file: string,
+    args: string[],
+    options?,
+  ): Promise<number>; // → PID
+  write(serverId: PtyKey, data: string): void; // 同步，原样写入 stdin，不自动加 \r
   resize(serverId: PtyKey, cols: number, rows: number): void;
-  kill(serverId: PtyKey): Promise<void>;         // SIGTERM → 等 5s → SIGKILL 兜底
-  forceKill(serverId: PtyKey): void;             // SIGKILL 立即
+  kill(serverId: PtyKey): Promise<void>; // SIGTERM → 等 5s → SIGKILL 兜底
+  forceKill(serverId: PtyKey): void; // SIGKILL 立即
   isRunning(serverId: PtyKey): boolean;
-  onData(serverId: PtyKey, cb: (line: string) => void): void;   // 单行回调（内部按 \n 切分）
+  onData(serverId: PtyKey, cb: (line: string) => void): void; // 单行回调（内部按 \n 切分）
   onExit(serverId: PtyKey, cb: ({ exitCode, signal }) => void): void;
   waitExit(serverId: PtyKey, timeoutMs: number): Promise<boolean>;
   destroy(): Promise<void>;
@@ -370,9 +380,20 @@ type ServerEvent =
   | { type: "console_line"; serverId; line: string; source: "stdout" | "file" }
   | { type: "player_join"; serverId; playerName: string; steamId: SteamId64 }
   | { type: "player_leave"; serverId; playerName: string; steamId: SteamId64 }
-  | { type: "mod_apply_progress"; serverId; stage: string; remainingSeconds?: number }
+  | {
+      type: "mod_apply_progress";
+      serverId;
+      stage: string;
+      remainingSeconds?: number;
+    }
   | { type: "file_changed"; serverId; path: string }
-  | { type: "steamcmd_progress"; stage: string; percent?: number; jobId?: string; latestVersion?: string };
+  | {
+      type: "steamcmd_progress";
+      stage: string;
+      percent?: number;
+      jobId?: string;
+      latestVersion?: string;
+    };
 
 interface IBroadcaster {
   broadcast(event: ServerEvent): void;
@@ -389,23 +410,23 @@ interface IBroadcaster {
 ```typescript
 type ClientWsMessage =
   | { type: "subscribe"; serverIds: ServerId[]; eventTypes: string[] | null }
-  | { type: "terminal_input"; serverId: ServerId; data: string };  // xterm 原始输入 → PTY stdin
+  | { type: "terminal_input"; serverId: ServerId; data: string }; // xterm 原始输入 → PTY stdin
 ```
 
 ### 5.9 其他接口
 
-| 接口 | 要点 |
-|---|---|
-| `IServerDiscovery` | `scanSync(installDir): DiscoveredServer[]`——目录扫描真源，纯同步 |
-| `IAuthService` | `login` / `refresh` / `logout(refreshJti)` / `validateAccessToken` / `changePassword(userId, current, new)` |
-| `ISteamCmdManager` | `getStatus` / `setInstallPath` / `installU3DS(dir): Promise<jobId>` / `updateU3DS(dir): Promise<jobId>` / `downloadWorkshopItem(dir, ids, serverId?): Promise<jobId>` / `checkUpdate(dir?): Promise<jobId>` / `reinstall(dir?): Promise<jobId>` |
-| `IWorkshopMetadataService` | `getModDetails(id): Promise<WorkshopModMeta \| null>` / `browseMods(query, sort, range, type, page, pageSize): Promise<BrowseResult>` / `batchGetDetails(ids)`——0 缓存，实时查 WebAPI |
-| `IWorkshopAcfService` | `parse` / `write` / `listItems` / `listStagingItems` / `parseStagingItem` / `addItem` / `removeItem` / `backup` / `rollback` |
-| `IWorkshopApplyService` | `applyStaged(serverId)`——staging → content 移动 + acf 合并 + File_IDs 同步，失败全回滚 |
-| `IWorkshopDeleteService` | `deleteMod(serverId, fileId): Promise<ModDeleteResult>`——acf + content + File_IDs 三处同步 |
-| `IFilesService` | `listDirectory` / `readFile` / `writeFile` / `deleteEntry` / `createDirectory` / `renameEntry` / `getPermissions` / `createUploadStream` |
-| `IFileLockProvider` | `acquire(path, owner, timeoutMs?)` / `release` / `isLocked` |
-| `ILogStreamer` | `startStreaming(serverId)` / `stopStreaming(serverId)` |
+| 接口                       | 要点                                                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IServerDiscovery`         | `scanSync(installDir): DiscoveredServer[]`——目录扫描真源，纯同步                                                                                                                                                                                |
+| `IAuthService`             | `login` / `refresh` / `logout(refreshJti)` / `validateAccessToken` / `changePassword(userId, current, new)`                                                                                                                                     |
+| `ISteamCmdManager`         | `getStatus` / `setInstallPath` / `installU3DS(dir): Promise<jobId>` / `updateU3DS(dir): Promise<jobId>` / `downloadWorkshopItem(dir, ids, serverId?): Promise<jobId>` / `checkUpdate(dir?): Promise<jobId>` / `reinstall(dir?): Promise<jobId>` |
+| `IWorkshopMetadataService` | `getModDetails(id): Promise<WorkshopModMeta \| null>` / `browseMods(query, sort, range, type, page, pageSize): Promise<BrowseResult>` / `batchGetDetails(ids)`——0 缓存，实时查 WebAPI                                                           |
+| `IWorkshopAcfService`      | `parse` / `write` / `listItems` / `listStagingItems` / `parseStagingItem` / `addItem` / `removeItem` / `backup` / `rollback`                                                                                                                    |
+| `IWorkshopApplyService`    | `applyStaged(serverId)`——staging → content 移动 + acf 合并 + File_IDs 同步，失败全回滚                                                                                                                                                          |
+| `IWorkshopDeleteService`   | `deleteMod(serverId, fileId): Promise<ModDeleteResult>`——acf + content + File_IDs 三处同步                                                                                                                                                      |
+| `IFilesService`            | `listDirectory` / `readFile` / `writeFile` / `deleteEntry` / `createDirectory` / `renameEntry` / `getPermissions` / `createUploadStream`                                                                                                        |
+| `IFileLockProvider`        | `acquire(path, owner, timeoutMs?)` / `release` / `isLocked`                                                                                                                                                                                     |
+| `ILogStreamer`             | `startStreaming(serverId)` / `stopStreaming(serverId)`                                                                                                                                                                                          |
 
 **Mod 枚举**：`ModSort`（popular / rated / published / updated / subscribed / relevance）、`ModTimeRange`（day / week / month / months3 / months6 / year / all）、`ModSearchType`（text / id）。
 
@@ -413,42 +434,42 @@ type ClientWsMessage =
 
 > 统一 `{ data }` 成功 / `{ error: { code, message } }` 失败。长任务端点（SteamCMD、实例启停）返回 **202** + jobId / terminalSessionId。
 
-| 前缀 | 端点 | 语义 |
-|---|---|---|
-| `/api/auth` | `POST /login` | 登录 → `{ accessToken, refreshToken }` |
-| | `POST /refresh` | refresh token 换新对 |
-| | `POST /logout` | 注销（jti 入黑名单） |
-| | `POST /change-password` | 修改密码（authenticateToken 保护） |
-| `/api/servers` | `GET /` | 实例列表（目录扫描真源） |
-| | `POST /` | 创建实例（写 Commands.dat 即成立） |
-| | `PATCH /:id` | 更新配置（startCommand → settings K-V；身份字段 → Commands.dat） |
-| | `DELETE /:id` | 删除实例（先 stop → 删目录 → 删 startCommand K-V） |
-| | `POST /:id/start` | **202** `{ terminalSessionId, pid }` |
-| | `POST /:id/stop` | **202**（PTY Save + Shutdown + ctrl+c） |
-| | `POST /:id/restart` | **202** |
-| `/api/servers/:id/mods` | `GET /downloaded` | 已下载列表（主 acf + staging acf 合并 + `applied` 状态） |
-| | `POST /download` | **202** `{ jobId }` 下载到 staging |
-| | `POST /apply` | **202** `{ operationId }` 应用 + 重启流水线 |
-| | `DELETE /:fileId` | 删除 Mod（U3DS 须 STOPPED） |
-| | `GET /acf` | acf 真源列表 |
-| `/api/mods` | `GET /search` | 创意工坊浏览/搜索（QueryFiles + GetDetails） |
-| | `GET /:fileId` | 单个 Mod 详情 |
-| | `POST /batch-details` | 批量补元数据 |
-| `/api/servers/:id/config` | `GET/PUT /commands` | Commands.dat（乐观锁 expectedMtime） |
-| | `GET/PUT /txt` | Config.txt |
-| | `GET/PUT /workshop` | WorkshopDownloadConfig.json（PUT 只写 File_IDs） |
-| `/api/servers/:id`（files） | `GET /` `GET /content` `POST /upload` `POST /files/raw` `GET /files/raw` `POST /mkdir` `DELETE /` `PUT /rename` | 文件浏览/读写/二进制上传下载/建目录/删除/重命名 |
-| `/api/steamcmd` | `GET /status` | SteamCMD 状态 |
-| | `POST /install-u3ds` | **202** `{ jobId }` 安装 U3DS |
-| | `POST /update` | **202** `{ jobId }` 更新 U3DS 二进制 |
-| | `POST /download-workshop` | **202** `{ jobId }` 下载 Workshop 到 staging |
-| | `POST /check-update` | **202** `{ jobId }` 检查更新（结果经 WS 推 latestVersion） |
-| | `POST /reinstall` | **202** `{ jobId }` 重装 SteamCMD |
-| | `PATCH /install-path` | 设置 SteamCMD 安装路径（内存态） |
-| `/api/workshop` | `GET /mods/:fileId` `GET /browse` | 旧版浏览端点（兼容） |
-| `/api/settings` | `POST /webapi-key` `GET /webapi-key` `DELETE /webapi-key` | WebAPI Key 加密存取 |
-| `/api/sessions` | `GET /` | 终端会话列表（ADR-0005 Phase 7）：返回 `{ active: 活跃会话, saved: 已断开会话 }`，前端 ConsolePage 用 saved 渲染「历史终端」按钮组（点击 toast「这个终端已经断开，点启动重新打开」） |
-| `/api/health` | `GET /` | 健康检查（无需认证） |
+| 前缀                        | 端点                                                                                                            | 语义                                                                                                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/api/auth`                 | `POST /login`                                                                                                   | 登录 → `{ accessToken, refreshToken }`                                                                                                                                               |
+|                             | `POST /refresh`                                                                                                 | refresh token 换新对                                                                                                                                                                 |
+|                             | `POST /logout`                                                                                                  | 注销（jti 入黑名单）                                                                                                                                                                 |
+|                             | `POST /change-password`                                                                                         | 修改密码（authenticateToken 保护）                                                                                                                                                   |
+| `/api/servers`              | `GET /`                                                                                                         | 实例列表（目录扫描真源）                                                                                                                                                             |
+|                             | `POST /`                                                                                                        | 创建实例（写 Commands.dat 即成立）                                                                                                                                                   |
+|                             | `PATCH /:id`                                                                                                    | 更新配置（startCommand → settings K-V；身份字段 → Commands.dat）                                                                                                                     |
+|                             | `DELETE /:id`                                                                                                   | 删除实例（先 stop → 删目录 → 删 startCommand K-V）                                                                                                                                   |
+|                             | `POST /:id/start`                                                                                               | **202** `{ terminalSessionId, pid }`                                                                                                                                                 |
+|                             | `POST /:id/stop`                                                                                                | **202**（PTY Save + Shutdown + ctrl+c）                                                                                                                                              |
+|                             | `POST /:id/restart`                                                                                             | **202**                                                                                                                                                                              |
+| `/api/servers/:id/mods`     | `GET /downloaded`                                                                                               | 已下载列表（主 acf + staging acf 合并 + `applied` 状态）                                                                                                                             |
+|                             | `POST /download`                                                                                                | **202** `{ jobId }` 下载到 staging                                                                                                                                                   |
+|                             | `POST /apply`                                                                                                   | **202** `{ operationId }` 应用 + 重启流水线                                                                                                                                          |
+|                             | `DELETE /:fileId`                                                                                               | 删除 Mod（U3DS 须 STOPPED）                                                                                                                                                          |
+|                             | `GET /acf`                                                                                                      | acf 真源列表                                                                                                                                                                         |
+| `/api/mods`                 | `GET /search`                                                                                                   | 创意工坊浏览/搜索（QueryFiles + GetDetails）                                                                                                                                         |
+|                             | `GET /:fileId`                                                                                                  | 单个 Mod 详情                                                                                                                                                                        |
+|                             | `POST /batch-details`                                                                                           | 批量补元数据                                                                                                                                                                         |
+| `/api/servers/:id/config`   | `GET/PUT /commands`                                                                                             | Commands.dat（乐观锁 expectedMtime）                                                                                                                                                 |
+|                             | `GET/PUT /txt`                                                                                                  | Config.txt                                                                                                                                                                           |
+|                             | `GET/PUT /workshop`                                                                                             | WorkshopDownloadConfig.json（PUT 只写 File_IDs）                                                                                                                                     |
+| `/api/servers/:id`（files） | `GET /` `GET /content` `POST /upload` `POST /files/raw` `GET /files/raw` `POST /mkdir` `DELETE /` `PUT /rename` | 文件浏览/读写/二进制上传下载/建目录/删除/重命名                                                                                                                                      |
+| `/api/steamcmd`             | `GET /status`                                                                                                   | SteamCMD 状态                                                                                                                                                                        |
+|                             | `POST /install-u3ds`                                                                                            | **202** `{ jobId }` 安装 U3DS                                                                                                                                                        |
+|                             | `POST /update`                                                                                                  | **202** `{ jobId }` 更新 U3DS 二进制                                                                                                                                                 |
+|                             | `POST /download-workshop`                                                                                       | **202** `{ jobId }` 下载 Workshop 到 staging                                                                                                                                         |
+|                             | `POST /check-update`                                                                                            | **202** `{ jobId }` 检查更新（结果经 WS 推 latestVersion）                                                                                                                           |
+|                             | `POST /reinstall`                                                                                               | **202** `{ jobId }` 重装 SteamCMD                                                                                                                                                    |
+|                             | `PATCH /install-path`                                                                                           | 设置 SteamCMD 安装路径（内存态）                                                                                                                                                     |
+| `/api/workshop`             | `GET /mods/:fileId` `GET /browse`                                                                               | 旧版浏览端点（兼容）                                                                                                                                                                 |
+| `/api/settings`             | `POST /webapi-key` `GET /webapi-key` `DELETE /webapi-key`                                                       | WebAPI Key 加密存取                                                                                                                                                                  |
+| `/api/sessions`             | `GET /`                                                                                                         | 终端会话列表（ADR-0005 Phase 7）：返回 `{ active: 活跃会话, saved: 已断开会话 }`，前端 ConsolePage 用 saved 渲染「历史终端」按钮组（点击 toast「这个终端已经断开，点启动重新打开」） |
+| `/api/health`               | `GET /`                                                                                                         | 健康检查（无需认证）                                                                                                                                                                 |
 
 ---
 
@@ -641,10 +662,10 @@ CREATE TABLE settings (
 
 ### 7.3 settings K-V 约定
 
-| key | 值形态 | 加密 | 消费方 |
-|---|---|---|---|
-| `steam_webapi_key` | WebAPI Key | AES-256-GCM（`cryptoBox.encrypt`，三段 hex `iv:tag:ct`，密钥来自 `ENCRYPTION_KEY`） | WorkshopMetadataService / settings 路由 |
-| `startCommand:<ServerID>` | U3DS 启动命令字符串 | **明文**（复用 `value_enc` 列，语义不加密——命令非凭证） | ServerManager（restoreStartCommand / configureServer / removeServer） |
+| key                       | 值形态              | 加密                                                                                | 消费方                                                                |
+| ------------------------- | ------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `steam_webapi_key`        | WebAPI Key          | AES-256-GCM（`cryptoBox.encrypt`，三段 hex `iv:tag:ct`，密钥来自 `ENCRYPTION_KEY`） | WorkshopMetadataService / settings 路由                               |
+| `startCommand:<ServerID>` | U3DS 启动命令字符串 | **明文**（复用 `value_enc` 列，语义不加密——命令非凭证）                             | ServerManager（restoreStartCommand / configureServer / removeServer） |
 
 ### 7.4 迁移策略
 
@@ -689,12 +710,12 @@ CREATE TABLE settings (
 
 ### 8.2 凭证存储
 
-| 凭证类型 | 存储方式 | 算法/格式 |
-|---|---|---|
-| 用户密码 | `users.password_hash` | Argon2id |
-| Steam WebAPI Key | `settings` K-V（`steam_webapi_key`） | AES-256-GCM（`iv:tag:ct` 三段 hex，密钥 = `ENCRYPTION_KEY` env） |
-| GSLT | `Commands.dat` 明文（U3DS 读取需要）；Files 页读取时替换为 `[REDACTED]` | — |
-| startCommand | `settings` K-V（`startCommand:<ServerID>`）明文 | 命令串非凭证，不加密 |
+| 凭证类型         | 存储方式                                                                | 算法/格式                                                        |
+| ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 用户密码         | `users.password_hash`                                                   | Argon2id                                                         |
+| Steam WebAPI Key | `settings` K-V（`steam_webapi_key`）                                    | AES-256-GCM（`iv:tag:ct` 三段 hex，密钥 = `ENCRYPTION_KEY` env） |
+| GSLT             | `Commands.dat` 明文（U3DS 读取需要）；Files 页读取时替换为 `[REDACTED]` | —                                                                |
+| startCommand     | `settings` K-V（`startCommand:<ServerID>`）明文                         | 命令串非凭证，不加密                                             |
 
 **硬约束**：日志脱敏管道（§6.3）确保 `SteamID:密码`、`login`、`GSLT`、`Login_Token`、`Password` 后接的敏感串绝不出现在日志/前端。ENCRYPTION_KEY / JWT_SECRET 等 secrets 从环境变量来，`.env*` git 忽略。
 
@@ -707,13 +728,13 @@ CREATE TABLE settings (
 
 ### 8.4 输入校验
 
-| 输入 | 校验规则 |
-|---|---|
-| ServerID | `/^[A-Za-z0-9_-]+$/`（zod `serverIdPattern`——id 会拼进启动命令与文件路径，防注入/穿越） |
-| SteamID64 | `/^7656119\d{10}$/` |
-| Workshop File ID | 正整数 |
-| 文件路径 | 拒绝 `\x00`、拒绝 `..` 穿越；`realpath` 解析后白名单前缀匹配（`resolveValidatedPath`） |
-| 请求体 | JSON `10mb` 限制、octet-stream raw `100mb` 限制 |
+| 输入             | 校验规则                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| ServerID         | `/^[A-Za-z0-9_-]+$/`（zod `serverIdPattern`——id 会拼进启动命令与文件路径，防注入/穿越） |
+| SteamID64        | `/^7656119\d{10}$/`                                                                     |
+| Workshop File ID | 正整数                                                                                  |
+| 文件路径         | 拒绝 `\x00`、拒绝 `..` 穿越；`realpath` 解析后白名单前缀匹配（`resolveValidatedPath`）  |
+| 请求体           | JSON `10mb` 限制、octet-stream raw `100mb` 限制                                         |
 
 ### 8.5 命令鉴权（owner-trust）
 
@@ -765,13 +786,13 @@ ProcessSupervisor → child_process
 
 ### 9.4 测试策略
 
-| 层 | 工具 | 覆盖要求 |
-|---|---|---|
-| 后端单元 | Vitest | 模块接口公开方法、状态机转换路径、ConfigService 往返、PTY 命令链路断言 PTY writes（`Save\r` / `Shutdown 30\r`，不连真服务） |
-| 后端 API | Vitest + supertest | HTTP 端点 + WebSocket 升级/订阅/terminal_input |
-| 前端单元 | Vitest | 组件渲染、hooks |
-| E2E | Playwright | 每个改到的功能至少一个冒烟用例（登录 → 实例列表 → 启停 → 配置 → Mod 流程） |
-| 契约 | zod + OpenAPI | API 边界 schema 校验 |
+| 层       | 工具               | 覆盖要求                                                                                                                    |
+| -------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| 后端单元 | Vitest             | 模块接口公开方法、状态机转换路径、ConfigService 往返、PTY 命令链路断言 PTY writes（`Save\r` / `Shutdown 30\r`，不连真服务） |
+| 后端 API | Vitest + supertest | HTTP 端点 + WebSocket 升级/订阅/terminal_input                                                                              |
+| 前端单元 | Vitest             | 组件渲染、hooks                                                                                                             |
+| E2E      | Playwright         | 每个改到的功能至少一个冒烟用例（登录 → 实例列表 → 启停 → 配置 → Mod 流程）                                                  |
+| 契约     | zod + OpenAPI      | API 边界 schema 校验                                                                                                        |
 
 ---
 
@@ -784,4 +805,4 @@ ProcessSupervisor → child_process
 
 ---
 
-*最近修订：2026-08-11——全面改写为 Phase 0-6 落地后的现状规格（PTY 持久终端 owner-trust 命令通道、4 态状态机、目录扫描真源、3 表 DB、202 异步化）。*
+_最近修订：2026-08-11——全面改写为 Phase 0-6 落地后的现状规格（PTY 持久终端 owner-trust 命令通道、4 态状态机、目录扫描真源、3 表 DB、202 异步化）。_

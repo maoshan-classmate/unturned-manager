@@ -348,9 +348,11 @@ describe("routes/mods · 8 端点", () => {
     // 实际：STOPPED + activeOperation=none → delete 应成功
     // 写一个假的 acf 让它有东西可删（路径根 = resolveInstallDir()，与 WorkshopDeleteService 读取一致）
     const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
+    // ★ BUG-3：U3DS 实际读取路径带 Steam/ 层（DedicatedUGC.cs:560-567）
     const workshopDir = path.join(
       serverDir,
       "Workshop",
+      "Steam",
       "steamapps",
       "workshop",
     );
@@ -374,10 +376,9 @@ describe("routes/mods · 8 端点", () => {
       "utf-8",
     );
     // 写 WorkshopDownloadConfig.json 让 rollback 有东西可回
-    // 注意：真实路径在 Servers/<ID>/Server/ 下，不在 Workshop/ 下
-    await fs.mkdir(path.join(serverDir, "Server"), { recursive: true });
+    // ★ BUG-2：U3-SDK 读 Servers/<ID>/WorkshopDownloadConfig.json（无 Server/ 层）
     await fs.writeFile(
-      path.join(serverDir, "Server", "WorkshopDownloadConfig.json"),
+      path.join(serverDir, "WorkshopDownloadConfig.json"),
       JSON.stringify({ File_IDs: ["444"] }, null, 2),
       "utf-8",
     );
@@ -399,9 +400,11 @@ describe("routes/mods · 8 端点", () => {
   it("GET /mods/downloaded → 200 + 已下载列表", async () => {
     // 复用 delete 测试的 fixture — 但已被删除，单独再写一个
     const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
+    // ★ BUG-3：U3DS 实际读取路径带 Steam/ 层（DedicatedUGC.cs:560-567）
     const workshopDir = path.join(
       serverDir,
       "Workshop",
+      "Steam",
       "steamapps",
       "workshop",
     );

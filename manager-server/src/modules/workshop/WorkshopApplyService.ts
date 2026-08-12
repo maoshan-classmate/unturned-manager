@@ -1,8 +1,8 @@
-import fs from 'fs/promises';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
-import { STEAM_APP_IDS } from '@unturned-manager/shared';
+import fs from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import path from "path";
+import { STEAM_APP_IDS } from "@unturned-manager/shared";
 import type {
   ServerId,
   WorkshopFileId,
@@ -10,22 +10,48 @@ import type {
   IWorkshopAcfService,
   IConfigService,
   IBroadcaster,
-} from '@unturned-manager/shared';
-import { logger } from '../../utils/logger.js';
-import { resolveInstallDir, resolveServerPath } from '../server/pathResolver.js';
+} from "@unturned-manager/shared";
+import { logger } from "../../utils/logger.js";
+import {
+  resolveInstallDir,
+  resolveServerPath,
+} from "../server/pathResolver.js";
 
 const execFileAsync = promisify(execFile);
 
 // AppID 唯一真源 = shared/constants.ts STEAM_APP_IDS.UNTURNED_GAME=304930
 
-/** staging acf 内容目录（SteamCMD 下载后落点） */
-const STAGING_CONTENT_SUBDIR = path.join('Workshop', 'staging', 'steamapps', 'workshop', 'content', STEAM_APP_IDS.UNTURNED_GAME);
+/** staging acf 内容目录（SteamCMD 下载后落点——保持原样，SteamCMD 自动生成此结构） */
+const STAGING_CONTENT_SUBDIR = path.join(
+  "Workshop",
+  "staging",
+  "steamapps",
+  "workshop",
+  "content",
+  STEAM_APP_IDS.UNTURNED_GAME,
+);
 
-/** content acf 内容目录（U3DS 启动读取） */
-const CONTENT_SUBDIR = path.join('Workshop', 'steamapps', 'workshop', 'content', STEAM_APP_IDS.UNTURNED_GAME);
+/**
+ * content acf 内容目录（U3DS 启动读取）。
+ * ★ BUG-3 修复：U3-SDK `DedicatedUGC.cs:560-567` 用 `Workshop/Steam/steamapps/workshop/content/304930/`。
+ * 旧实现缺 `Steam/` 层，U3DS 扫不到 → 客户端显示「创意工坊：禁用」。
+ */
+const CONTENT_SUBDIR = path.join(
+  "Workshop",
+  "Steam",
+  "steamapps",
+  "workshop",
+  "content",
+  STEAM_APP_IDS.UNTURNED_GAME,
+);
 
-/** WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径（注意：在 Server/ 下，不在 Workshop/ 下） */
-const WORKSHOP_CONFIG_REL = (serverId: ServerId) => path.join('Server', 'WorkshopDownloadConfig.json');
+/**
+ * WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径。
+ * ★ BUG-2 修复：U3-SDK `WorkshopDownloadConfig.cs:99` 读 `Servers/<id>/WorkshopDownloadConfig.json`
+ * （无 Server/ 子目录）。旧实现写成 Server/ 下导致 U3DS 读不到，客户端显示「创意工坊：禁用」。
+ */
+const WORKSHOP_CONFIG_REL = (serverId: ServerId) =>
+  "WorkshopDownloadConfig.json";
 
 /**
  * apply 流水线服务——在 ServerManager.applyModChanges 流水线内、U3DS 已 STOPPED 时调用
@@ -50,7 +76,10 @@ export class WorkshopApplyService implements IWorkshopApplyService {
 
   async applyStaged(serverId: ServerId): Promise<void> {
     // ── ① 备份 WorkshopDownloadConfig.json ──
-    const configBackupPath = await this.configService.backup(serverId, WORKSHOP_CONFIG_REL(serverId));
+    const configBackupPath = await this.configService.backup(
+      serverId,
+      WORKSHOP_CONFIG_REL(serverId),
+    );
 
     // ── ② 备份 acf（仅当 acf 存在时；新装时 acf 可能还不存在）──
     let acfBackupPath: string | null = null;
@@ -59,14 +88,14 @@ export class WorkshopApplyService implements IWorkshopApplyService {
       acfBackupPath = await this.acfService.backup(serverId);
     } catch (err) {
       // acf 不存在不算错（首次 apply）
-      logger.info({ serverId }, 'acf 不存在，跳过备份');
+      logger.info({ serverId }, "acf 不存在，跳过备份");
     }
 
     try {
       // ── ③ 解析 staging acf → 拿所有 mod 元数据 ──
       const { acf: stagingAcf } = await this.parseStagingAcf(serverId);
       if (stagingAcf.items.size === 0) {
-        logger.warn({ serverId }, 'staging acf 为空，无可应用的 mod');
+        logger.warn({ serverId }, "staging acf 为空，无可应用的 mod");
         return;
       }
 
@@ -74,18 +103,26 @@ export class WorkshopApplyService implements IWorkshopApplyService {
       // 先 addItem 全部，再 mv，最后同步 File_IDs
       for (const [fileId, item] of stagingAcf.items) {
         if (!acfItems.some((existing) => existing.fileId === fileId)) {
-          await this.acfService.addItem(serverId, fileId as WorkshopFileId, item);
-          logger.info({ serverId, fileId, size: item.size }, 'staging mod → content acf');
+          await this.acfService.addItem(
+            serverId,
+            fileId as WorkshopFileId,
+            item,
+          );
+          logger.info(
+            { serverId, fileId, size: item.size },
+            "staging mod → content acf",
+          );
         }
       }
 
       // ── ⑥ mv staging/content/<id>/ → content/<id>/ ──
-      const { installDir, stagingDir, contentDir } = await this.resolvePaths(serverId);
+      const { installDir, stagingDir, contentDir } =
+        await this.resolvePaths(serverId);
       for (const fileId of stagingAcf.items.keys()) {
         const src = path.join(stagingDir, fileId);
         const dst = path.join(contentDir, fileId);
         await this.moveDir(src, dst);
-        logger.info({ serverId, fileId }, 'staging content → content');
+        logger.info({ serverId, fileId }, "staging content → content");
       }
 
       // ── ⑦ 重新读 acf 拿最新 items ──
@@ -96,36 +133,43 @@ export class WorkshopApplyService implements IWorkshopApplyService {
       await this.configService.writeWorkshopFileIds(serverId, fileIds);
 
       this.broadcaster.broadcast({
-        type: 'mod_apply_progress',
+        type: "mod_apply_progress",
         serverId,
-        stage: 'ready',
+        stage: "ready",
         message: `${fileIds.length} 个 mod 已应用`,
       } as never);
 
-      logger.info({ serverId, count: fileIds.length }, 'apply 流水线完成');
+      logger.info({ serverId, count: fileIds.length }, "apply 流水线完成");
 
       // installDir 保留供未来扩展使用（无操作仅消 unused）
       void installDir;
     } catch (err) {
       // ── ⑨ 失败回滚 ──
-      logger.error({ err, serverId }, 'apply 流水线失败，开始回滚');
+      logger.error({ err, serverId }, "apply 流水线失败，开始回滚");
       if (acfBackupPath) {
         try {
           await this.acfService.rollback(serverId, acfBackupPath);
         } catch (rollbackErr) {
-          logger.error({ rollbackErr, serverId }, 'acf 回滚失败');
+          logger.error({ rollbackErr, serverId }, "acf 回滚失败");
         }
       }
       try {
-        await this.configService.rollback(serverId, WORKSHOP_CONFIG_REL(serverId), configBackupPath);
+        await this.configService.rollback(
+          serverId,
+          WORKSHOP_CONFIG_REL(serverId),
+          configBackupPath,
+        );
       } catch (rollbackErr) {
-        logger.error({ rollbackErr, serverId }, 'WorkshopDownloadConfig.json 回滚失败');
+        logger.error(
+          { rollbackErr, serverId },
+          "WorkshopDownloadConfig.json 回滚失败",
+        );
       }
       this.broadcaster.broadcast({
-        type: 'mod_apply_progress',
+        type: "mod_apply_progress",
         serverId,
-        stage: 'failed',
-        message: err instanceof Error ? err.message : 'unknown',
+        stage: "failed",
+        message: err instanceof Error ? err.message : "unknown",
       } as never);
       throw err;
     }
@@ -136,27 +180,59 @@ export class WorkshopApplyService implements IWorkshopApplyService {
   /**
    * 读 staging acf → 直接解析（不经过 AcfService，因为 staging 路径不同）
    */
-  private async parseStagingAcf(serverId: ServerId): Promise<{ acf: { items: Map<string, { fileId: WorkshopFileId; timeupdated: number; size: number; manifest?: string }> } }> {
+  private async parseStagingAcf(serverId: ServerId): Promise<{
+    acf: {
+      items: Map<
+        string,
+        {
+          fileId: WorkshopFileId;
+          timeupdated: number;
+          size: number;
+          manifest?: string;
+        }
+      >;
+    };
+  }> {
     // 收集所有 staging 中已下载的 mod（acf 给元数据 + content/ 目录给存在性）
     const { stagingDir, installDir } = await this.resolvePaths(serverId);
-    const stagingAcfPath = path.join(installDir, 'Servers', serverId, 'Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
+    const stagingAcfPath = path.join(
+      installDir,
+      "Servers",
+      serverId,
+      "Workshop",
+      "staging",
+      "steamapps",
+      "workshop",
+      `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`,
+    );
 
     let content: string;
     try {
-      content = await fs.readFile(stagingAcfPath, 'utf-8');
+      content = await fs.readFile(stagingAcfPath, "utf-8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         return { acf: { items: new Map() } };
       }
       throw err;
     }
 
     // 复用 VdfParser 解析
-    const { parseVdf } = await import('./VdfParser.js');
+    const { parseVdf } = await import("./VdfParser.js");
     const parsed = parseVdf(content);
     const root = parsed.AppWorkshop as Record<string, unknown> | undefined;
-    const installed = (root?.WorkshopItemsInstalled ?? {}) as Record<string, Record<string, string>>;
-    const items = new Map<WorkshopFileId, { fileId: WorkshopFileId; timeupdated: number; size: number; manifest?: string }>();
+    const installed = (root?.WorkshopItemsInstalled ?? {}) as Record<
+      string,
+      Record<string, string>
+    >;
+    const items = new Map<
+      WorkshopFileId,
+      {
+        fileId: WorkshopFileId;
+        timeupdated: number;
+        size: number;
+        manifest?: string;
+      }
+    >();
     for (const [fileId, meta] of Object.entries(installed)) {
       // 仅保留 content/ 目录里真正存在的（避免 acf 残留）
       try {
@@ -164,14 +240,14 @@ export class WorkshopApplyService implements IWorkshopApplyService {
       } catch {
         continue;
       }
-      const timeupdated = parseInt(meta.timeupdated ?? '0', 10);
-      const size = parseInt(meta.size ?? '0', 10);
+      const timeupdated = parseInt(meta.timeupdated ?? "0", 10);
+      const size = parseInt(meta.size ?? "0", 10);
       const manifest = meta.manifest;
       items.set(fileId as WorkshopFileId, {
         fileId: fileId as WorkshopFileId,
         timeupdated: Number.isFinite(timeupdated) ? timeupdated : 0,
         size: Number.isFinite(size) ? size : 0,
-        ...(typeof manifest === 'string' ? { manifest } : {}),
+        ...(typeof manifest === "string" ? { manifest } : {}),
       });
     }
     return { acf: { items } };
@@ -190,9 +266,9 @@ export class WorkshopApplyService implements IWorkshopApplyService {
       return;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code !== 'EXDEV') throw err;
+      if (code !== "EXDEV") throw err;
       // 跨设备降级
-      await execFileAsync('cp', ['-r', src, dst]);
+      await execFileAsync("cp", ["-r", src, dst]);
       await fs.rm(src, { recursive: true, force: true });
     }
   }
@@ -209,7 +285,11 @@ export class WorkshopApplyService implements IWorkshopApplyService {
   /**
    * 拼 staging / content 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
    */
-  private resolvePaths(serverId: ServerId): { installDir: string; stagingDir: string; contentDir: string } {
+  private resolvePaths(serverId: ServerId): {
+    installDir: string;
+    stagingDir: string;
+    contentDir: string;
+  } {
     return {
       installDir: resolveInstallDir(),
       stagingDir: resolveServerPath(serverId, STAGING_CONTENT_SUBDIR),

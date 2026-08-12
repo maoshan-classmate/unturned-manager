@@ -1,6 +1,6 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { STEAM_APP_IDS } from '@unturned-manager/shared';
+import fs from "fs/promises";
+import path from "path";
+import { STEAM_APP_IDS } from "@unturned-manager/shared";
 import type {
   ServerId,
   WorkshopFileId,
@@ -8,23 +8,45 @@ import type {
   WorkshopAcf,
   WorkshopAcfItem,
   IConfigService,
-} from '@unturned-manager/shared';
-import { parseVdf, serializeVdf, VdfParseError, VdfSerializeError } from './VdfParser.js';
-import { logger } from '../../utils/logger.js';
-import { resolveServerPath } from '../server/pathResolver.js';
+} from "@unturned-manager/shared";
+import {
+  parseVdf,
+  serializeVdf,
+  VdfParseError,
+  VdfSerializeError,
+} from "./VdfParser.js";
+import { logger } from "../../utils/logger.js";
+import { resolveServerPath } from "../server/pathResolver.js";
 
 // ─── 常量 ────────────────────────────────────────────────
 
 // AppID 唯一真源 = shared/constants.ts STEAM_APP_IDS.UNTURNED_GAME=304930
 
-/** acf 文件相对 Servers/<ID>/ 目录的路径 */
-const WORKSHOP_ACF_REL_PATH = path.join('Workshop', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
+/**
+ * acf 文件相对 Servers/<ID>/ 目录的路径。
+ * ★ BUG-3 修复：U3-SDK `DedicatedUGC.cs:560-567` 把 `Servers/<id>/Workshop/Steam` 注册为
+ * Steamworks workshop 安装根，content 与 acf 实际落在 `Workshop/Steam/steamapps/workshop/` 下。
+ * 旧实现缺 `Steam/` 层，U3DS 扫不到面板 apply 的 mod → 客户端显示「创意工坊：禁用」。
+ */
+const WORKSHOP_ACF_REL_PATH = path.join(
+  "Workshop",
+  "Steam",
+  "steamapps",
+  "workshop",
+  `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`,
+);
 
 /** staging 目录 acf（SteamCMD 下载完成后生成） */
-const STAGING_ACF_REL_PATH = path.join('Workshop', 'staging', 'steamapps', 'workshop', `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`);
+const STAGING_ACF_REL_PATH = path.join(
+  "Workshop",
+  "staging",
+  "steamapps",
+  "workshop",
+  `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`,
+);
 
 /** acf 根 key（VDF 格式约束：根必须只有一个 key） */
-const ACF_ROOT_KEY = 'AppWorkshop';
+const ACF_ROOT_KEY = "AppWorkshop";
 
 // ─── 实现 ────────────────────────────────────────────────
 
@@ -37,12 +59,10 @@ const ACF_ROOT_KEY = 'AppWorkshop';
  * - 原子写 + 自动备份
  * - 失败回滚
  *
- * 路径：`Servers/<ID>/Workshop/steamapps/workshop/appworkshop_304930.acf`
+ * 路径：`Servers/<ID>/Workshop/Steam/steamapps/workshop/appworkshop_304930.acf`
  */
 export class WorkshopAcfService implements IWorkshopAcfService {
-  constructor(
-    private configService: IConfigService,
-  ) {}
+  constructor(private configService: IConfigService) {}
 
   // ─── 公开方法 ────────────────────────────────────────
 
@@ -55,9 +75,9 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     const acfPath = await this.resolveAcfPath(serverId);
     let content: string;
     try {
-      content = await fs.readFile(acfPath, 'utf-8');
+      content = await fs.readFile(acfPath, "utf-8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         // acf 不存在 = 空 acf
         return { appid: STEAM_APP_IDS.UNTURNED_GAME, items: new Map() };
       }
@@ -77,12 +97,17 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     if (await this.fileExists(acfPath)) {
       await this.backupFile(acfPath);
     }
-    const content = serializeVdf({ [ACF_ROOT_KEY]: { appid: acf.appid, WorkshopItemsInstalled: this.itemsToVdf(acf.items) } });
+    const content = serializeVdf({
+      [ACF_ROOT_KEY]: {
+        appid: acf.appid,
+        WorkshopItemsInstalled: this.itemsToVdf(acf.items),
+      },
+    });
     // 写临时文件 + rename 原子
     const tmpPath = `${acfPath}.tmp.${Date.now()}`;
-    await fs.writeFile(tmpPath, content, { encoding: 'utf-8', mode: 0o644 });
+    await fs.writeFile(tmpPath, content, { encoding: "utf-8", mode: 0o644 });
     await fs.rename(tmpPath, acfPath);
-    logger.info({ serverId, itemCount: acf.items.size }, 'acf 已原子写');
+    logger.info({ serverId, itemCount: acf.items.size }, "acf 已原子写");
   }
 
   /**
@@ -105,9 +130,9 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     const stagingAcfPath = await this.resolveStagingAcfPath(serverId);
     let content: string;
     try {
-      content = await fs.readFile(stagingAcfPath, 'utf-8');
+      content = await fs.readFile(stagingAcfPath, "utf-8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw err;
     }
     const acf = this.parseContent(content);
@@ -118,14 +143,17 @@ export class WorkshopAcfService implements IWorkshopAcfService {
    * 读 staging 目录的 acf，提取单个 mod 的元数据（下载完成后调）
    * @returns 单个 mod 的 acf 元数据；mod 不在 staging acf 中则返回 null
    */
-  async parseStagingItem(serverId: ServerId, fileId: WorkshopFileId): Promise<WorkshopAcfItem | null> {
+  async parseStagingItem(
+    serverId: ServerId,
+    fileId: WorkshopFileId,
+  ): Promise<WorkshopAcfItem | null> {
     const stagingAcfPath = await this.resolveStagingAcfPath(serverId);
     let content: string;
     try {
-      content = await fs.readFile(stagingAcfPath, 'utf-8');
+      content = await fs.readFile(stagingAcfPath, "utf-8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        logger.warn({ serverId, fileId }, 'staging acf 不存在，下载可能未完成');
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        logger.warn({ serverId, fileId }, "staging acf 不存在，下载可能未完成");
         return null;
       }
       throw err;
@@ -138,7 +166,11 @@ export class WorkshopAcfService implements IWorkshopAcfService {
    * 添加 mod 到 acf（apply 流水线内调用）
    * 先备份原 acf，写失败回滚
    */
-  async addItem(serverId: ServerId, fileId: WorkshopFileId, meta: WorkshopAcfItem): Promise<void> {
+  async addItem(
+    serverId: ServerId,
+    fileId: WorkshopFileId,
+    meta: WorkshopAcfItem,
+  ): Promise<void> {
     const acf = await this.parse(serverId);
     const before = acf.items.get(fileId);
     acf.items.set(fileId, meta);
@@ -153,7 +185,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
       }
       throw err;
     }
-    logger.info({ serverId, fileId, size: meta.size }, 'acf 添加 mod');
+    logger.info({ serverId, fileId, size: meta.size }, "acf 添加 mod");
   }
 
   /**
@@ -172,7 +204,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
       acf.items.set(fileId, before);
       throw err;
     }
-    logger.info({ serverId, fileId }, 'acf 删除 mod');
+    logger.info({ serverId, fileId }, "acf 删除 mod");
   }
 
   /**
@@ -196,7 +228,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
       throw new Error(`备份文件不存在：${backupPath}`);
     }
     await fs.copyFile(backupPath, acfPath);
-    logger.warn({ serverId, backupPath }, 'acf 已从备份回滚');
+    logger.warn({ serverId, backupPath }, "acf 已从备份回滚");
   }
 
   // ─── 私有 ────────────────────────────────────────────
@@ -230,26 +262,28 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     }
 
     const root = parsed[ACF_ROOT_KEY] as Record<string, unknown> | undefined;
-    if (!root || typeof root !== 'object') {
+    if (!root || typeof root !== "object") {
       // 非预期结构，视为空
       return { appid: STEAM_APP_IDS.UNTURNED_GAME, items: new Map() };
     }
 
-    const appid = typeof root.appid === 'string' ? root.appid : STEAM_APP_IDS.UNTURNED_GAME;
+    const appid =
+      typeof root.appid === "string" ? root.appid : STEAM_APP_IDS.UNTURNED_GAME;
     const items = new Map<WorkshopFileId, WorkshopAcfItem>();
 
-    const installed = root.WorkshopItemsInstalled as Record<string, Record<string, string>> | undefined;
-    if (installed && typeof installed === 'object') {
+    const installed = root.WorkshopItemsInstalled as
+      Record<string, Record<string, string>> | undefined;
+    if (installed && typeof installed === "object") {
       for (const [fileId, meta] of Object.entries(installed)) {
-        if (typeof meta !== 'object' || meta === null) continue;
-        const timeupdated = parseInt(meta.timeupdated ?? '0', 10);
-        const size = parseInt(meta.size ?? '0', 10);
+        if (typeof meta !== "object" || meta === null) continue;
+        const timeupdated = parseInt(meta.timeupdated ?? "0", 10);
+        const size = parseInt(meta.size ?? "0", 10);
         const manifest = meta.manifest;
         items.set(fileId as WorkshopFileId, {
           fileId: fileId as WorkshopFileId,
           timeupdated: Number.isFinite(timeupdated) ? timeupdated : 0,
           size: Number.isFinite(size) ? size : 0,
-          ...(typeof manifest === 'string' ? { manifest } : {}),
+          ...(typeof manifest === "string" ? { manifest } : {}),
         });
       }
     }
@@ -260,7 +294,9 @@ export class WorkshopAcfService implements IWorkshopAcfService {
   /**
    * WorkshopAcfItem Map → VDF 嵌套对象
    */
-  private itemsToVdf(items: Map<WorkshopFileId, WorkshopAcfItem>): Record<string, Record<string, string>> {
+  private itemsToVdf(
+    items: Map<WorkshopFileId, WorkshopAcfItem>,
+  ): Record<string, Record<string, string>> {
     const out: Record<string, Record<string, string>> = {};
     for (const [fileId, item] of items) {
       out[fileId] = {
@@ -276,7 +312,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
    * 备份指定文件到 `<file>.bak.<UTC-ISO>`
    */
   private async backupFile(absPath: string): Promise<string> {
-    const iso = new Date().toISOString().replace(/[:.]/g, '-');
+    const iso = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = `${absPath}.bak.${iso}`;
     await fs.copyFile(absPath, backupPath);
     return backupPath;

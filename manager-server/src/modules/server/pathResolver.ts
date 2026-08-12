@@ -1,6 +1,6 @@
-import path from 'path';
-import { config } from '../../config.js';
-import type { ServerId } from '@unturned-manager/shared';
+import path from "path";
+import { config } from "../../config.js";
+import type { ServerId } from "@unturned-manager/shared";
 
 /**
  * 路径解析器（ADR-0003 / T2）——替代 8 处散落的 `SELECT install_dir FROM servers` 查询。
@@ -14,9 +14,9 @@ import type { ServerId } from '@unturned-manager/shared';
  * 路径布局对齐 `.claude/rules/unturned-sop.md`：
  *   <installDir>/Servers/<ServerID>/Server/Commands.dat
  *   <installDir>/Servers/<ServerID>/Config.txt
- *   <installDir>/Servers/<ServerID>/Server/WorkshopDownloadConfig.json
+ *   <installDir>/Servers/<ServerID>/WorkshopDownloadConfig.json
  *   <installDir>/Servers/<ServerID>/Logs/
- *   <installDir>/Servers/<ServerID>/Workshop/steamapps/workshop/content/304930/
+ *   <installDir>/Servers/<ServerID>/Workshop/Steam/steamapps/workshop/content/304930/（U3DS 实际读取，DedicatedUGC.cs:560）
  *   <installDir>/Servers/<ServerID>/Workshop/staging/...
  */
 
@@ -26,8 +26,11 @@ import type { ServerId } from '@unturned-manager/shared';
  * @param relative - 相对 `<installDir>/Servers/<serverId>/` 的路径
  * @returns 绝对路径
  */
-export function resolveServerPath(serverId: ServerId, relative: string): string {
-  return path.join(config.installDir, 'Servers', serverId, relative);
+export function resolveServerPath(
+  serverId: ServerId,
+  relative: string,
+): string {
+  return path.join(config.installDir, "Servers", serverId, relative);
 }
 
 /**
