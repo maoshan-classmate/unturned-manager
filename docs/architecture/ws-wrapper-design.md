@@ -1,7 +1,7 @@
 # WS 包装层架构设计 — 应答确认协议 + 共享事件总线
 
 > **类型**：架构设计  
-> **触发**：`claudedocs/research_ws_socketio_decision_2026-08-12.md` §5 推荐的包装层细化  
+> **触发**：`claudedocs/archive/research_ws_socketio_decision_2026-08-12.md` §5 推荐的包装层细化  
 > **前置决策**：保持 `ws` 不变，加 ~150-200 行轻量包装层  
 > **状态**：✅ 已实现（2026-08-12，阶段 1-4 全部落地；实施偏差见 §10.1）
 
@@ -528,7 +528,7 @@ useEffect(() => {
 - [x] 前端：旧 `useWebSocket().connected` API 不破坏
 - [x] 测试：服务端 6 个 ACK 单测（gateway）+ 6 个 waitForMarker 单测（ptyManager）+ 前端 9 个单测（WebSocketContext）全绿；e2e 9/9（含 WS 连接回归 + ACK 按钮渲染）。依赖真机 U3DS 的用例（§5.3 关服 ACK 端到端 / 重连恢复订阅）留在真机验证阶段
 - [x] 文档：本次设计落到 `docs/architecture/ws-wrapper-design.md`（本文件，状态已更新为已实现）
-- [x] 文档：决策过程保留在 `claudedocs/research_ws_socketio_decision_2026-08-12.md`
+- [x] 文档：决策过程保留在 `claudedocs/archive/research_ws_socketio_decision_2026-08-12.md`
 - [x] 文档：`architecture-spec.md` §3.4 / §4.3 同步更新为共享总线 + ACK 现状
 
 ---
@@ -555,9 +555,9 @@ useEffect(() => {
 
 **待讨论事项（来自决策记录）**：
 
-- `claudedocs/research_ws_socketio_decision_2026-08-12.md` §7 待讨论 #1：Q1 答案与 `CLAUDE.md §2` 的张力——独立 brainstorm/ADR 翻转讨论
+- `claudedocs/archive/research_ws_socketio_decision_2026-08-12.md` §7 待讨论 #1：Q1 答案与 `CLAUDE.md §2` 的张力——独立 brainstorm/ADR 翻转讨论
 - `waitForMarker` 的 marker 正则目前硬编码 `world saved`（大小写不敏感）——如 U3DS 版本输出文案变化，需在真机验证时校正
 
 ---
 
-*创建日期：2026-08-12 · WS 包装层架构设计（决策依据：research_ws_socketio_decision_2026-08-12.md §5）*
+*创建日期：2026-08-12 · WS 包装层架构设计（决策依据：claudedocs/archive/research_ws_socketio_decision_2026-08-12.md §5）*
