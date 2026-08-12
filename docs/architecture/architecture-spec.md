@@ -200,7 +200,8 @@
 - `verifyClient` 校验 `?token=<access_token>`；无 token / 无效 → 401 拒绝。
 - 建连后客户端 **5 秒内必须发 `subscribe`**，否则关闭（code 1008）。
 - 订阅模型：`serverIds` + `eventTypes` 双过滤；`serverIds: []` + `eventTypes: null` = 接收全部。
-- 入站消息仅两类：`subscribe`、`terminal_input`（写入对应 PTY stdin）。
+- 入站消息三类：`subscribe`、`terminal_input`（写入对应 PTY stdin）、请求-应答（`terminal_close` / `save` / `shutdown`，见 ws-wrapper-design §2）。
+- 请求-应答：`registerRequestHandler(type, handler)` 注册表；路由校验 requestId + serverId 后调业务处理器，异步回 `ack` 事件；业务异常兜底 `internal_error` ack（不抛回 ws 层）。处理器在 composition-root 注册（关控制台 kill / 存档 waitForMarker「World saved」/ 关服 Save+Shutdown+waitExit）。
 - 心跳保活：每 30s ping，未回 pong 的死连接 terminate。
 - `broadcast` 按订阅过滤路由到对应 WS 连接。
 
@@ -249,11 +250,11 @@ components/
 |---|---|
 | `useServer()` | 实例列表。挂载拉一次 + 手动 refresh（不轮询）；订阅 WS `state_change` 实时更新单个实例状态；addServer/removeServer/updateServer 走真实 API |
 | `useServerActions()` | 实例 start / stop / restart，错误抛后端中文 message |
-| `useConsole(serverId)` | 控制台输出缓冲（最多 500 行）+ 命令发送（WS `terminal_input`，拼 `\r`）+ `sendTerminalInput`（xterm 原始输入）+ 退避重连 |
+| `useConsole(serverId)` | 控制台输出缓冲（最多 500 行）+ 命令发送（WS `terminal_input`，拼 `\r`）+ `sendTerminalInput`（xterm 原始输入）+ ACK 操作 `save` / `shutdown` / `closeTerminal`（ws-wrapper-design §2.5）。共享全局单连接订阅 `console_line`（不再独立建连） |
 | `useConsoleHistory()` | 命令历史（↑↓ 翻页） |
-| `useSteamCmdProgress({ jobId })` | SteamCMD 进度订阅（独立 WS + jobId 过滤 + 退避重连） |
+| `useSteamCmdProgress({ jobId })` | SteamCMD 进度订阅（共享全局单连接订阅 `steamcmd_progress` + jobId 过滤；不再独立建连） |
 | `AuthContext` | JWT 会话：登录/恢复/注销，`useAuth()` null-guard |
-| `WebSocketContext` | WS 事件总线：`subscribe(listener) => unsubscribe`；挂载即建连，5s 内发 subscribe；WS 401 退避重连 |
+| `WebSocketContext` | WS 事件总线（ws-wrapper-design §3）：`connected` + `subscribe(type, handler) => unsubscribe` + `send`（fire-and-forget）+ `request`（ACK，UUID requestId / 默认 30s 超时 / 断线 reject）。单连接 + 指数退避重连（1s→30s），重连自动重发 subscribe |
 
 ---
 
