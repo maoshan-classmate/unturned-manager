@@ -121,7 +121,11 @@ export class ServerManager implements IServerManager {
   }
 
   async listServers(): Promise<ServerConfig[]> {
-    return Array.from(this.servers.values()).map((s) => s.config);
+    // 注入内存运行态 state——前端 Dashboard / 服务器控制卡片实时显示 + 按钮 disabled 判据均依赖此字段
+    return Array.from(this.servers.values()).map((s) => ({
+      ...s.config,
+      state: s.state,
+    }));
   }
 
   /** 同步版——直接读 in-memory Map（启动时给 LogStreamer 接线用） */

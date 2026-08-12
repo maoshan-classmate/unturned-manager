@@ -1,4 +1,5 @@
 import type { ServerId, SteamId64, WorkshopFileId, Port } from "./branded.js";
+import type { ServerState } from "./state.js";
 
 // 服务端实例配置
 export interface ServerConfig {
@@ -13,6 +14,12 @@ export interface ServerConfig {
    * Phase 4：用户可在控制卡片编辑并持久化到 SQLite。留空 = 用默认模板。
    */
   startCommand?: string;
+  /**
+   * 当前运行态——服务端内存由 ServerManager.listServers 实时注入。
+   * 不持久化（启动时全部初始化为 STOPPED）。前端 UI 是「内存态」的真源，
+   * 避免「按钮状态错位」「Dashboard 显示 STOPPED 但实际已 RUNNING」等状态漂移。
+   */
+  state?: ServerState;
 }
 
 // Commands.dat 解析结果

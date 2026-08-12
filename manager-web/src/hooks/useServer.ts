@@ -5,7 +5,7 @@ import {
   type ServerEventMessage,
 } from "../contexts/WebSocketContext.js";
 
-/** 服务器实例信息——GET /servers 响应形状（后端 ServerConfig，state 在服务端内存不返回） */
+/** 服务器实例信息——GET /servers 响应形状（ServerConfig + ServerManager.listServers 注入内存 state） */
 export interface ServerInfo {
   /** ServerID，对应 Servers/<ServerID> 目录名 */
   id: string;
@@ -17,7 +17,12 @@ export interface ServerInfo {
   ownerSteamId: string;
   /** U3DS 安装根目录 */
   installDir: string;
-  /** 运行时状态（面板本地维护，非后端持久化字段）—— ★ ADR-0004 Phase 5：实时状态由 WS state_change 推送更新 */
+  /**
+   * 当前运行态（内存态，非持久化）——
+   *   - 初始挂载：GET /servers 注入
+   *   - 实时变化：WS state_change 推送更新（★ ADR-0004 Phase 5）
+   *   - 缺失回落：默认 STOPPED
+   */
   state?: string;
   /** U3DS 启动命令（ADR-0004 Phase 4）——用户编辑后 PATCH /servers/:id 持久化；空 = 后端兜底模板 */
   startCommand?: string;

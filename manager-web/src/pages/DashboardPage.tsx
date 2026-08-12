@@ -4,34 +4,25 @@ import {
   Users,
   Cpu,
   Package,
-  Play,
-  Square,
-  RefreshCw,
+  ArrowRight,
   AlertCircle,
   Loader2,
 } from "lucide-react";
-import { useServer, useServerActions } from "../hooks/useServer.js";
+import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
 import { Button } from "../components/ui/button.js";
-import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
  *
- * 四张 StatCard + 快速操作按钮。
+ * 只读概览：4 张 StatCard + 当前实例状态徽章 + 「前往控制台」跳转。
+ * 服务器控制类操作（启动/停止/重启/保存命令）只出现在「服务器设置」页的
+ * 服务器控制卡片——Dashboard 不重复入口，避免多页面状态不一致。
  */
 export function DashboardPage() {
   const { servers, loading, error, refresh } = useServer();
-  const { start, stop, restart, pendingId } = useServerActions();
-  const [actionError, setActionError] = useState<string | null>(null);
   const [modCount, setModCount] = useState<number | null>(null);
-
-  // ConfirmDialog 状态
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<
-    "start" | "stop" | "restart"
-  >("start");
 
   // 取第一个服务器作为主显示（v1 单服或首服）
   const server = servers[0];
@@ -53,29 +44,6 @@ export function DashboardPage() {
   useEffect(() => {
     fetchModCount();
   }, [fetchModCount]);
-
-  /** 触发确认弹窗 */
-  const requestAction = (action: "start" | "stop" | "restart") => {
-    setConfirmAction(action);
-    setConfirmOpen(true);
-  };
-
-  /** 确认执行 */
-  const handleAction = async () => {
-    if (!server) return;
-    setConfirmOpen(false);
-    setActionError(null);
-    try {
-      if (confirmAction === "start") await start(server.id);
-      else if (confirmAction === "stop") await stop(server.id);
-      else await restart(server.id);
-      // ★ ADR-0004 Phase 5：状态实时变化由 WS state_change 推送，无需手动 refresh()
-      // 保留 refresh 仅作为兜底（WS 异常断开时仍能拉到最新状态）
-      // 这里省一次 refresh 避免 setServers 覆盖 WS 已更新的 state
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "操作失败");
-    }
-  };
 
   // ── Loading ──
   if (loading) {
@@ -154,7 +122,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ── 页面标题 ── */}
+      {/* ── 页面标题 + 状态徽章 + 跳转入口 ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1
@@ -177,54 +145,16 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Quick Actions ── */}
+        {/* ── 跳转入口 ── */}
         <div className="flex items-center gap-2">
-          {actionError && (
-            <span className="text-xs" style={{ color: "#EF4444" }}>
-              {actionError}
-            </span>
-          )}
-          {!isRunning ? (
-            <Button
-              onClick={() => requestAction("start")}
-              disabled={isTransitioning || pendingId !== null}
-              className="h-8 gap-1.5 text-xs"
-              style={{ backgroundColor: "#22C55E", color: "#F1F5FB" }}
-              aria-busy={pendingId === server.id}
-            >
-              {pendingId === server.id ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Play size={14} />
-              )}
-              启动
-            </Button>
-          ) : (
-            <>
-              <Button
-                onClick={() => requestAction("restart")}
-                disabled={pendingId !== null}
-                className="h-8 gap-1.5 text-xs"
-                style={{
-                  backgroundColor: "#1E293B",
-                  color: "#94A3B8",
-                  border: "1px solid #334155",
-                }}
-              >
-                <RefreshCw size={14} />
-                重启
-              </Button>
-              <Button
-                onClick={() => requestAction("stop")}
-                disabled={pendingId !== null}
-                className="h-8 gap-1.5 text-xs"
-                style={{ backgroundColor: "#EF4444", color: "#F1F5FB" }}
-              >
-                <Square size={14} />
-                停止
-              </Button>
-            </>
-          )}
+          <a
+            href={`/${server.id}/server-setup`}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded text-xs"
+            style={{ backgroundColor: "#1E293B", color: "#F1F5FB", border: "1px solid #334155" }}
+          >
+            <ArrowRight size={14} />
+            前往服务器设置
+          </a>
         </div>
       </div>
 
@@ -242,83 +172,33 @@ export function DashboardPage() {
           icon={Users}
           label="在线玩家"
           value="—"
-          subtext="需在「控制台」输入 Players 命令查看"
           status="neutral"
         />
         <StatCard
           icon={Cpu}
           label="CPU 使用"
           value="—"
-          subtext="需部署后启用系统监控"
           status="neutral"
         />
         <StatCard
           icon={Package}
-          label="已装 Mod"
-          value={modCount != null ? String(modCount) : "—"}
-          subtext={
-            modCount != null && modCount > 0
-              ? `${modCount} 个已启用`
-              : "暂无已启用 Mod"
-          }
+          label="Mod 数"
+          value={modCount === null ? "—" : String(modCount)}
           status="neutral"
         />
       </div>
 
-      {/* ── Charts（需 U3DS 运行 + 历史数据积累后启用）── */}
-      <div className="grid grid-cols-2 gap-4">
-        <div
-          className="flex flex-col items-center justify-center rounded-lg h-48"
-          style={{ backgroundColor: "#1E293B", border: "1px solid #334155" }}
-        >
-          <span className="text-sm" style={{ color: "#64748B" }}>
-            24h 玩家趋势图
-          </span>
-          <span className="text-xs mt-1" style={{ color: "#475569" }}>
-            服务器运行后自动采集
-          </span>
-        </div>
-        <div
-          className="flex flex-col items-center justify-center rounded-lg h-48"
-          style={{ backgroundColor: "#1E293B", border: "1px solid #334155" }}
-        >
-          <span className="text-sm" style={{ color: "#64748B" }}>
-            资源使用图
-          </span>
-          <span className="text-xs mt-1" style={{ color: "#475569" }}>
-            服务器运行后自动采集
-          </span>
-        </div>
+      {/* ── 资源使用图占位 ── */}
+      <div className="flex-1 rounded-lg border border-dashed flex flex-col items-center justify-center min-h-[200px]"
+        style={{ borderColor: "#334059" }}
+      >
+        <span className="text-sm" style={{ color: "#64748B" }}>
+          资源使用图
+        </span>
+        <span className="text-xs mt-1" style={{ color: "#475569" }}>
+          服务器运行后自动采集
+        </span>
       </div>
-
-      {/* ConfirmDialog — Figma 12:16436 */}
-      <ConfirmDialog
-        open={confirmOpen}
-        title={
-          confirmAction === "start"
-            ? "启动服务器"
-            : confirmAction === "stop"
-              ? "停止服务器"
-              : "重启服务器"
-        }
-        message={
-          confirmAction === "start"
-            ? `确认启动服务器 ${server.name || server.id}？`
-            : confirmAction === "stop"
-              ? `确认停止服务器 ${server.name || server.id}？运行中的玩家将被断开连接。`
-              : `确认重启服务器 ${server.name || server.id}？服务器将短暂不可用。`
-        }
-        confirmLabel={
-          confirmAction === "start"
-            ? "启动"
-            : confirmAction === "stop"
-              ? "停止"
-              : "重启"
-        }
-        variant={confirmAction === "stop" ? "danger" : "default"}
-        onConfirm={handleAction}
-        onCancel={() => setConfirmOpen(false)}
-      />
     </div>
   );
 }
