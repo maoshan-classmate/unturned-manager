@@ -33,7 +33,22 @@ import {
 
 const SHUTDOWN_TIMEOUT = 30_000; // 等待进程退出
 const CRASH_RESTART_DELAY = 5_000; // T6: 崩溃 5s 硬重启（抄 GSM GameManager.ts:331-335）
-const START_COMMAND_DELAY = 1_000; // ADR-0004 §3.3：spawn bash 后 1s 塞 startCommand
+/**
+ * spawn bash 后塞 startCommand + 兜底 transition(RUNNING) 的延迟。
+ * 抄 GSM GameManager.ts:356：3 秒固定定时器 + 进程存活检查。
+ * 提前于 3s 的 transition 由 stdout 命中 ready 正则触发（pipePtyOutput 内）。
+ */
+const START_COMMAND_DELAY = 3_000;
+
+/**
+ * U3DS 启动成功标志——抄 unturned-sop.md:147。
+ * 命中任一正则即提前 transition(RUNNING)，避免用户等满 3s 兜底。
+ */
+const U3DS_READY_PATTERNS: RegExp[] = [
+  /Server is ready/i,
+  /World saved/i,
+  /Startup complete/i,
+];
 
 // ─── 运行时状态 (in-memory, 目录扫描真源 + settings K-V) ──
 
@@ -547,6 +562,12 @@ export class ServerManager implements IServerManager {
       if (this.sessionManager) {
         void this.sessionManager.touchActivity(serverId);
       }
+      // ★ 抄 GSM GameManager.ts:795-802（parseMinecraftOutput 命中 "Done (") / "For help"
+      // 立即 transition）：U3DS 命中 ready 正则 → 提前 transition(RUNNING)，不等到
+      // START_COMMAND_DELAY 兜底。transition 自身幂等，正则 + 定时器谁先到用哪个。
+      if (U3DS_READY_PATTERNS.some((re) => re.test(line))) {
+        this.transition(serverId, ServerState.RUNNING);
+      }
     });
   }
 
@@ -853,6 +874,9 @@ export class ServerManager implements IServerManager {
   private transition(serverId: ServerId, to: ServerState): void {
     const entry = this.servers.get(serverId);
     if (!entry) return;
+    // 幂等：to === from 直接返回，避免双触发（stdout 命中 ready + setTimeout 兜底
+    // 都可能先后触发同一 transition，不幂等会重复广播 + 状态机白绕一圈）
+    if (entry.state === to) return;
     const from = entry.state;
     entry.state = to;
 

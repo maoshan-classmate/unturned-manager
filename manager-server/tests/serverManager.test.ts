@@ -125,7 +125,7 @@ function makeMockBroadcaster(): IBroadcaster & { events: ServerEvent[] } {
   };
 }
 
-/** 造一个 ServerManager + 完整 mock 集（fake timers 用于 start 的 1s 塞命令窗口） */
+/** 造一个 ServerManager + 完整 mock 集（fake timers 用于 start 的 3s 塞命令窗口，对齐 GSM GameManager.ts:356） */
 function setup() {
   const db = makeDb();
   const pty = makeMockPty();
@@ -147,11 +147,11 @@ async function createServer(mgr: ServerManager, id: string) {
   });
 }
 
-/** start 并推进 1s 塞命令窗口，返回 PTY mock */
+/** start 并推进 3s 塞命令窗口，返回 PTY mock（对齐 GSM GameManager.ts:356） */
 async function started(mgr: ServerManager, pty: PtyMock, id: string) {
   await createServer(mgr, id);
   await mgr.start(id as ServerId);
-  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(3000);
   expect(mgr.getState(id as ServerId)).toBe(ServerState.RUNNING);
   return pty;
 }
@@ -182,7 +182,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(list).toHaveLength(1);
   });
 
-  it("start 流程：spawn /bin/bash → STARTING → 1s 塞命令 → RUNNING", async () => {
+  it("start 流程：spawn /bin/bash → STARTING → 3s 塞命令 → RUNNING（对齐 GSM）", async () => {
     await createServer(mgr, "S1");
     const promise = mgr.start("S1" as ServerId);
     // 同步断言：操作中
@@ -194,10 +194,10 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(pty.spawn).toHaveBeenCalledWith("S1" as ServerId, "/bin/bash", [], {
       cwd: dir,
     });
-    // 刚 spawn 完 = STARTING；1s 后写 startCommand 才 RUNNING
+    // 刚 spawn 完 = STARTING；3s 后写 startCommand 才 RUNNING（对齐 GSM 3s）
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STARTING);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(3000);
     expect(pty.write).toHaveBeenCalledWith(
       "S1" as ServerId,
       "./ServerHelper.sh +InternetServer/S1 -ThreadedConsole\r",
@@ -312,7 +312,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     await mgr.stop("T8" as ServerId, "fast-stop");
     await mgr.start("T8" as ServerId);
     // 推进 1s：timer A 到期（epoch 不匹配丢弃），timer B 到期（写命令一次）
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(3000);
     const startCommands = pty.writeCalls.filter(([, d]) =>
       d.startsWith("./ServerHelper.sh"),
     );
@@ -330,6 +330,69 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
       .filter((e) => e.type === "state_change");
     expect(stopTransitions).toHaveLength(0); // 无 STOPPING 闪动
     expect(pty.write).not.toHaveBeenCalled(); // 无空转 write
+  });
+
+  // ─── 抄 GSM GameManager.ts:795-802：stdout 命中 ready 正则提前 transition ───
+
+  it("stdout 命中 'Server is ready' → STARTING → RUNNING 不等 3s 兜底", async () => {
+    await createServer(mgr, "T10");
+    await mgr.start("T10" as ServerId);
+    expect(mgr.getState("T10" as ServerId)).toBe(ServerState.STARTING);
+    const before = bcast.events.length;
+
+    const onData = pty.dataCallbacks.get("T10");
+    expect(onData).toBeDefined();
+    onData!("Server is ready"); // U3DS 启动成功信号
+
+    // 命中正则 → 立即 transition(RUNNING)，不需等 3s
+    expect(mgr.getState("T10" as ServerId)).toBe(ServerState.RUNNING);
+    const runTransitions = bcast.events
+      .slice(before)
+      .filter(
+        (e) =>
+          e.type === "state_change" &&
+          (e as { from?: string; to?: string }).to === "RUNNING",
+      );
+    expect(runTransitions).toHaveLength(1);
+  });
+
+  it("stdout 命中 'World saved' / 'Startup complete' 同样触发 RUNNING（正则覆盖）", async () => {
+    for (const [idx, pattern] of [
+      "World saved",
+      "Startup complete",
+    ].entries()) {
+      const id = `T11_${idx}`;
+      await createServer(mgr, id);
+      await mgr.start(id as ServerId);
+      const onData = pty.dataCallbacks.get(id);
+      expect(onData).toBeDefined();
+      onData!(pattern);
+      expect(mgr.getState(id as ServerId)).toBe(ServerState.RUNNING);
+    }
+  });
+
+  it("transition 幂等：stdout 命中 + 3s 兜底同时触发 → 只 transition 一次", async () => {
+    await createServer(mgr, "T12");
+    await mgr.start("T12" as ServerId);
+    const onData = pty.dataCallbacks.get("T12");
+    expect(onData).toBeDefined();
+    onData!("Server is ready"); // 正则提前触发
+    const afterReady = bcast.events.filter(
+      (e) =>
+        e.type === "state_change" &&
+        (e as { to?: string }).to === "RUNNING",
+    ).length;
+    expect(afterReady).toBe(1);
+
+    // 3s 兜底 timer 触发：因幂等，state_change 计数仍为 1
+    await vi.advanceTimersByTimeAsync(3000);
+    const afterTimeout = bcast.events.filter(
+      (e) =>
+        e.type === "state_change" &&
+        (e as { to?: string }).to === "RUNNING",
+    ).length;
+    expect(afterTimeout).toBe(1); // 幂等守住，不重复广播
+    expect(mgr.getState("T12" as ServerId)).toBe(ServerState.RUNNING);
   });
 
   it("applyModChanges：state 非 RUNNING → 409（ADR-0004 Phase 6 去 DEGRADED）", async () => {
@@ -449,7 +512,7 @@ describe("ServerManager — PTY 崩溃检测 + 5s 硬重启（ADR-0004 Phase 2�
     onExit!({ exitCode: 0, signal: 15 });
     vi.mocked(pty.isRunning).mockReturnValue(false);
     await mgr.start("T6" as ServerId);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(3000);
     // detectStartScript 只应被调一次（首次生成后缓存到 config，重启复用）
     expect(vi.mocked(detectStartScript)).toHaveBeenCalledTimes(1);
   });
