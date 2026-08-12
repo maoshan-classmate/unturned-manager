@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "../api/client.js";
-import {
-  useWebSocket,
-  type ServerEventMessage,
-} from "../contexts/WebSocketContext.js";
+import { useWebSocket } from "../contexts/WebSocketContext.js";
 
 /** 服务器实例信息——GET /servers 响应形状（ServerConfig + ServerManager.listServers 注入内存 state） */
 export interface ServerInfo {
@@ -85,9 +82,9 @@ export function useServer(): UseServerReturn {
 
   // ★ ADR-0004 Phase 5：订 WS state_change → 收到后只更新对应 serverId 的 state 字段
   // （不发整张表重拉——后端 broadcast 一次 = 前端一次 setState）。
+  // ★ ws-wrapper-design §3.6：按类型订阅（事件总线按 type 分发，不再每条消息都过一遍过滤器）。
   useEffect(() => {
-    const unsubscribe = subscribe((msg: ServerEventMessage) => {
-      if (msg.type !== "state_change") return;
+    const unsubscribe = subscribe("state_change", (msg) => {
       const serverId = msg.serverId;
       if (typeof serverId !== "string") return;
       const to = msg.to;
