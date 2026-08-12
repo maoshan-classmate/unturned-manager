@@ -26,3 +26,5 @@
 - [session-checkpoint-2026-08-09-docker-deploy](.serena/memories/session-checkpoint-2026-08-09-docker-deploy.md) — Docker 部署闭环：Dockerfile 重写+静态托管+compose env 映射+steamcmd 卷持久化（commit 67bc10c）
 - [sessions/2026-08-07-login-redesign](.serena/memories/sessions/2026-08-07-login-redesign.md) — 登录页改造（shadcn/ui + Motion）
 - [sessions/2026-08-07-sprint2-implementation](.serena/memories/sessions/2026-08-07-sprint2-implementation.md) — Sprint 2 实施（13 文件新增、8 项偏差修正）
+- [session-checkpoint-2026-08-12-ldm-design](.serena/memories/session-checkpoint-2026-08-12-ldm-design.md) — LDM 接入方案落档（commit 8270848）：设计文档+ADR-0006+reference_config_files §3-5；插件不上 Workshop 走 GitHub Releases；启停 /rocket load/unload 不停服；无 PluginMapping
+- [session-checkpoint-2026-08-12-ldm-design-v2](.serena/memories/session-checkpoint-2026-08-12-ldm-design-v2.md) — 设计文档 v0.2：§11 全功能盘点（35 项/10 维度）+ §12 多期规划（Phase 1-4，30-39 人天）；commit 96fed22；§11.3 与 mod-management v2.5 共用 applyChangesCore

@@ -213,6 +213,8 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 # ⑤ 编辑配置 → 应用变更 → 面板走 PTY 终端 owner-trust 重启流水线
 ```
 
+> **激活检测点**（2026-08-12 游戏 Extras 实文件核对）：`Modules/Rocket.Unturned/Rocket.Unturned.module` 存在 = LDM 已激活（Unity 模块清单，声明 3 个 Server 程序集 + 版本）。面板可用「该文件存在性 + `/modules` 命令输出」双确认；`.module` 里的 `Version` 即 LDM 主框架版本（游戏 Extras 实测 `4.9.3.18`）。
+
 ### 关键约束
 
 | 约束 | 说明 |
@@ -237,8 +239,8 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 
 | 命令 | 用途 | 面板处理 |
 |---|---|---|
-| `/rocket` 或 `/rocket plugins` | 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | 解析 stdout 展示 |
-| `/rocket info` | 显示 LDM 版本信息 | 「关于 LDM」卡片 |
+| `/rocket`（空参） | 输出版本信息 `Rocket v<版本> for Unturned v<游戏版本>` | 「关于 LDM」卡片 |
+| `/rocket plugins` | 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | 解析 stdout 展示 |
 | `/rocket load <name>` | 加载已卸载插件（子串匹配 + 大小写不敏感） | 前端按钮 + 调 PTY |
 | `/rocket unload <name>` | 卸载指定插件 | 前端按钮 + 调 PTY |
 | `/rocket reload <name>` | 重新加载指定插件（不保证成功） | 前端按钮 + 调 PTY（加警告） |

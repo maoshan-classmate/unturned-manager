@@ -129,7 +129,10 @@ export type PluginCommandRequest = z.infer<typeof PluginCommandRequestSchema>;
 export const PluginCommandResponseSchema = z.object({
   serverId: z.string(),
   pluginName: z.string(),
-  /** 终态：succ = LDM 接受；fail = LDM 拒绝（插件不存在 / 依赖缺失 / 已是目标态） */
+  /**
+   * 终态：success = **LDM 命令已接受，加载/卸载已触发**（非加载最终成功——加载成功零日志，需 /rocket plugins 复核）；
+   * failure = LDM 拒绝（插件不存在 `Plugin X not found` / 加载执行失败 `Failed to load plugin X` / 已是目标态 `already loaded`/`not loaded`）
+   */
   outcome: z.enum(['success', 'failure']),
   /** LDM stdout 末尾 ≤ 256 字（失败时给前端 toast 显示原文） */
   ldmOutput: z.string().max(256),
@@ -196,6 +199,7 @@ export interface ILdmPluginCommandsService {
    * @param serverId 实例标识
    * @param pluginName 插件名（Linux 大小写敏感，与 .dll 文件名去扩展严格一致）
    * @returns outcome + LDM stdout 末尾（≤ 256 字）
+   *   success = 命令已接受（加载已触发，非加载最终成功——成功零日志）；failure = LDM 拒绝
    * @throws AppError('server-not-running') 实例未运行
    * @throws AppError('plugin-not-found') 插件未安装
    * @throws AppError('pty-write-failed') PTY 写入失败
@@ -363,13 +367,19 @@ export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
 
 | 命令 | PTY 写入 | 期望 stdout 反应 | 期望 stdout 失败 | Phase |
 |---|---|---|---|---|
-| `/rocket load <name>\r` | 同步 | 含 `Loaded plugin <name>`（子串） | 含 `Failed to load plugin` / `Unknown plugin` | **1** |
-| `/rocket unload <name>\r` | 同步 | 含 `Unloaded plugin <name>` | 含 `Failed to unload` / `Plugin not loaded` | **1** |
-| `/rocket reload <name>\r` | 同步 | 含 `Reloaded plugin <name>` | 含 `Failed to reload` | **4**（Phase 1 不实现） |
-| `/rocket reload` | — | — | — | ❌ 钉死（不暴露） |
-| `/rocket plugins` | 同步 | 列表（用于解析 runtimeStatus） | — | **2**（Phase 1 用「最近已知状态」缓存） |
-| `/rocket info` | 同步 | 版本信息 | — | **2** |
+| `/rocket load <name>\r` | 同步 | 命中翻译键 `command_rocket_load_plugin`；已加载则 `command_rocket_already_loaded` | 插件不存在 → `command_rocket_plugin_not_found` | **1** |
+| `/rocket unload <name>\r` | 同步 | 命中 `command_rocket_unload_plugin`；未加载则 `command_rocket_not_loaded` | 插件不存在 → `command_rocket_plugin_not_found` | **1** |
+| `/rocket reload <name>\r` | 同步 | 命中 `command_rocket_reload_plugin`（要求已 Loaded） | 未加载 → `command_rocket_not_loaded` | **4**（Phase 1 不实现） |
+| `/rocket reload` | — | — | 输出 `command_rocket_reload_disabled` + 引用 Issue #1794 | ❌ 钉死（不暴露） |
+| `/rocket plugins` | 同步 | 4 行分组输出（`command_rocket_plugins_loaded/unloaded/failure/cancelled`）→ 解析 runtimeStatus | — | **2**（Phase 1 用「最近已知状态」缓存） |
+| `/rocket`（**空参**，不是 `/rocket info`） | 同步 | 输出版本行 `Rocket v<版本> for Unturned v<游戏版本>` | — | **2** |
 | `/modules` | 同步 | 验证 Rocket.Unturned 加载 | — | **2** |
+
+> ⚠️ **命令输出真源**（2026-08-12 源码核对，`CommandRocket.cs:53-127` + `U.cs:93-118/151/200`）：
+> - **`/rocket info` 命令不存在**——版本信息靠**空参 `/rocket`** 输出（`CommandRocket.cs:53` `"Rocket v" + AssemblyVersion + " for Unturned v" + Provider.APP_VERSION`）。之前文档假设 `/rocket info` 有误。
+> - **锚点 = `U.cs:93-118` `defaultTranslations` 内嵌英文默认值**（永远存在，不依赖翻译文件）：`command_rocket_load_plugin`="Loading {0}" / `command_rocket_unload_plugin`="Unloading {0}" / `command_rocket_reload_plugin`="Reloading {0}" / `command_rocket_plugin_not_found`="Plugin {0} not found" / `command_rocket_already_loaded`="The plugin {0} is already loaded" / `command_rocket_not_loaded`="The plugin {0} is not loaded" / `command_rocket_reload_disabled`="Please reload individual plugins instead" / plugins 四态="Loaded: {0}"等（共 11 键）。翻译文件（`Rocket.Unturned.<lang>.translation.xml`）只是**覆盖**这些默认值（`U.cs:181` `AddUnknownEntries` 补缺）——若用户装了其他语言翻译，输出是本地化值，面板**优先读翻译文件、回退 U.cs 默认值**。
+> - **`command_rocket_load_plugin` 是「命令接受」提示，非「加载成功」**：`CommandRocket.cs:114-115` **先 `Say` 再执行** `p.LoadPlugin()`。加载执行失败输出 `RocketPlugin.cs:132` `"Failed to load X, unloading now..."`（主要路径，`LogError`）/ `U.cs:200` `"Failed to load plugin X."`（次要路径，组件挂载抛错）——但**时序上 "Loading X" 先于任何失败行**，Phase 1 不设观察窗口，异步成败归 Phase 2 F1 `/rocket plugins` 复核。
+> - **输出链路**：从控制台执行时走 `UnturnedChat.cs:111` `Logger.Log` → 控制台 stdout（PTY 可读）+ Rocket.log；**不是**游戏聊天频道。Logger 对 Rocket 程序集自身会清空前缀（`Logger.cs:34`），stdout 精确前缀格式**待真机核对**。
 
 ### 4.2 写入 + 响应等待状态机
 
@@ -461,8 +471,8 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
 
   /**
    * 订阅 PTY stdout 流，匹配 LDM 响应行。
-   * 用 stdout buffer + 正则匹配「Loaded plugin X」「Failed to load plugin X」等。
-   * 失败信号以 stderr 出现时也需要捕获。
+   * 锚点 = U.cs defaultTranslations 内嵌英文默认值（永远存在）；
+   * 若 Servers/<id>/Rocket/Rocket.Unturned.<lang>.translation.xml 存在则读文件覆盖。
    */
   private async waitForLdmReply(
     serverId: ServerId,
@@ -470,10 +480,22 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
     pluginName: string,
   ): Promise<{ outcome: 'success' | 'failure'; ldmOutput: string }> {
     // ...实现见 PtyManager 的 stdout 监听模式（与现有 applyModChanges 同款）...
-    // 简版伪代码：
-    const successRegex = new RegExp(`(Loaded|Unloaded|Reloaded) plugin [^\n]*${pluginName}[^\n]*`);
-    const failureRegex = new RegExp(`(Failed to ${verb}|Unknown plugin|Plugin not loaded)[^\n]*`);
-    // 10s 内 stdout 命中 successRegex → success；命中 failureRegex → failure；超时 → pty-timeout
+    const t = await this.readLdmTranslations(serverId); // 翻译文件存在 → 读键值；缺失 → U.cs 默认值
+    // 锚值（默认英文，U.cs:93-118；文件覆盖后替换）：
+    //   load 锚   = t['command_rocket_load_plugin']   // "Loading {0}" —— 命令已接受，非加载成功
+    //   unload 锚 = t['command_rocket_unload_plugin'] // "Unloading {0}"
+    //   failure 锚 = **仅同步拒绝**（CommandRocket 直接输出，未进入 LoadPlugin）：
+    //     t['command_rocket_plugin_not_found']        // "Plugin {0} not found"（插件不存在）
+    //   + t['command_rocket_already_loaded'] / t['command_rocket_not_loaded']（状态不符）
+    // ⚠️ **异步加载成败不在 Phase 1 判定**：加载执行失败输出
+    //    `RocketPlugin.cs:132` "Failed to load X, unloading now..." / `U.cs:200` "Failed to load plugin X."
+    //    ——但时序上 "Loading X"（CommandRocket.cs:114）**先于**任何失败行，Phase 1 不设观察窗口；
+    //    异步成败归 Phase 2 F1 `/rocket plugins` 状态复核。
+    // 判定：
+    //   stdout 命中 verb 锚 → outcome='success'（语义 = **命令已接受，加载已触发**，非加载最终成功）；
+    //   命中 failure 锚 → outcome='failure'；10s 超时 → pty-timeout
+    // ⚠️ Phase 1 的 success 只到「命令已接受」——加载是否真成功无法从 stdout 判定（成功零日志），
+    //    需后续 /rocket plugins 状态复核（F1 计划）；Sprint 5 真机核对锚值格式
   }
 }
 ```
@@ -484,11 +506,12 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
 |---|---|---|
 | 1 | 实例 STOPPED → loadPlugin | 抛 `server-not-running` |
 | 2 | 插件未装 → loadPlugin | 抛 `plugin-not-found` |
-| 3 | 实例 RUNNING + 插件已装 → PTY 写成功 + stdout 命中 Loaded | 返回 `outcome=success` |
-| 4 | 实例 RUNNING + PTY 写成功 + stdout 命中 Failed | 返回 `outcome=failure` + ldmOutput 原文 |
-| 5 | 实例 RUNNING + PTY 写成功 + 10s 超时 | 抛 `pty-timeout` |
-| 6 | 同 server 并发 loadPlugin 两次 | 第二次抛 `operation-conflict` |
-| 7 | 不同 server 并发 loadPlugin | 两条都正常执行（互斥锁按 server 维度） |
+| 3 | 实例 RUNNING + 插件已装 + stdout 命中 load 锚（"Loading {0}"，默认英文或翻译值） | 返回 `outcome=success`（语义 = 命令已接受，非加载最终成功） |
+| 4 | 实例 RUNNING + PTY 写成功 + stdout 命中同步拒绝锚（`command_rocket_plugin_not_found` / `already_loaded` / `not_loaded`） | 返回 `outcome=failure` + ldmOutput 原文 |
+| 5 | 翻译文件缺失（`Rocket.Unturned.en.translation.xml` 不存在） | **仍可用 U.cs 内嵌英文默认值匹配**（`U.cs:93-118` 永远存在）——不降级 unknown |
+| 6 | 实例 RUNNING + PTY 写成功 + 10s 超时 | 抛 `pty-timeout` |
+| 7 | 同 server 并发 loadPlugin 两次 | 第二次抛 `operation-conflict` |
+| 8 | 不同 server 并发 loadPlugin | 两条都正常执行（互斥锁按 server 维度） |
 
 ### 4.5 错误码汇总（`shared/types/errors.ts` 增量）
 
@@ -834,7 +857,7 @@ runtimeStatus: 内存缓存 → 「实例 RUNNING 时上次 /rocket plugins 解�
 | `<PluginCard>` | 新建 | 单插件卡片（满足 ≥ 3 次重复原则前先放页面内） |
 | `<UploadPluginDialog>` | 复用 `FilesUpload` 模式 | Files API 已支持多文件上传 |
 | `<CommunityPluginDrawer>` | 新建 | 抽屉 + 列表，点击外链 |
-| `<RuntimeStatusBadge>` | 新建 | 4 色徽章：loaded（绿）/ unloaded（灰）/ failure（红）/ unknown（黄） |
+| `<RuntimeStatusBadge>` | 新建 | 5 色徽章：loaded（绿）/ unloaded（灰）/ failure（红）/ cancelled（橙）/ unknown（黄） |
 | `<ConfirmDialog>` | 复用 `confirm-dialog.tsx` | 删除 .dll 前确认 |
 | `<Tooltip>` | 复用 shadcn/ui | 版本号显示「未知」悬浮解释 |
 
@@ -1093,7 +1116,7 @@ THEN  列表操作按钮可点 + 状态徽章变更
 |---|---|---|
 | PE 解析写错——读错字段返回乱字符串 | 单测覆盖真 .dll fixture；CI 每次跑全 6 用例 | 入口统一 `LdmAssemblyVersionReader`，版本号返回 `null` 不影响主功能 |
 | LDM-Community 上游改格式 | 解析失败 → 静默 fallback + stale 缓存 | 旧格式保留 30 天兜底 |
-| PTY stdout 串扰（前端控制台同时打其他命令） | successRegex / failureRegex 用 pluginName 锚定 | 失败概率极低；timeout 兜底 |
+| PTY stdout 串扰（前端控制台同时打其他命令） | success 锚 / failure 锚用 pluginName 锚定 | 失败概率极低；timeout 兜底 |
 | `/rocket load <name>` 子串匹配歧义 | pluginName 走 Zod 校验 `[A-Za-z0-9._-]+`；Linux 大小写校验 | 失败 → outcome=failure + ldmOutput 兜底 |
 | race：同 server load + unload 同时 | inFlight 互斥锁 | 第二次抛 operation-conflict |
 | PE 解析 OOM（恶意大文件） | MAX_FILE_SIZE = 100MB | 超限返回 null |

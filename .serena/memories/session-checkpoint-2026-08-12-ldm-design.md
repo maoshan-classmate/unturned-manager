@@ -1,0 +1,6 @@
+LDM Mod 框架接入设计已落档（commit 8270848，2026-08-12）：
+- 设计文档 `docs/architecture/ldm-integration-design.md` + 决策 `docs/adr/0006-ldm-framework-integration.md` + `claudedocs/reference_config_files.md` §3-5（Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml 字段表）+ `.claude/rules/unturned-sop.md` LDM 章节 + `reference_ui_terms.md`「LDM → Mod 框架」对照。
+- 关键调研结论（推翻旧假设）：LDM 插件**不上 Steam Workshop**（Workshop Asset Type 无 Plugin 类），走 GitHub Releases + LDM-Community 列表，插件 .dll 在 `Plugins/<Name>.dll`（根目录），配置在 `Plugins/<Name>/<Name>.configuration.xml`；插件启停走 PTY 命令 `/rocket load/unload <name>`（**可不停服**），Rocket.config.xml **无 PluginMapping 节点**；`Rocket.Unturned.config.xml` 是独立文件（真源 UnturnedSettings.cs，9 字段）；全局 `/rocket reload` 已禁用。
+- 接入边界：面板管「配置（3 个 XML + 各插件配置原子写）+ 启停（PTY 命令）+ 插件来源（LDM-Community 列表本地缓存 + .dll 上传）」；不自动装 LDM（Extras→Modules 引导式）、不自动下载 .dll、不做热重载、不做兼容性矩阵。
+- 模块命名空间 `manager-server/src/modules/ldm/`：LdmDiscoveryService / LdmConfigWriter / LdmApplyService / LdmPluginSourceService / LdmPluginCommandsService / RocketConfigXmlParser。API 挂 `/api/servers/:id/ldm/*` + `GET /api/ldm/community-plugins`。前端 `<LdmPage>` 4 Tab（已装插件 / 框架配置 / 权限组 / 插件来源）。
+- 关联：[[session-checkpoint-2026-08-12-ldm-framework]]（选型定死）。实施阶段 Phase A-F 见设计文档 §11，其中 .dll 版本号读取方式（项 5）在 Phase B 实施时定。

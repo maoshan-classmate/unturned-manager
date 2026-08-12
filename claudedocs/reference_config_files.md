@@ -123,6 +123,7 @@
 **格式**：XML（XmlSerializer，C# 类 `RocketSettings.cs`，XML 根元素 `<RocketConfiguration>`）
 **生成**：**首次启动 U3DS 自动生成**——**不可手写预创建**（[gameserverkings.com](https://www.gameserverkings.com/knowledge-base/unturned/how-to-install-rocketmod-plugins-for-unturned) 警告）
 **真源**：[`Rocket/Rocket.Core/Serialization/RocketSettings.cs`](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile) + [wasabihosting.com](https://docs.wasabihosting.com/games/unturned/server-configuration)
+**版本核对（2026-08-12）**：`.research/Legally-Distinct-Missile`（master `c5f8062`）与游戏自带 `Extras/Rocket.Unturned`（`Rocket.API/Core=4.9.3.16` + `Rocket.Unturned=4.9.3.18`）的 schema 字段**零差异**（git diff v4.9.3.15/18 vs master 验证）——本字段表对实际运行版本成立
 **生效**：改后需 PTY 终端 `Save` + `Shutdown 10` 重启（**无官方热重载**——U3-SDK Issue #1794）
 
 ### 3.1 顶层字段
@@ -178,7 +179,10 @@
 **格式**：XML（XmlSerializer，C# 类 `UnturnedSettings.cs`）
 **生成**：首次启动 U3DS 自动生成（与 Rocket.config.xml 同时）
 **真源**：[`Rocket/Rocket.Unturned/Serialisation/UnturnedSettings.cs`](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile)
+**版本核对（2026-08-12）**：与游戏 Extras 实际版本零差异（同 §3）
 **生效**：改后需重启
+
+> ⚠️ **不暴露字段**：`RocketModObservatory` 子组（`CommunityBans` / `KickLimitedAccounts` / `KickTooYoungAccounts` / `MinimumAge`）属于已废弃功能——仅 `CommunityBans` 字段（`UnturnedSettings.cs:20`）带 `[Obsolete("Observatory is no longer maintained.")]` 注解（`RocketModObservatorySettings` 类本身无标注）。**面板不提供编辑**，避免引导用户配置已废弃功能。
 
 | XML 元素 | 类型 | 默认 | 含义 | SDK 真源 | Web UI 控件 |
 |---|---|---|---|---|---|

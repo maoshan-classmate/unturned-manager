@@ -4,7 +4,8 @@
 > **承接**：CLAUDE.md §1（钉死 LDM）+ ADR-0003 B2 目录扫描真源 + ADR-0004 PTY 终端 owner-trust
 > **驱动源**：用户 2026-08-12 诉求「LDM Mod 框架暂未实现，需要接入」
 > **关系**：`mod-management-design.md` v2.5（Steam Workshop 资源包）— 本文档**平行但独立**，不修改资源包链路
-> **核心参考**：LDM 仓库 https://github.com/SmartlyDressedGames/Legally-Distinct-Missile
+> **核心参考**：LDM 仓库 https://github.com/SmartlyDressedGames/Legally-Distinct-Missile + 本地只读源码 `.research/Legally-Distinct-Missile`（master `c5f8062`，2025-10-23）
+> **源码版本核对（2026-08-12）**：本地 master 源码与游戏自带 `Extras/Rocket.Unturned/`（`Rocket.API/Core.dll=4.9.3.16` + `Rocket.Unturned.dll=4.9.3.18`）的 schema 字段 + `/rocket` 命令行为**零差异**（git diff v4.9.3.15/18 vs master 验证）——本设计文档所有真源引用对实际运行版本成立
 
 ---
 
@@ -248,9 +249,8 @@
 
 | 命令 | 用途 | 权限 | 面板处理 | 状态 |
 |---|---|---|---|---|
-| `/rocket` | 别名 `/rocket plugins` —— 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | — | 解析 stdout 展示 | ✅ 可用 |
-| `/rocket plugins` | 按状态分组列出所有插件 | `rocket.plugins` | 同上 | ✅ 可用 |
-| `/rocket info` | 显示 LDM 版本信息 | `rocket.info` | 前端「关于 LDM」弹窗 | ✅ 可用 |
+| `/rocket`（空参） | **输出版本信息** `Rocket v<版本> for Unturned v<游戏版本>`（**不是** plugins 别名） | `rocket.info` | 前端「关于 LDM」弹窗 | ✅ 可用 |
+| `/rocket plugins` | 按状态分组列出所有插件（Loaded/Unloaded/Failure/Cancelled 4 行） | `rocket.plugins` | 解析 stdout 展示 | ✅ 可用 |
 | `/rocket load <plugin>` | 加载已卸载插件（**子串匹配 + 大小写不敏感**：`pl.Name.ToLower().Contains(command[1].ToLower())`） | `rocket.loadplugin` | 前端按钮 + 调 PTY | ✅ 可用 |
 | `/rocket unload <plugin>` | 卸载指定插件 | `rocket.unloadplugin` | 前端按钮 + 调 PTY | ✅ 可用 |
 | `/rocket reload <plugin>` | 重新加载指定插件 | `rocket.reloadplugin` | 前端按钮 + 调 PTY（**不保证成功**） | ⚠️ 不承诺 |
@@ -286,7 +286,7 @@
 | **Permissions.config.xml 树形编辑** | ✅ 做 | Groups / Members / Permissions / Color / ParentGroup / Priority 全字段结构化 |
 | **LDM 插件来源浏览** | ⚠️ 外链 + 列表展示 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览。<br>**双源融合**（2026-08-12 用户拍板）：LDM-Community 上游**无公开 JSON API**（静态 HTML 主页），**Phase 1 走 HTML 解析 + GitHub API 批量补充**——HTML 解析拿 `slug` / `name` / `author` / `description` / `repoUrl`；GitHub API 拿 `tag_name`（`latestVersion`）+ `pushed_at`（`updatedAtIso`）。**GitHub PAT 配置位置在 LdmPage「插件来源」Tab 顶部**（不是 SettingsPage）。详细规格见 `claudedocs/workflow_sprint5_ldm_phase1.md` §5 + 调研报告 `claudedocs/research_ldm_community_source_2026-08-12.md` |
 | **改 LDM 配置生效方式** | ✅ PTY 终端 owner-trust 重启流水线 | `Say "保存 LDM 变更"` + `Save` + `Shutdown 10 "LDM 变更重启"` → spawn 新进程；**不调 `/rocket reload` 全局**（Issue #1794 + prohibitions 钉死） |
-| **日志观察 LDM 启动加载/错误** | ✅ 复用现有 PTY 控制台 | U3DS stdout 已含 `[LDM] Loaded plugin X.Y.Z` / `[LDM] Plugin X error: ...`；前端 xterm.js 已实时渲染 |
+| **日志观察 LDM 启动加载/错误** | ✅ 复用现有 PTY 控制台 | 真源锚点（2026-08-12 源码核对）：模块启动 banner = `CommandWindow.Log("Rocket Unturned v... for Unturned v...")`（`U.cs:151`）；插件加载失败日志 = `RocketPlugin.cs:132` `Logger.LogError("Failed to load X, unloading now...")`（主要路径）+ `U.cs:200` `Logger.LogException(ex, "Failed to load plugin X.")`（次要路径）；**插件加载成功无 stdout 行**——不存在 `[LDM] Loaded plugin X.Y.Z`（该字符串无源码）。前端 xterm.js 实时渲染 |
 | **`/rocket` 命令输出解析**（插件状态列表） | ✅ 做 | 解析 `Loaded` / `Unloaded` / `Failure` / `Cancelled` 4 状态 |
 | **Linux 大小写校验**（上传 .dll） | ✅ 做 | Web 上传时校验 .dll 文件名合法 + 提示配置目录名大小写（.dll 在 `Plugins/` 根目录；配置目录 `Plugins/<Name>/` 由框架首次加载自动创建，目录名须与 .dll 同名） |
 
@@ -1065,7 +1065,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | **接口契约** | ajv 加在所有 API 边界（§6.1 的 9 个 ldm REST 端点 + 复用 files 上传） |
 
 **完成定义**：
-- [ ] U3DS 启动后 stdout 命中 `Loaded plugin X.Y.Z` 在控制台可见
+- [ ] U3DS 启动后 stdout 可见 `Rocket Unturned v... for Unturned v...` banner（`U.cs:151`）——插件加载成功无独立 stdout 行，加载失败可见 `Failed to load plugin X.`（`U.cs:200`）
 - [ ] 改配置 → 重启 → 新插件生效（PTY 终端 owner-trust 链路）
 - [ ] 单实例改 LDM 不影响其他实例
 - [ ] 没引入 `any`
@@ -1101,8 +1101,8 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | C3 | 通配符权限（`rocket.*`、`*`） | LDM `Rocket.Core/Permissions/PermissionSet.cs` | ✅ | 面板只展示不展开匹配计算 |
 | C4 | 权限 Cooldown（按 Permission 元素 `Cooldown="<minutes>"`） | LDM `Permission` 元素属性 | ✅ | 写入字段表新增 Cooldown；UI 数字控件 |
 | **D. 控制台命令（PTY 唯一通道）** | | | | |
-| D1 | `/rocket` / `/rocket plugins` 列出已加载插件 | LDM `Rocket.Unturned/Commands/CommandRocket.cs` | ✅ | 解析 stdout（Loaded/Unloaded/Failure/Cancelled 分组） |
-| D2 | `/rocket info` LDM 版本信息 | 同上 | ✅ | 前端「关于 LDM」卡片 |
+| D1 | `/rocket plugins` 列出已加载插件 | LDM `Rocket.Unturned/Commands/CommandRocket.cs` | ✅ | 解析 stdout（Loaded/Unloaded/Failure/Cancelled 分组） |
+| D2 | LDM 版本信息（**空参 `/rocket`**，非 `/rocket info`——后者不存在） | 同上 | ✅ | 前端「关于 LDM」卡片 |
 | D3 | `/modules` 验证 Rocket.Unturned 模块加载状态 | U3DS 原生命令 | ✅ | 「LDM 状态」卡片 |
 | D4 | `/p reload` 重载 `Permissions.config.xml` | LDM 命令 | ✅ | 不需重启服务端 |
 | D5 | 其余 U3DS 原生命令（`Save` / `Shutdown` / `Say` 等） | U3DS `Provider.cs` | ✅ 复用 | 已被 ADR-0004 Phase 3 终端 owner-trust 模型覆盖 |
@@ -1112,7 +1112,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | **F. 信息查询 / 运行时状态** | | | | |
 | F1 | 插件运行时加载状态（已加载 / 已卸载 / 失败 / 取消） | `/rocket plugins` stdout | ✅ | 解析后挂在「已装插件」卡片 |
 | F2 | 插件 .dll 版本号 | `pe-library` PE 元数据 + `AssemblyVersionAttribute` | ✅ | ECMA-335 Partition II §22 真源；零依赖 |
-| F3 | LDM 主框架版本（`/rocket info`） | stdout 解析 | ✅ | 显示在「关于 LDM」卡片 |
+| F3 | LDM 主框架版本（空参 `/rocket`） | stdout 解析 | ✅ | 显示在「关于 LDM」卡片 |
 | F4 | 各插件兼容 U3DS 版本信息 | 插件仓库 README / GitHub Releases | ⚠️ 只展示不验证 | 不接管兼容性矩阵（每 LDM × 每插件 × 每 U3DS = O(n³)，维护成本无限） |
 | **G. 插件来源 / 生态** | | | | |
 | G1 | LDM-Community 公开插件列表 | https://ldm-community.github.io/pluginlist | ✅ | 进程内缓存 5min（与 mod 浏览同模式） |
@@ -1201,7 +1201,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 维度 | 内容 |
 |---|---|
-| **能力** | A1（A1）/ A2（A2）/ A3（A3）/ A4（plugin config 通用 XML）/ C1–C4（A3 扩展）+ B2（`Libraries/` 上传）+ D2（`/rocket info`）+ D3（`/modules`）+ D4（`/p reload`）+ H1（`Rocket/Logs/` tail） |
+| **能力** | A1（A1）/ A2（A2）/ A3（A3）/ A4（plugin config 通用 XML）/ C1–C4（A3 扩展）+ B2（`Libraries/` 上传）+ D2（空参 `/rocket` 版本信息）+ D3（`/modules`）+ D4（`/p reload`）+ H1（`Rocket/Logs/` tail） |
 | **端点** | + 6 端点 = **10 端点**：<br>`GET /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/rocket-config`<br>`PUT /api/servers/:id/ldm/permissions-config`<br>`POST /api/servers/:id/ldm/apply`<br>`WS ldm_apply_progress` |
 | **前端** | `<LdmPage>` 4 Tab 齐：<br>① 已装插件（继承 Phase 1）<br>② 框架配置（双卡片 Rocket.config.xml + Rocket.Unturned.config.xml 结构化字段编辑器 + XML 高级视图切换）<br>③ 权限组（Permissions.config.xml 树形编辑器：Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown）<br>④ 插件配置（每个插件 → Monaco XML 编辑器对话框） |
 | **后端模块** | + `LdmConfigWriter`（3 XML 原子写 + 备份 + 回滚） / `RocketConfigXmlParser`（自写保留注释/属性顺序/CDATA） / `LdmApplyService`（薄业务层）+ **`ServerManager.applyChangesCore` 抽出**（与 `applyModChanges` 共用，预留 modpack_apply 第三处） |

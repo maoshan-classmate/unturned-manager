@@ -74,7 +74,7 @@
 | 插件 Configuration.xml 编辑 | ✅ | 通用 Monaco XML 编辑器（原文写 + 实时校验；不解析字段） |
 | LDM 插件来源浏览 | ⚠️ 外链 + 列表展示 | 外链 [LDM-Community](https://ldm-community.github.io/pluginlist) + 面板本地缓存公开数据 |
 | LDM 日志观察 | ✅ | 复用现有 PTY 控制台（xterm.js 已实时渲染 U3DS stdout） |
-| `/rocket info` 版本信息 | ✅ | 前端「关于 LDM」卡片 |
+| 空参 `/rocket` 版本信息 | ✅ | 前端「关于 LDM」卡片（**无 `/rocket info` 命令**——2026-08-12 源码核对） |
 | `/modules` U3DS 原生命令验证 | ✅ | 验证 Rocket.Unturned 模块加载状态 |
 | LDM 全局 `/rocket reload` | ❌ | U3-SDK Issue #1794 + LDM 官方已删 + prohibitions 钉死（提示"Please reload individual plugins instead"） |
 | LDM 插件 `/rocket reload <name>` | ⚠️ 暴露 + 加警告 | 不保证成功（社区已知会破坏插件状态） |
@@ -199,11 +199,11 @@ WS     ldm_apply_progress                     → 重启进度事件
 | # | 待填项 | 已填内容 | 真源 |
 |---|---|---|---|
 | 1 | Rocket.config.xml 字段表 | 16 字段（LanguageCode / MaxFrames / RCON 7 子字段 / AutomaticShutdown / WebPermissions / WebConfigurations）；删 Economy/Instance/Logging 系列（老 RocketMod 残留） | LDM 仓 `Rocket/Rocket.Core/Serialization/RocketSettings.cs` |
-| 2 | LDM 控制台命令 | 13 命令（`/rocket` `/rocket plugins` `/rocket info` `/rocket load/unload/reload` `/modules` `/p reload` 等） | LDM 仓 `Rocket.Unturned/Commands/CommandRocket.cs` |
+| 2 | LDM 控制台命令 | 12 命令（`/rocket`(空参=版本) `/rocket plugins` `/rocket load/unload/reload <p>` `/modules` `/p reload` 等；**无 `/rocket info`**——版本=空参 `/rocket`） | LDM 仓 `Rocket.Unturned/Commands/CommandRocket.cs` |
 | 3 | LDM Steam Workshop | **不上**——走 GitHub Releases + LDM-Community | 实测 Steam Workshop Asset Type 无 Plugin 类 |
 | 4 | Configuration.xml schema | **无统一标准**——通用 Monaco XML 编辑器 | LDM 仓 `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate = "{0}.configuration.xml"` |
 | 5 | .dll 版本号读取 | 已定 → `pe-library@^2.0.1` PE 元数据 | U3-SDK `ModuleConfig.cs` 65 行 + ECMA-335 §22 |
-| 6 | LDM 启动日志格式 | U3DS stdout 含 `[LDM] Loaded plugin X.Y.Z`；前端 xterm.js 已实时渲染，无需特殊解析 | LDM 仓 `Module.cs:249` |
+| 6 | LDM 启动日志格式 | 模块启动 banner = `Rocket Unturned v... for Unturned v...`（`U.cs:151`）；插件加载失败 = `Failed to load X, unloading now...`（`RocketPlugin.cs:132`，主要路径）+ `Failed to load plugin X.`（`U.cs:200`，次要路径）；**加载成功无 stdout 行**（不存在 `[LDM] Loaded plugin X.Y.Z`——2026-08-12 源码核对，旧 `Module.cs:249` 引证作废） | LDM 仓 `Rocket.Unturned/U.cs:151/200` + `Rocket.Core/Plugins/RocketPlugin.cs:132` |
 | 1b | Rocket.Unturned.config.xml | 设计文档 §2.4b（AutomaticSave / CharacterNameValidation / LogSuspiciousPlayerMovement / Item/Vehicle Blacklist 9 字段） | `Rocket.Unturned/Serialisation/UnturnedSettings.cs` |
 | 7 | 多实例隔离 | 设计文档 §8 + §11.1 E1–E2（`Environment.cs` 源码铁证） | `Rocket.Core/Environment.cs` |
 
