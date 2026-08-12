@@ -95,7 +95,21 @@
 | GET | `/status` | `SteamCmdManager.getStatus` | — | `ServerSetupPage` SteamCMD 状态 | ⚠️ 本地路径检查，Linux 路径下恒 false |
 | POST | `/update` | `SteamCmdManager.updateU3DS` | ❌ 仅 typeof | `ServerSetupPage`「更新 U3DS」 | ❌ 不 spawn 但返回 202（撒谎） |
 
-### 2.9 WebSocket `/ws`
+### 2.9 LDM Mod 框架 Phase 1（2026-08-13 落地）
+
+| 方法 | 路径 | 现状 | 说明 |
+|---|---|---|---|
+| GET | `/api/servers/:id/ldm/installed` | ✅ Phase 1 | 列已装插件（LDM 激活检测 + 插件目录扫描 + PE 元数据） |
+| POST | `/api/servers/:id/ldm/load-plugin` | ✅ Phase 1 | PTY 写 `/rocket load <name>`，10s 超时 |
+| POST | `/api/servers/:id/ldm/unload-plugin` | ✅ Phase 1 | PTY 写 `/rocket unload <name>`，10s 超时 |
+| GET | `/api/ldm/community-plugins` | ✅ Phase 1 | LDM-Community 列表 + GitHub 元数据补全，5min 缓存 |
+| POST | `/api/ldm/community-plugins/test-pat` | ✅ Phase 1 | 测试 GitHub PAT（X-Github-Pat header 传入） |
+
+**真实数据形态**：`InstalledPlugin` 6 字段（name/version/sizeBytes/hasConfig/modifiedAtIso/runtimeStatus）；runtimeStatus 5 值（loaded/unloaded/failure/cancelled/unknown）；`CommunityPlugin` 7 字段（slug/name/author/description/repoUrl/latestVersion/updatedAtIso）。
+
+**前端入口**：左侧导航「Mod 框架」→ `/<serverId>/ldm`（LdmPage.tsx）。PAT 走 localStorage 兜底，不进后端。
+
+### 2.10 WebSocket `/ws`
 
 | 事件 | 消费方 | 现状 |
 |---|---|---|

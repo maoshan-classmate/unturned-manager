@@ -470,9 +470,57 @@ EffectUI <EffectID> / <Token>...
 
 ---
 
-## 10. Web 面板的 RCON 命令封装
+## 10. LDM Mod 框架命令（Phase 1，2026-08-13 落地）
 
-### 10.1 命令分类建议
+LDM 命令经 PTY 终端 owner-trust 通道写入（ADR-0004 Phase 6 删 RCON 后为唯一命令通道）。命令锚点见 U.cs:93-118 默认翻译。
+
+### `/rocket plugins` — 列出已加载插件
+
+按 Loaded / Unloaded / Failure / Cancelled 4 组展示当前插件运行时状态。面板解析 stdout 后写入 `InstalledPlugin.runtimeStatus`（Phase 1 暂未接，runtimeStatus 全部 = `unknown`）。
+
+### `/rocket load <name>` — 加载已卸载插件
+
+- 锚点：`Loading {name}`（U.cs:93-118 `command_rocket_load_plugin`）
+- 失败锚点：`Unable to load plugin` / `Could not find plugin` / `Unknown plugin`
+- 面板：POST `/api/servers/:id/ldm/load-plugin` → PTY 写命令 → 10s 内收响应 → outcome=`success`/`failure`
+- Linux 大小写敏感：`Plugins/Uconomy.dll` ≠ `Plugins/uconomy.dll`
+
+### `/rocket unload <name>` — 卸载已加载插件
+
+- 锚点：`Unloading {name}`
+- 失败锚点：`Unable to unload plugin` / `is not loaded`
+- 面板：POST `/api/servers/:id/ldm/unload-plugin`，同 load 协议
+
+### `/rocket reload <name>` — 重新加载指定插件（Phase 4 + 加警告）
+
+官方不保证成功（U3-SDK Issue #1794），仅单插件 reload 支持。
+
+### `/rocket reload`（全局） — **不暴露**
+
+LDM 官方已删；prohibitions.md 钉死。自动化必报 `Please reload individual plugins instead`。
+
+### `/modules` — 验证 LDM 是否加载
+
+U3DS 原生命令，输出 `Rocket.Unturned v<version>` 标识。面板「LDM 状态」卡片使用。
+
+### `/p reload` — 重新加载 `Permissions.config.xml`
+
+frontend 按钮 + PTY owner-trust（不暴露 RCON 通道）。
+
+### Phase 1 鉴权与 race
+
+| 约束 | 实现 |
+|---|---|
+| **实例必须 RUNNING** | LdmPluginCommandsService 调 ServerManager.getState，非 RUNNING → server-not-running |
+| **per-server 互斥锁** | 同 serverId 同时仅一个 load/unload 在跑，Promise 链串行 |
+| **10s 超时** | Promise.race(pollForMarker, pty.waitForMarker) |
+| **Outcome 语义** | success = LDM 命令已接受（加载成功零日志，需 `/rocket plugins` 复核）；failure = LDM 拒绝 |
+
+---
+
+## 11. Web 面板的 RCON 命令封装
+
+### 11.1 命令分类建议
 
 | 面板功能 | 封装为 | 底层 RCON 命令 |
 |---|---|---|
@@ -509,7 +557,9 @@ EffectUI <EffectID> / <Token>...
 
 ---
 
-## 11. RCON 响应解析参考
+## 12. RCON 响应解析参考（已退役——ADR-0004 Phase 6，2026-08-11）
+
+> ⛔ **本章节仅作历史参考**。RCON 通道已整体删除（`rcon-srcds` 依赖、`RconManager` 模块、`/rcon` `/players` 路由、`PlayersPage` 全部移除）。命令统一走 **PTY 持久终端 owner-trust 模型**（LDM 命令入站 `terminal_input` 写 PTY，§10）。当前开发不要引用其中的 RCON 响应格式。
 
 ### Players 命令输出格式
 ```
