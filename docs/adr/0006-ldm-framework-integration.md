@@ -185,9 +185,16 @@ WS     ldm_apply_progress                     → 重启进度事件
 
 ---
 
-## 7. LDM 文档调研回填（已完成）
+## 7. LDM 文档调研回填（已完成 · 历史快照）
 
-`docs/architecture/ldm-integration-design.md` §12 原列 6 项待回填项（#1–#6），调研过程子任务补充 #1b（Rocket.Unturned.config.xml）与 #7（多实例隔离）共 8 项，**调研 agent 已全部完成**：
+> **本节定位**：ADR 文件附带的「调研过程快照」，记录 2026-08-12 调研 agent 完成的 8 项回填结论（#1–#6 + 子任务补充 #1b+#7）。
+> **权威内容**已迁移到 `docs/architecture/ldm-integration-design.md`：
+> - §11.1「LDM 框架全功能盘点」全表（A1–A4 / B1–B5 / C1–C4 / D1–D5 / E1–E2 / F1–F4 / G1–G5 / H1–H3 / I1–I2 / J1–J8 列出了对应真源与接入决策）
+> - §12「多期接入规划」按 Phase 1–4 切片，每期含能力清单 / 端点 / 前端组件 / 后端模块 / 验证门槛
+> - 本节保留作为「调研过程快照 + A1/A2 决策时序记录」，不替代设计文档
+> **A1/.dll 版本号读取** 后续在设计文档 §5.5 定为 `pe-library@^2.0.1` PE 元数据方案（ECMA-335 Partition II §22 真源；零依赖、不走 mono CLI；2026-08-12 用户拍板）
+
+`docs/architecture/ldm-integration-design.md` 原 §12「调研回填记录」列 8 项待回填项（#1–#6 + 子任务补充 #1b RUC.x + #7 多实例），**调研 agent 已全部完成**：
 
 | # | 待填项 | 已填内容 | 真源 |
 |---|---|---|---|
@@ -195,8 +202,10 @@ WS     ldm_apply_progress                     → 重启进度事件
 | 2 | LDM 控制台命令 | 13 命令（`/rocket` `/rocket plugins` `/rocket info` `/rocket load/unload/reload` `/modules` `/p reload` 等） | LDM 仓 `Rocket.Unturned/Commands/CommandRocket.cs` |
 | 3 | LDM Steam Workshop | **不上**——走 GitHub Releases + LDM-Community | 实测 Steam Workshop Asset Type 无 Plugin 类 |
 | 4 | Configuration.xml schema | **无统一标准**——通用 Monaco XML 编辑器 | LDM 仓 `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate = "{0}.configuration.xml"` |
-| 5 | .dll 版本号读取 | 待 Phase B 实施定（mono 调 / 读 AssemblyInfo） | U3-SDK `ModuleConfig.cs` 65 行有 `Version` 字段 |
+| 5 | .dll 版本号读取 | 已定 → `pe-library@^2.0.1` PE 元数据 | U3-SDK `ModuleConfig.cs` 65 行 + ECMA-335 §22 |
 | 6 | LDM 启动日志格式 | U3DS stdout 含 `[LDM] Loaded plugin X.Y.Z`；前端 xterm.js 已实时渲染，无需特殊解析 | LDM 仓 `Module.cs:249` |
+| 1b | Rocket.Unturned.config.xml | 设计文档 §2.4b（AutomaticSave / CharacterNameValidation / LogSuspiciousPlayerMovement / Item/Vehicle Blacklist 9 字段） | `Rocket.Unturned/Serialisation/UnturnedSettings.cs` |
+| 7 | 多实例隔离 | 设计文档 §8 + §11.1 E1–E2（`Environment.cs` 源码铁证） | `Rocket.Core/Environment.cs` |
 
 **调研未填项**（不阻塞）：
 - `RocketConfiguration.cs` 类名是子任务纠错过的 → 实际类名 `RocketSettings.cs`（XML 根元素仍是 `<RocketConfiguration>`）

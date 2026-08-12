@@ -1065,88 +1065,210 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 - [ ] 没引入 `any`
 - [ ] `.research/U3-SDK` 未动
 - [ ] `unturned-sop.md` / `prohibitions.md` / `reference_ui_terms.md` / `reference_config_files.md §3` 同步更新
-- [ ] §12 调研回填已完成（8 项，含子任务补充 #1b/#7，2026-08-12）；A1/A2 用户拍板后无遗留
+- [ ] §11「LDM 框架全功能盘点」(35 项) + §12「多期接入规划」（4 期切片）已与 ADR-0006 §7 + `reference_config_files.md §3-5` 同步
 
 ---
 
-## 11. 实施阶段（按生产质量全量交付）
+## 11. LDM 框架全功能盘点
 
-### Phase A：基础设施（共享类型）
+> **盘点对象**：LDM 框架本身的全部可观测能力 + 周边生态，按面板可接入 / 不可接入 / 不该接入三档分类。
+> 这是后续多期接入规划的「总目录」——每期从这张表里挑能力，§12 给出切分理由与依赖关系。
 
-| # | 任务 | 产出 |
+### 11.1 框架能力总表
+
+| 维度 | 子能力 | 真源 | 面板可接入 | 接入难点 / 拒绝理由 |
+|---|---|---|---|---|
+| **A. 配置层** | | | | |
+| A1 | `Rocket.config.xml` 结构化读写（16 字段） | LDM `Rocket.Core/Serialization/RocketSettings.cs` | ✅ | XML 解析自写（保留注释/属性顺序/CDATA） |
+| A2 | `Rocket.Unturned.config.xml` 结构化读写（9 字段） | LDM `Rocket.Unturned/Serialisation/UnturnedSettings.cs` | ✅ | 同上，独立文件但同 schema 风格 |
+| A3 | `Permissions.config.xml` 树形读写（Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown） | wasabihosting + LDM `Permissions.config.xml` 模板 | ✅ | 嵌套结构 + 通配符权限（`rocket.*`、`*`）；写入前必须备份 |
+| A4 | 各插件 `<Plugin>.configuration.xml` 通用 XML 编辑器 | LDM `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate` | ✅ | **不强解 schema**——每插件自定义，面板只做 Monaco XML 原文编辑器 |
+| **B. 插件生命周期** | | | | |
+| B1 | `Plugins/<Name>.dll` 文件级上传 / 替换 / 删除 | Files API（已存在） | ✅ | Linux 大小写校验——`.dll` 名必须与 `<Name>/` 子目录同名 |
+| B2 | `Libraries/` 共享依赖 .dll 上传 | Files API（已存在） | ✅ | 同上 |
+| B3 | 插件 `load` / `unload`（**可不停服**） | PTY `/rocket load <name>` / `/rocket unload <name>` | ✅ | stdout 解析为状态反馈；子串匹配 + 大小写不敏感 |
+| B4 | 插件 `reload`（单插件，不保证成功） | PTY `/rocket reload <name>` | ⚠️ 暴露 + 加警告 | 社区已知会破坏插件状态；前端必须弹二次确认 |
+| B5 | 全局 `rocket reload` | PTY `/rocket reload` | ❌ | U3-SDK Issue #1794 + LDM 官方已删 + prohibitions 钉死 |
+| **C. 权限系统** | | | | |
+| C1 | 权限组增删改（`default` / `vip` / `admin` 等） | `Permissions.config.xml` | ✅ | 同 A3 |
+| C2 | 组成员管理（SteamID64 → 组） | `Permissions.config.xml` `<Member>` | ✅ | 同 A3 |
+| C3 | 通配符权限（`rocket.*`、`*`） | LDM `Rocket.Core/Permissions/PermissionSet.cs` | ✅ | 面板只展示不展开匹配计算 |
+| C4 | 权限 Cooldown（按 Permission 元素 `Cooldown="<minutes>"`） | LDM `Permission` 元素属性 | ✅ | 写入字段表新增 Cooldown；UI 数字控件 |
+| **D. 控制台命令（PTY 唯一通道）** | | | | |
+| D1 | `/rocket` / `/rocket plugins` 列出已加载插件 | LDM `Rocket.Unturned/Commands/CommandRocket.cs` | ✅ | 解析 stdout（Loaded/Unloaded/Failure/Cancelled 分组） |
+| D2 | `/rocket info` LDM 版本信息 | 同上 | ✅ | 前端「关于 LDM」卡片 |
+| D3 | `/modules` 验证 Rocket.Unturned 模块加载状态 | U3DS 原生命令 | ✅ | 「LDM 状态」卡片 |
+| D4 | `/p reload` 重载 `Permissions.config.xml` | LDM 命令 | ✅ | 不需重启服务端 |
+| D5 | 其余 U3DS 原生命令（`Save` / `Shutdown` / `Say` 等） | U3DS `Provider.cs` | ✅ 复用 | 已被 ADR-0004 Phase 3 终端 owner-trust 模型覆盖 |
+| **E. 多实例隔离** | | | | |
+| E1 | `Servers/<ID>/Rocket/` 每实例独立 | LDM `Rocket.Core/Environment.cs` `RocketDirectory = "Servers/{0}/Rocket/"` | ✅ | 通过 `pathResolver` 已支持；UI 按实例聚合 |
+| E2 | `Modules/Rocket.Unturned/` 全 U3DS 共享 | LDM 仓加载逻辑 | ❌（面板层不做） | 这是 U3DS 安装期的操作，属「不自动装」决策 |
+| **F. 信息查询 / 运行时状态** | | | | |
+| F1 | 插件运行时加载状态（已加载 / 已卸载 / 失败 / 取消） | `/rocket plugins` stdout | ✅ | 解析后挂在「已装插件」卡片 |
+| F2 | 插件 .dll 版本号 | `pe-library` PE 元数据 + `AssemblyVersionAttribute` | ✅ | ECMA-335 Partition II §22 真源；零依赖 |
+| F3 | LDM 主框架版本（`/rocket info`） | stdout 解析 | ✅ | 显示在「关于 LDM」卡片 |
+| F4 | 各插件兼容 U3DS 版本信息 | 插件仓库 README / GitHub Releases | ⚠️ 只展示不验证 | 不接管兼容性矩阵（每 LDM × 每插件 × 每 U3DS = O(n³)，维护成本无限） |
+| **G. 插件来源 / 生态** | | | | |
+| G1 | LDM-Community 公开插件列表 | https://ldm-community.github.io/pluginlist | ✅ | 进程内缓存 5min（与 mod 浏览同模式） |
+| G2 | 外链到 GitHub Releases 下载页 | 列表项点击外链 | ✅ | 浏览器新标签打开，**面板不下载 .dll**（二进制风险） |
+| G3 | Web 上传 .dll | Files API（已存在） | ✅ | 见 B1 |
+| G4 | Steam Workshop 插件分发 | Steam Workshop | ❌ | Workshop Asset Type 不含 Plugin 类，实测 0 结果 |
+| G5 | 自动从 GitHub Releases 同步 .dll | GitHub API | ❌ | 二进制风险 + 编译/分发不是面板职责 |
+| **H. 日志 / 调试** | | | | |
+| H1 | `Servers/<ID>/Rocket/Logs/` 框架日志 | pino tail | ✅ | 复用现有 PTY 控制台（xterm.js 已实时渲染） |
+| H2 | 加载失败插件 stderr | stdout 实时输出 | ✅ | 同上，xterm.js 不需特殊解析 |
+| H3 | 自动故障诊断（哪个插件导致崩溃） | — | ❌ | 定位归 owner，面板只展示 |
+| **I. 主框架安装 / 升级** | | | | |
+| I1 | 主框架安装（`cp -r Extras/Rocket.Unturned Modules/`） | U3DS 安装包自带 | ⚠️ 引导式（5 步 SOP） | 决策：`decision-no-auto-install-steamcmd-u3ds.md`——不自动装 |
+| I2 | 主框架升级（U3DS 版本升级时同步 Modules/） | 同上 | ⚠️ 引导提示 | 不接管 |
+| **J. 高级能力（不做）** | | | | |
+| J1 | 插件商店 / 商业化 / Tebex 集成 | Tebex | ❌ | 钉死不接商业化；超出面板职责 |
+| J2 | 兼容性矩阵（每 LDM × 每插件 × 每 U3DS） | — | ❌ | 维护成本无限 |
+| J3 | 插件签名 / 哈希校验 | — | ❌ | 二进制风险；用户自己 GitHub 验源 |
+| J4 | 插件隔离沙箱 | — | ❌ | LDM 架构层不支持，Mono 进程同地址空间 |
+| J5 | `rocket reload` 全局重载 | PTY 命令 | ❌ | Issue #1794 + 钉死 |
+| J6 | `cvar reload` 重载所有 cvar | U3DS 原生命令 | ❌ | 无官方热重载（钉死） |
+| J7 | OpenMod 兼容层 | OpenMod | ❌ | OpenMod 2023 起停滞，已删（commit c5f2ac8） |
+| J8 | RocketMod 兼容层 | RocketMod | ❌ | RocketMod 2019-12 停维，已删（commit c5f2ac8） |
+
+### 11.2 可接入能力合计
+
+- ✅ **必须做**：A1–A4 / B1–B3 / C1–C4 / D1–D5 / E1 / F1–F3 / G1–G3 / H1–H2 / I1 = **19 项**
+- ⚠️ **加警告暴露**：B4 / I2 / F4 = **3 项**
+- ❌ **明确不做**：B5 / E2 / G4 / G5 / H3 / J1–J8 = **13 项**
+
+> 19 + 3 + 13 = **35 个盘点项**——其中 19 项是「必须做」，3 项是「暴露 + 警告」，13 项是「拒绝」（含拒绝理由）。
+
+### 11.3 与现有架构的边界对齐
+
+| 能力簇 | 接入方式 | 复用现有模块 |
 |---|---|---|
-| A1 | `shared/types/domain.ts` 加 `RocketConfig` / `RocketUnturnedConfig` / `PermissionsConfig` / `InstalledPlugin` / `LdmState` / `CommunityPlugin` 类型 | 6 类型 + JSDoc |
-| A2 | `shared/schemas/ldm.schema.ts` | 9 个 Zod schema（§6.2） |
-| A3 | `shared/contracts/ldm.ts` | 6 个接口（Discovery / ConfigWriter / Apply / PluginSource / PluginCommands / AssemblyVersionReader） |
-| A4 | `RocketConfigXmlParser.ts` 自写（保留注释/属性顺序/CDATA） | 解析/序列化 + 8 单测 |
-| A5 | `manager-server/package.json` 加 `pe-library@^2.0.1` 依赖 | 1 行 + lockfile |
+| 配置层 A1–A4 | 结构化 XML 解析 + 原子写 | `ConfigService.atomicWrite`（已存在） |
+| 插件生命周期 B1–B4 | Files API + PTY 终端 | `Files API`（已存在）+ ADR-0004 Phase 3 终端 |
+| 权限系统 C1–C4 | XML 树形编辑 | 同 A3 |
+| 控制台命令 D1–D5 | PTY stdout 解析 | ADR-0004 Phase 3 终端（已存在） |
+| 多实例隔离 E1 | `pathResolver.resolveServerPath` | 已存在 |
+| 信息查询 F1–F4 | PTY + PE 元数据 | 新增 `LdmAssemblyVersionReader`（pe-library 零依赖） |
+| 插件来源 G1–G3 | 缓存列表 + Files API | 同 mod 浏览 5min 缓存模式 |
+| 日志 H1–H2 | PTY 控制台复用 | ConsolePage（已存在） |
 
-### Phase B：核心模块
+**与 `mod-management-design.md` v2.5 的边界**：
+- 资源包（Workshop unity3d）走 SteamCMD + 应用时走 `WorkshopApplyService` → `ServerManager.applyModChanges`
+- LDM 插件（.dll）走 Files API + 应用时走 `LdmApplyService` → `ServerManager.applyChangesCore`
+- **两者共用** `ServerManager.applyChangesCore`（§5.6 抽出）——这是 backend-development.md「重复 ≥3 模块共用→新建共享」原则的预留位（当前 2 个共用方：mod_apply + ldm_apply；未来 modpack_apply 为第三处）
 
-| # | 任务 | 产出 |
-|---|---|---|
-| B1 | `LdmDiscoveryService.ts` | 4 方法 + 单测（含 LDM 未装场景） |
-| B2 | `LdmConfigWriter.ts` | 4 方法 + 单测（含写失败回滚） |
-| B3 | `ServerManager.applyChangesCore` 抽出（`applyModChanges` 变薄壳）+ `LdmApplyService.ts` | 4 单测 + 重构 ServerManager 一处 |
-| B4 | `LdmPluginCommandsService.ts` | PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态 + 单测 |
-| B5 | `LdmPluginSourceService.ts` | 拉取 LDM-Community 列表 + 本地缓存 + 单测 |
-| B6 | `LdmAssemblyVersionReader.ts` | PE 元数据解析（`pe-library`）+ 6 单测（真 .dll / 无属性 / 非 .NET / 不存在 / 损坏 / 并发） |
+---
 
-### Phase C：API 层
+## 12. 多期接入规划
 
-| # | 任务 | 产出 |
-|---|---|---|
-| C1 | `routes/ldm.ts` 新建 | 9 个 REST 端点（§6.1 #1–9）+ Zod 校验 + AppError |
-| C2 | `composition-root.ts` 注入 5 新模块 | DI 容器 |
-| C3 | WS 事件 `ldm_apply_progress` 注册 | IBroadcaster 联合类型 |
+> **规划原则**：每期交付一个**生产可用**的能力切片，前端 / 后端 / shared / 文档齐备，不留「半成品」跨期。
+> **升期触发**：本期能力全部落地 + 单测/E2E 全绿 + 至少一次实机验证，再启动下一期。
+> **依赖关系**：后一期必须等前一期落地（避免重构回滚）。同期内任务可并行。
 
-### Phase D：前端基础设施
+### 12.1 总体切片
 
-| # | 任务 | 产出 |
-|---|---|---|
-| D1 | `<LdmPage>` 新建（4 Tab） | 路由 + 页面骨架 |
-| D2 | `useLdmState(serverId)` hook | TanStack Query 包装 |
-| D3 | `lib/utils.ts` 加 `formatPluginVersion` 等小工具 | 2 工具 |
+| 期 | 主题 | 能力切片 | 端点 | 前端组件 | 后端模块 | 工作量 |
+|---|---|---|---|---|---|---|
+| **Phase 1 — MVP** | 看得到 + 启停得了 | F1 / F2 / F3 + B1 / B3 + G1 + D1 | 4 端点 | `LdmPage` 1 Tab + 上传按钮 | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天 |
+| **Phase 2 — 完整配置** | 改得了配置 | A1 / A2 / A3 / A4 / C1–C4 + B2 / D2 / D3 / D4 / H1 | +6 端点（=10） | 4 Tab 齐 | + `LdmConfigWriter` / `RocketConfigXmlParser` / `LdmApplyService` / `applyChangesCore` 抽出 | +12–15 人天 |
+| **Phase 3 — 生态接入** | 找得到 + 下载方便 | G2 / G3 + 高级 UX（I1 引导 SOP 卡片 / F4 兼容信息展示） | +2 端点（=12） | 引导卡片 + 详情链接 | 无新模块（仅前端+已有模块拼接） | +5–7 人天 |
+| **Phase 4 — 高级能力** | 已知边界的能力 | B4 单插件 reload + 插件搜索/筛选 | +2 端点（=14） | 二次确认弹窗 + 筛选 chip | `LdmPluginCommandsService` 增 reload 方法 | +3–5 人天 |
+| **合计** | — | 19 + 3 项能力 | **12 端点 + WS 1** | 1 页面 4 Tab | 6 服务模块 + 1 工具模块 | **30–39 人天** |
 
-### Phase E：前端 UI
+### 12.2 Phase 1 — MVP（10–12 人天）
 
-| # | 任务 | 产出 |
-|---|---|---|
-| E1 | `LdmPage/InstalledTab.tsx` | 列表 + 加载/卸载按钮（/rocket 命令，不停服）+ 运行状态 |
-| E2 | `LdmPage/FrameworkConfigTab.tsx` | 双卡片（Rocket.config.xml + Rocket.Unturned.config.xml）字段编辑器 + XML 高级视图 |
-| E3 | `LdmPage/PermissionsTab.tsx` | Permissions.config.xml 树形编辑器 |
-| E4 | `LdmPage/PluginConfigDialog.tsx` | 通用 XML 编辑器（`<插件名>.configuration.xml` 原文） |
-| E5 | `LdmPage/PluginSourceTab.tsx` | LDM-Community 列表 + 外链 GitHub Releases + .dll 上传 |
+**目标**：用户能看到已装插件、加载/卸载插件（不停服）、查 .dll 版本、看社区插件列表——**配置可改可不改**。
 
-### Phase F：联调与验证
-
-| # | 任务 |
+| 维度 | 内容 |
 |---|---|
-| F1 | typecheck 零错误（前后端 + shared） |
-| F2 | 单测全绿（≥ 80% 行覆盖；RocketConfigXmlParser ≥ 8 用例） |
-| F3 | E2E：加载插件（不停服）→ 改配置 → 应用 → 实例重启 → 列表刷新（mock Rocket/ 目录） |
-| F4 | 文档更新：`unturned-sop.md` 加 LDM 章节；`reference_config_files.md §3` 加 Rocket.config.xml；`reference_ui_terms.md` 加「LDM → Mod 框架」对照 |
-| F5 | 提交：4 个提交（Phase A 共享类型+依赖 / B 核心模块含 applyChangesCore 重构 / C-E API+前端 / F 验证+文档） |
+| **能力** | F1（运行时状态）+ F2（.dll 版本）+ F3（LDM 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ G1（社区列表）+ D1（`/rocket plugins` 解析） |
+| **端点** | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`<br>`GET /api/ldm/community-plugins` |
+| **前端** | `<LdmPage>` 1 Tab「已装插件」：列表（插件名 + .dll 版本 + 运行时状态 + 加载/卸载按钮 + 上传插件按钮 + 「社区列表」抽屉） |
+| **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（`pe-library` PE 元数据） / `LdmPluginSourceService`（拉取 + 5min 缓存） |
+| **不做** | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3） |
+| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 6 用例覆盖真 .dll / 无属性 / 非 .NET / 不存在 / 损坏 / 并发）；E2E「上传 .dll → 列表出现 → load → 状态变 Loaded → unload → 状态变 Unloaded」 |
 
----
+### 12.3 Phase 2 — 完整配置（+12–15 人天）
 
-## 12. 调研回填记录（已完成）
+**目标**：用户能结构化编辑 Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml + 通用 XML 编辑器写插件配置 + 改完走 PTY 终端 owner-trust 重启流水线——**配置即生效**。
 
-**2026-08-12 调研 agent（deep-research + 子任务）已完成回填**——本节由「待回填」改为「回填记录」。
+| 维度 | 内容 |
+|---|---|
+| **能力** | A1（A1）/ A2（A2）/ A3（A3）/ A4（plugin config 通用 XML）/ C1–C4（A3 扩展）+ B2（`Libraries/` 上传）+ D2（`/rocket info`）+ D3（`/modules`）+ D4（`/p reload`）+ H1（`Rocket/Logs/` tail） |
+| **端点** | + 6 端点 = **10 端点**：<br>`GET /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/rocket-config`<br>`PUT /api/servers/:id/ldm/permissions-config`<br>`POST /api/servers/:id/ldm/apply`<br>`WS ldm_apply_progress` |
+| **前端** | `<LdmPage>` 4 Tab 齐：<br>① 已装插件（继承 Phase 1）<br>② 框架配置（双卡片 Rocket.config.xml + Rocket.Unturned.config.xml 结构化字段编辑器 + XML 高级视图切换）<br>③ 权限组（Permissions.config.xml 树形编辑器：Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown）<br>④ 插件配置（每个插件 → Monaco XML 编辑器对话框） |
+| **后端模块** | + `LdmConfigWriter`（3 XML 原子写 + 备份 + 回滚） / `RocketConfigXmlParser`（自写保留注释/属性顺序/CDATA） / `LdmApplyService`（薄业务层）+ **`ServerManager.applyChangesCore` 抽出**（与 `applyModChanges` 共用，预留 modpack_apply 第三处） |
+| **依赖** | 必须 Phase 1 完成（`LdmDiscoveryService` 提供 `readState` 给 ConfigWriter 复用） |
+| **不做** | 通用 Monaco XML 编辑器（强解 schema）/ 重启流水线外的其他生效路径 |
+| **验证门槛** | typecheck 0；`RocketConfigXmlParser` 单测 ≥ 8 用例（注释保留 / 属性顺序 / CDATA / 嵌套 / 未知键保留）；`applyChangesCore` 单测 ≥ 4（mod_apply / ldm_apply 两条路径 + 重入保护）；E2E「改 Rocket.config.xml → 应用 → 实例 STOPPED→STARTING→RUNNING → 配置落盘 + stdout 含新配置生效信号」 |
 
-| # | 项 | 结论 | 真源 |
+### 12.4 Phase 3 — 生态接入（+5–7 人天）
+
+**目标**：用户能找到插件、了解它、下载它、上传它——**激活 LDM 主框架 + 全流程闭环**。
+
+| 维度 | 内容 |
+|---|---|
+| **能力** | G2（外链 GitHub Releases）+ G3（详情页跳转）+ I1（5 步 SOP 引导卡片）+ F4（兼容信息只展示） |
+| **端点** | + 2 端点 = **12 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）<br>`GET /api/ldm/community-plugins/:slug`（详情页：GitHub Releases 外链 + 最近版本） |
+| **前端** | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...）+ 「插件来源 Tab」增强（详情抽屉 + 版本时间线 + README 截断预览）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新） |
+| **后端模块** | 无新模块——纯前端 + 复用 `LdmDiscoveryService` 增 1 方法 `getLdmStatus(serverId)` |
+| **依赖** | 必须 Phase 2 完成（状态卡片依赖 Discovery 完整数据） |
+| **不做** | 自动下载 .dll / Tebex 集成 / 兼容性矩阵自动校验 |
+| **验证门槛** | typecheck 0；E2E「未装 LDM → 显示引导卡片 → 复制命令 → 模拟 cp → 状态变绿 → 列表出现空 Plugins/」；E2E「社区列表点击 → 外链跳转 GitHub Releases」 |
+
+### 12.5 Phase 4 — 高级能力（+3–5 人天）
+
+**目标**：暴露已知边界的实验性能力 + 高级 UX——**LDM 框架边界**。
+
+| 维度 | 内容 |
+|---|---|
+| **能力** | B4 单插件 reload（加警告）+ 插件搜索/筛选（按 .dll 名 / 版本 / 状态） |
+| **端点** | + 2 端点 = **14 端点**：<br>`POST /api/servers/:id/ldm/reload-plugin`（单插件 reload，弹二次确认）<br>`GET /api/servers/:id/ldm/plugins/search?q=`（按 .dll 名 / 版本前缀筛选） |
+| **前端** | 「已装插件 Tab」加 reload 按钮（弹 ConfirmDialog 警告「可能破坏插件状态」）+ 顶部 SearchInput + 状态 chip 筛选（全部 / 已加载 / 已卸载 / 加载失败） |
+| **后端模块** | `LdmPluginCommandsService` 增 `reloadPlugin(serverId, name)`（PTY `/rocket reload <name>` + 解析 reload 结果） + `LdmDiscoveryService` 增 `searchPlugins(serverId, query)` |
+| **依赖** | 必须 Phase 2 完成（reload 走 stdout 解析，需要 Phase 2 的 `LdmPluginCommandsService` 已稳定） |
+| **不做** | 全局 `rocket reload`（J5 钉死）/ `cvar reload`（J6 钉死）/ 插件沙箱（J4 LDM 不支持） |
+| **验证门槛** | typecheck 0；E2E「reload 成功 → 插件状态变 Loaded + 版本号不变」+ E2E「reload 失败 → 弹错误提示 + 状态显示 Failure」 |
+
+### 12.6 不进任何期的能力（拒绝清单）
+
+> 这些是 §11.1 的 J1–J8 / B5 / G4–G5——任何期都不接。拒绝理由固化在 `prohibitions.md` 或 ADR-0006。
+
+| 能力 | 拒绝理由 | 文档锚点 |
+|---|---|---|
+| 全局 `rocket reload` | U3-SDK Issue #1794 + LDM 官方已删 | `prohibitions.md` |
+| `cvar reload` 全局 | 无官方热重载 | `prohibitions.md` |
+| OpenMod / RocketMod 兼容 | 已停维 | commit `c5f2ac8` |
+| Tebex 集成 / 商业化 | 钉死不接商业化 | `decision-no-auto-install-steamcmd-u3ds.md` |
+| Steam Workshop 插件分发 | Workshop Asset Type 不含 Plugin | `unturned-sop.md` §LDM |
+| 自动下载 .dll / GitHub 同步 | 二进制风险 | ADR-0006 §3.1 |
+| 兼容性矩阵自动校验 | O(n³) 维护成本 | ADR-0006 §3.1 |
+| 插件签名 / 沙箱 | LDM 架构层不支持 | ADR-0006 §4 |
+
+### 12.7 升期门控
+
+每期交付后必须通过才能开下一期：
+
+| 门控 | 检查项 | 工具 |
+|---|---|---|
+| **类型检查** | `tsc --noEmit` 前后端 + shared | `pnpm run typecheck` |
+| **单测覆盖率** | 改到的文件行覆盖 ≥ 80%；`LdmAssemblyVersionReader` ≥ 6 用例；`RocketConfigXmlParser` ≥ 8 用例；`applyChangesCore` ≥ 4 用例 | `pnpm run test:cov` |
+| **E2E** | 本期主流程至少 1 用例跑通（playwright） | `pnpm run test:e2e` |
+| **实机验证** | 本期能力在 Linux 真机 U3DS 跑通 | `decision-no-auto-install-steamcmd-u3ds.md` 留待 Sprint 5 |
+| **接口契约** | ajv 加在所有新增 API 边界 | `pnpm run test:contract` |
+| **文档同步** | `unturned-sop.md` / `reference_config_files.md` / `reference_ui_terms.md` / `architecture-spec.md` §3 §5 已更新 | `doc-outdated-guard` agent |
+| **提交规范** | commit message 走 `<操作名>: <≤30 中文字符>`；本期所有提交独立可回滚 | git log 检查 |
+
+### 12.8 与 Sprint 节奏的对齐
+
+| 期 | 工作量 | 推荐 Sprint 节奏 | 前置依赖 |
 |---|---|---|---|
-| 1 | Rocket.config.xml 完整字段表 | §2.4（16 字段：LanguageCode / MaxFrames / RCON 7 子字段 / AutomaticShutdown / WebPermissions / WebConfigurations）；**删** Economy/Instance/Logging 系列（老 RocketMod 残留） | LDM 仓 `Rocket.Core/Serialization/RocketSettings.cs` |
-| 1b | Rocket.Unturned.config.xml | **子任务新发现独立文件**——§2.4b（AutomaticSave / CharacterNameValidation / LogSuspiciousPlayerMovement / Item/Vehicle Blacklist 9 字段） | `Rocket.Unturned/Serialisation/UnturnedSettings.cs` |
-| 2 | LDM 控制台命令 | §2.7（13 命令：`/rocket` `/rocket plugins` `/rocket info` `/rocket load/unload/reload` `/modules` `/p reload` 等）；全局 `/rocket reload` 已禁用 | `Rocket.Unturned/Commands/CommandRocket.cs` + U3-SDK Issue #1794 |
-| 3 | LDM Steam Workshop | **不上**——Workshop Asset Type 无 Plugin 类；走 GitHub Releases + LDM-Community | [Steam Workshop](https://steamcommunity.com/app/304930/workshop/) 实测 |
-| 4 | Configuration.xml schema | **无统一标准**——面板做通用 Monaco XML 编辑器（不解析字段） | `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate = "{0}.configuration.xml"` |
-| 5 | .dll 版本号读取方式 | ✅ **已定**（2026-08-12 用户拍板 A1）：`pe-library@^2.0.1` PE 元数据流解析 `AssemblyVersionAttribute`（ECMA-335 Partition II §22 真源）；零依赖、不走 mono CLI；详见设计文档 §5.5 | LDM 仓 `Rocket/Rocket.Core/Plugins/RocketPluginManager.cs` `Assembly.Load(File.ReadAllBytes(path))` + `AssemblyName` |
-| 6 | LDM 启动日志格式 | U3DS stdout 含 `[LDM] Loaded plugin X.Y.Z`；前端 xterm.js 已实时渲染，**无需特殊解析**（ConsolePage 已接） | LDM 仓 `Module.cs:249` |
-| 7 | 多实例隔离 | §8——`Environment.cs` 源码铁证：`RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId` | `Rocket.Core/Environment.cs` |
+| Phase 1 MVP | 10–12 人天 | 1 个 Sprint（与 Sprint 4 并行？） | 无 |
+| Phase 2 完整配置 | +12–15 人天 | 1–2 个 Sprint | Phase 1 完成 + 实机验证 |
+| Phase 3 生态接入 | +5–7 人天 | 0.5–1 个 Sprint | Phase 2 完成 |
+| Phase 4 高级能力 | +3–5 人天 | 0.5 个 Sprint | Phase 3 完成 |
 
-**遗留（不阻塞评审，不阻塞实施 PR）**：
-- **无遗留**——A1/A2 已用户拍板（2026-08-12）；A1 用 `pe-library@^2.0.1` 解析 PE 元数据、A2 抽 `LdmApplyService` 薄业务层 + `applyChangesCore` 共用方法；详见 §5.5/§5.6
+**总工期估算**：30–39 人天 ≈ **3 个 Sprint**（每个 Sprint 按 10 人天计）。Phase 2 是最大的一块（`applyChangesCore` 重构 + 三个 XML 解析 + 树形编辑器 + 重启流水线），建议拆为 Phase 2a（XML 解析 + 配置读写）与 Phase 2b（重启流水线 + UI）。
 
 ---
 
