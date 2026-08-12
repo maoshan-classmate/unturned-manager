@@ -16,8 +16,13 @@ import type {
 } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
 import { AppError } from "../../utils/AppError.js";
+import { parseVdf } from "../workshop/VdfParser.js";
 
 const execFileAsync = promisify(execFile);
+
+/** Steam 库布局常量——U3dsStatusProvider 也有，颗粒度最小暂不抽 utils */
+const STEAMAPPS_DIR = "steamapps";
+const APP_MANIFEST_PREFIX = "appmanifest_";
 
 /** execFile 注入点类型（测试替身用） */
 export type ExecFileAdapter = (
@@ -317,6 +322,49 @@ export class SteamCmdManager implements ISteamCmdManager {
     })();
 
     return jobId;
+  }
+
+  /**
+   * 读本地 U3DS 安装清单的 buildid（BUG-1 闭环：checkUpdate 本地 vs 远端对比）。
+   *
+   * 路径：`<installDir>/steamapps/appmanifest_<U3DS_APP_ID>.acf`（SDG 官方 SteamCMD
+   * +app_update 1110390 后生成的标准格式，U3dsStatusProvider 同款路径）。
+   *
+   * @param installDir - U3DS 安装根目录
+   * @returns 本地 buildid 字符串；缺失/解析失败统一返回 null，**绝不抛错**
+   *   ——checkUpdate 的本地对比是 best-effort 优化，缺失时回落"远端有值即有新版本"语义
+   */
+  private async readLocalBuildId(installDir: string): Promise<string | null> {
+    const manifestPath = path.join(
+      installDir,
+      STEAMAPPS_DIR,
+      `${APP_MANIFEST_PREFIX}${STEAM_APP_IDS.U3DS_SERVER}.acf`,
+    );
+
+    let raw: string;
+    try {
+      raw = await fs.promises.readFile(manifestPath, "utf8");
+    } catch {
+      // ENOENT = 未安装；其他 IO 异常也视作"读不到本地"——不抛，交给调用方做兜底
+      return null;
+    }
+
+    try {
+      const parsed = parseVdf(raw);
+      const rootKey = Object.keys(parsed)[0];
+      const root = rootKey ? (parsed[rootKey] as Record<string, unknown>) : undefined;
+      const buildId = root?.["buildid"];
+      if (typeof buildId === "string" && buildId.length > 0) {
+        return buildId;
+      }
+      return null;
+    } catch (err) {
+      logger.warn(
+        { err, manifestPath },
+        "SteamCmdManager.readLocalBuildId: VDF 解析失败",
+      );
+      return null;
+    }
   }
 
   /** BUG-2 修复：广播带 jobId 的进度事件（多任务并发隔离）。
@@ -729,22 +777,40 @@ export class SteamCmdManager implements ISteamCmdManager {
               { timeout: 60_000 },
             );
             const buildIdMatch = stdout.match(/buildid[\s"]+(\d+)/);
-            const nameMatch = stdout.match(/name[\s"]+([^"\n]+)/);
             const currentBuildId = buildIdMatch?.[1] ?? null;
             if (!currentBuildId) {
               lastError = new Error("app_info_print 未返回有效 buildid");
               continue;
             }
-            // 成功：广播 completed 携带 latestVersion，前端 toast 显示。
-            // review 修复：版本号取 buildid（如 "12345678"），不用 name——name 是服务名
-            // （"Unturned Dedicated Server"），显示它没有意义。
+            // BUG-1 闭环（2026-08-13）：本地 vs 远端 buildid 对比再 broadcast latestVersion。
+            // 语义契约（U3dsCard.tsx:170-172）：
+            //   - 本地 == 远端 → latestVersion = ""（falsy → 前端"已是最新"）
+            //   - 本地 ≠ 远端 → latestVersion = 远端 buildid（truthy → 前端"有新版本"）
+            //   - 本地缺失（未安装/读不到 acf）→ 维持"远端有值即有新版本可装"语义
+            //   - nameMatch 兜底删除——name 是服务名（"Unturned Dedicated Server"），
+            //     注释早已明确"显示它没有意义"，保留是死分支且会污染诊断
+            const localBuildId = installDir
+              ? await this.readLocalBuildId(installDir)
+              : null;
+            const latestVersion =
+              localBuildId !== null && localBuildId === currentBuildId
+                ? ""
+                : currentBuildId;
+            logger.info(
+              {
+                jobId,
+                remoteBuildId: currentBuildId,
+                localBuildId,
+                hasUpdate: latestVersion !== "",
+              },
+              "SteamCMD checkUpdate 对比完成",
+            );
             this.broadcaster.broadcast({
               type: "steamcmd_progress",
               jobId,
               stage: "completed",
               percent: 100,
-              latestVersion:
-                buildIdMatch?.[1] ?? nameMatch?.[1]?.trim() ?? "unknown",
+              latestVersion,
             });
             return;
           } catch (err) {
