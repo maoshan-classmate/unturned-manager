@@ -16,6 +16,7 @@ function makeMockBroadcaster(): IBroadcaster {
     broadcast: vi.fn(),
     register: vi.fn(),
     unregister: vi.fn(),
+    registerRequestHandler: vi.fn(),
     destroy: vi.fn(async () => {}),
   };
 }

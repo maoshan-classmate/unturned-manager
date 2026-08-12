@@ -5,6 +5,9 @@ import type {
   ServerEvent,
   ServerId,
   ClientWsMessage,
+  ClientWsRequestMessage,
+  WsRequestResult,
+  WsRequestHandler,
   IPtyManager,
 } from "@unturned-manager/shared";
 import type { AuthService } from "../modules/auth/AuthService.js";
@@ -33,6 +36,17 @@ type HeartbeatWebSocket = WebSocket & { isAlive?: boolean };
 class WsBroadcaster implements IBroadcaster {
   private wss: WebSocketServer | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  // ★ ws-wrapper-design §2.4：请求-应答处理器注册表（消息 type → 业务处理器）。
+  // 组合根启动时一次性注册；运行期收到未注册类型 → 回 unsupported_request ack。
+  private requestHandlers = new Map<string, WsRequestHandler>();
+
+  /**
+   * 注册请求-应答处理器（ws-wrapper-design §2.4）。
+   * 同一 type 重复注册会覆盖——组合根启动时一次性注册，运行期不改。
+   */
+  registerRequestHandler(type: string, handler: WsRequestHandler): void {
+    this.requestHandlers.set(type, handler);
+  }
 
   init(
     server: Server,
@@ -163,6 +177,14 @@ class WsBroadcaster implements IBroadcaster {
             }
             // 契约合法即受理（isRunning=false 时 write 幂等丢弃 + PtyManager 打 warn 日志）
             ptyManager.write(serverId, data);
+          } else if (
+            msg.type === "terminal_close" ||
+            msg.type === "save" ||
+            msg.type === "shutdown"
+          ) {
+            // ★ ws-wrapper-design §2.4：请求-应答模式——异步处理后回 ack。
+            // fire-and-forget 调起（handleRequest 内部全 try/catch，异常只转 ack 不抛回 ws 层）。
+            void this.handleRequest(ws, msg);
           } else {
             ws.send(
               JSON.stringify({
@@ -193,6 +215,85 @@ class WsBroadcaster implements IBroadcaster {
         logger.error({ err }, "WebSocket 错误");
       });
     });
+  }
+
+  /**
+   * 请求-应答路由（ws-wrapper-design §2.4）。
+   * 校验 → 查注册表 → 调业务处理器 → 回 ack；业务异常兜底成 internal_error ack，
+   * 绝不抛回 ws 层拖垮连接。
+   */
+  private async handleRequest(
+    ws: WebSocket,
+    msg: ClientWsRequestMessage,
+  ): Promise<void> {
+    if (typeof msg.requestId !== "string" || !msg.requestId) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          code: "invalid_message",
+          message: `${msg.type} 缺少 requestId`,
+        }),
+      );
+      return;
+    }
+    if (typeof msg.serverId !== "string" || !msg.serverId) {
+      this.sendAck(ws, msg.requestId, {
+        ok: false,
+        error: {
+          code: "invalid_message",
+          message: `${msg.type} 缺少 serverId`,
+        },
+      });
+      return;
+    }
+    const handler = this.requestHandlers.get(msg.type);
+    if (!handler) {
+      this.sendAck(ws, msg.requestId, {
+        ok: false,
+        error: {
+          code: "unsupported_request",
+          message: `服务端未实现 ${msg.type} 请求`,
+        },
+      });
+      return;
+    }
+    try {
+      const result = await handler(msg);
+      this.sendAck(ws, msg.requestId, result);
+    } catch (err) {
+      logger.error(
+        { err, type: msg.type, serverId: msg.serverId },
+        "WS 请求处理器异常",
+      );
+      this.sendAck(ws, msg.requestId, {
+        ok: false,
+        error: {
+          code: "internal_error",
+          message: err instanceof Error ? err.message : "未知错误",
+        },
+      });
+    }
+  }
+
+  /**
+   * 回答应 ack（ws-wrapper-design §2.2）——直接回给发起请求的连接，不走 broadcast。
+   * 连接已关闭时静默丢弃（前端本地超时已兜底，服务端不强制送达）。
+   */
+  private sendAck(
+    ws: WebSocket,
+    requestId: string,
+    result: WsRequestResult,
+  ): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(
+      JSON.stringify({
+        type: "ack",
+        requestId,
+        ok: result.ok,
+        ...(result.payload !== undefined ? { payload: result.payload } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      }),
+    );
   }
 
   broadcast(event: ServerEvent): void {
@@ -230,6 +331,7 @@ class WsBroadcaster implements IBroadcaster {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    this.requestHandlers.clear();
     for (const ws of wsSubscriptions.keys()) {
       ws.close();
     }

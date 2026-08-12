@@ -123,16 +123,36 @@ export interface IPtyManager {
    *
    * @param serverId - PTY key
    * @param callback - 数据回调
+   * @returns 退订函数——调用后该 callback 不再收到数据（waitForMarker 等一次性订阅用）
    */
-  onData(serverId: PtyKey, callback: PtyDataCallback): void;
+  onData(serverId: PtyKey, callback: PtyDataCallback): () => void;
 
   /**
    * 订阅 PTY 退出事件（spawn 时自动注册一次）。
    *
    * @param serverId - PTY key
    * @param callback - 退出回调
+   * @returns 退订函数——调用后该 callback 不再收到退出事件
    */
-  onExit(serverId: PtyKey, callback: PtyExitCallback): void;
+  onExit(serverId: PtyKey, callback: PtyExitCallback): () => void;
+
+  /**
+   * 等待 PTY 输出出现匹配行（ws-wrapper-design §2.4：save 等命令的完成信号探测）。
+   * 命中立即 resolve；进程先退出 reject pty-exited；超时 reject pty-marker-timeout。
+   * 一次性订阅——settle 后自动退订，不泄漏 callback。
+   *
+   * @param serverId - PTY key
+   * @param marker - 匹配正则（对切分后的单行文本 test）
+   * @param timeoutMs - 等待毫秒数
+   * @throws {AppError} code=pty-not-running, status=409 进程不存在时
+   * @throws {AppError} code=pty-exited, status=409 等到之前进程退出时
+   * @throws {AppError} code=pty-marker-timeout, status=504 超时未命中时
+   */
+  waitForMarker(
+    serverId: PtyKey,
+    marker: RegExp,
+    timeoutMs: number,
+  ): Promise<void>;
 
   /**
    * 等待 PTY 进程退出（在 timeoutMs 内确认退出即返回 true）。

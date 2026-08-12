@@ -1,5 +1,6 @@
 import type { ServerId, SteamId64 } from "../types/branded.js";
 import type { ServerState } from "../types/state.js";
+import type { ClientWsRequestMessage } from "./ws.js";
 
 // 泛化 WebSocket 连接类型——共享层不依赖 ws 库
 export interface WsConnection {
@@ -59,11 +60,51 @@ export type ServerEvent =
        * 对定位像 install-script-missing 这类后台诊断信息毫无价值。
        */
       errorMessage?: string;
+    }
+  // ★ ws-wrapper-design §2.2：请求-应答模式的应答事件。不走 broadcast() 分发——
+  // 由 gateway 直接回给发起请求的那条连接（ack 是 per-request 的，不是广播）。
+  // 业务错误经 error 字段传递（不抛异常）；payload 形状由具体请求类型决定，
+  // 契约层不约束，前端按请求类型自行收窄。
+  | {
+      type: "ack";
+      /** 与请求消息的 requestId 一一对应（UUID v4） */
+      requestId: string;
+      ok: boolean;
+      /** 成功时的业务数据（可选） */
+      payload?: unknown;
+      /** 失败时的业务错误（code 用 snake_case，message 是用户可见中文） */
+      error?: { code: string; message: string };
     };
+
+/**
+ * 请求-应答处理器返回形状（ws-wrapper-design §2.4）。
+ * ok=false 时必须带 error；ok=true 时 payload 可选。
+ */
+export interface WsRequestResult {
+  ok: boolean;
+  payload?: unknown;
+  error?: { code: string; message: string };
+}
+
+/**
+ * 请求-应答处理器签名——收到整条请求消息（含 requestId/serverId/业务字段），
+ * 处理完返回结果；抛异常会被 gateway 兜底转成 internal_error 的 ack。
+ */
+export type WsRequestHandler = (
+  msg: ClientWsRequestMessage,
+) => Promise<WsRequestResult>;
 
 export interface IBroadcaster {
   broadcast(event: ServerEvent): void;
   register(ws: WsConnection, serverIds: ServerId[]): void;
   unregister(ws: WsConnection): void;
+  /**
+   * 注册请求-应答处理器（ws-wrapper-design §2.4）。
+   * 同一 type 重复注册会覆盖——组合根启动时一次性注册，运行期不改。
+   *
+   * @param type - 请求消息类型（如 "terminal_close" / "save" / "shutdown"）
+   * @param handler - 业务处理器；抛异常由 gateway 兜底为 internal_error ack
+   */
+  registerRequestHandler(type: string, handler: WsRequestHandler): void;
   destroy(): Promise<void>;
 }

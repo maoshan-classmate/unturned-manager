@@ -75,14 +75,17 @@ function makeMockPty(): PtyMock {
     isRunning: vi.fn(() => running),
     onData: vi.fn((serverId: string, cb: PtyDataCallback) => {
       dataCallbacks.set(serverId, cb); // 记录 data 回调，测试手动触发模拟 PTY stdout
+      return () => {};
     }),
     onExit: vi.fn((serverId: string, cb: PtyExitCallback) => {
       exitCallbacks.set(serverId, cb);
+      return () => {};
     }),
     waitExit: vi.fn(async () => {
       running = false; // waitExit true = 确认 bash 已退，exit 事件已清 processes（真实 PtyManager 语义）
       return true;
     }),
+    waitForMarker: vi.fn(async () => {}),
     destroy: vi.fn(async () => {}),
   };
 }
@@ -121,6 +124,7 @@ function makeMockBroadcaster(): IBroadcaster & { events: ServerEvent[] } {
     }),
     register: vi.fn(),
     unregister: vi.fn(),
+    registerRequestHandler: vi.fn(),
     destroy: vi.fn(async () => {}),
   };
 }
@@ -379,8 +383,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     onData!("Server is ready"); // 正则提前触发
     const afterReady = bcast.events.filter(
       (e) =>
-        e.type === "state_change" &&
-        (e as { to?: string }).to === "RUNNING",
+        e.type === "state_change" && (e as { to?: string }).to === "RUNNING",
     ).length;
     expect(afterReady).toBe(1);
 
@@ -388,8 +391,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     await vi.advanceTimersByTimeAsync(3000);
     const afterTimeout = bcast.events.filter(
       (e) =>
-        e.type === "state_change" &&
-        (e as { to?: string }).to === "RUNNING",
+        e.type === "state_change" && (e as { to?: string }).to === "RUNNING",
     ).length;
     expect(afterTimeout).toBe(1); // 幂等守住，不重复广播
     expect(mgr.getState("T12" as ServerId)).toBe(ServerState.RUNNING);

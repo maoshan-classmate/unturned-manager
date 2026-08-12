@@ -116,6 +116,82 @@ export function buildContainer(db: Database.Database): AppContainer {
   // AuthService
   const authService = new AuthService(db);
 
+  // ── WS 请求-应答处理器注册（ws-wrapper-design §2.4）────────────────
+  // 三个 ACK 语义的终端操作：关控制台 / 存档 / 关服。ack 经 gateway 回给请求方，
+  // 业务失败走 error 字段（code 用 snake_case，message 是用户可见中文）。
+
+  broadcaster.registerRequestHandler("terminal_close", async (msg) => {
+    // 关控制台 = 终止 PTY 进程（SIGTERM → 5s → SIGKILL）。owner-trust 核选项：
+    // 服务端进程随 bash 终止且不自动存档——前端按钮有 ConfirmDialog 拦截。
+    // PTY 不存在时 kill 幂等返回（关闭一个已关闭的终端 = 目标状态已达成）。
+    await ptyManager.kill(msg.serverId);
+    return { ok: true };
+  });
+
+  broadcaster.registerRequestHandler("save", async (msg) => {
+    if (!ptyManager.isRunning(msg.serverId)) {
+      return {
+        ok: false,
+        error: { code: "pty_not_running", message: "服务器没在运行，无法存档" },
+      };
+    }
+    ptyManager.write(msg.serverId, "Save\r");
+    try {
+      // SOP：PTY 输出「World saved」= 存档完成信号（无 A2S 轮询，ADR-0004 §3.3）
+      await ptyManager.waitForMarker(msg.serverId, /world saved/i, 30_000);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code: "save_timeout",
+          message: "存档超时——没有等到保存完成的信号",
+        },
+      };
+    }
+  });
+
+  broadcaster.registerRequestHandler("shutdown", async (msg) => {
+    // 注册表按 string 分发、契约是联合类型——先收窄到 shutdown 变体（gateway 按 type 精确路由，实际不会 miss）
+    if (msg.type !== "shutdown") {
+      return {
+        ok: false,
+        error: { code: "invalid_message", message: "消息类型不匹配" },
+      };
+    }
+    if (!ptyManager.isRunning(msg.serverId)) {
+      return {
+        ok: false,
+        error: { code: "pty_not_running", message: "服务器没在运行" },
+      };
+    }
+    // delaySeconds 钳制 0–600（防手滑输入天文数字把服挂在那里倒数）
+    const delaySeconds = Math.min(
+      Math.max(Math.trunc(msg.delaySeconds) || 0, 0),
+      600,
+    );
+    // reason 进 PTY 命令行：剥引号/换行防命令拼接断裂（owner-trust 但也防手滑）
+    const reason =
+      (msg.reason ?? "").replace(/["\r\n]+/g, " ").trim() || "面板请求关服";
+    // SOP 重启流水线：先 Save 刷盘再 Shutdown（与 REST stop / applyModChanges 同序）
+    ptyManager.write(msg.serverId, "Save\r");
+    ptyManager.write(msg.serverId, `Shutdown ${delaySeconds} "${reason}"\r`);
+    // 等控制台进程退出（倒计时 + 30s 冗余）；超时由用户在终端里人工处置
+    const exited = await ptyManager.waitExit(
+      msg.serverId,
+      (delaySeconds + 30) * 1000,
+    );
+    return exited
+      ? { ok: true }
+      : {
+          ok: false,
+          error: {
+            code: "shutdown_timeout",
+            message: "关服超时——进程没有在预期时间内退出",
+          },
+        };
+  });
+
   return {
     authService,
     serverManager,

@@ -27,8 +27,10 @@ export type {
   IBroadcaster,
   ServerEvent,
   WsConnection,
+  WsRequestResult,
+  WsRequestHandler,
 } from "./contracts/broadcast.js";
-export type { ClientWsMessage } from "./contracts/ws.js";
+export type { ClientWsMessage, ClientWsRequestMessage } from "./contracts/ws.js";
 export type { IFilesService, WritableFileStream } from "./contracts/files.js";
 export type { IAuthService, JwtPayload } from "./contracts/auth.js";
 export type { IFileLockProvider } from "./contracts/filelock.js";

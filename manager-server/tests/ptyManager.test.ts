@@ -83,6 +83,15 @@ beforeEach(() => {
   spawnReturn = new FakePty();
   lastSpawnArgs = undefined;
   ptySpawnMock.mockClear();
+  // 恢复默认实现——destroy/多实例用例的 mockImplementation 会覆盖 spawn，
+  // mockClear 只清调用记录不还原实现，不复原则泄漏到后续 describe
+  ptySpawnMock.mockImplementation((...args: unknown[]) => {
+    lastSpawnArgs = args;
+    if (spawnReturn instanceof Error) {
+      throw spawnReturn;
+    }
+    return spawnReturn as unknown as IPty;
+  });
 });
 
 describe("PtyManager — spawn 生命周期", () => {
@@ -528,6 +537,114 @@ describe("PtyManager — destroy", () => {
     sequence.push(fake3);
     await mgr.spawn("S3", "/bin/echo", []);
     expect(mgr.isRunning("S3")).toBe(true);
+  });
+});
+
+describe("PtyManager — waitForMarker（ws-wrapper-design §2.4）", () => {
+  it("输出命中 marker → resolve", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    const pending = mgr.waitForMarker("S1", /world saved/i, 5_000);
+    fake.emitData("some log\nWorld saved.\n");
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it("命中前收到其他行 → 不误触发；命中后才 resolve", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    let resolved = false;
+    const pending = mgr.waitForMarker("S1", /world saved/i, 5_000).then(() => {
+      resolved = true;
+    });
+    fake.emitData("loading...\nstill loading\n");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resolved).toBe(false);
+    fake.emitData("World saved\n");
+    await pending;
+    expect(resolved).toBe(true);
+  });
+
+  it("进程不存在 → 立即 reject pty-not-running", async () => {
+    const mgr = new PtyManager();
+    await expect(mgr.waitForMarker("ghost", /x/, 1_000)).rejects.toMatchObject({
+      code: "pty-not-running",
+      status: 409,
+    });
+  });
+
+  it("进程先退出 → reject pty-exited（不等超时）", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    const pending = mgr.waitForMarker("S1", /never/, 60_000);
+    fake.emitExit(0);
+    await expect(pending).rejects.toMatchObject({
+      code: "pty-exited",
+      status: 409,
+    });
+  });
+
+  it("超时未命中 → reject pty-marker-timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = new FakePty();
+      spawnReturn = fake;
+      const mgr = new PtyManager();
+      await mgr.spawn("S1", "/bin/echo", []);
+
+      const pending = mgr.waitForMarker("S1", /never/, 5_000);
+      const assertion = expect(pending).rejects.toMatchObject({
+        code: "pty-marker-timeout",
+        status: 504,
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("settle 后自动退订：resolve 后再来数据不重复触发，exit 也不二次 settle", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    const pending = mgr.waitForMarker("S1", /hit/, 5_000);
+    fake.emitData("hit\n");
+    await expect(pending).resolves.toBeUndefined();
+
+    // 退订生效：dataCallbacks 里不再残留 waitForMarker 的闭包
+    // （exit 清理前 Map 里应是初始 onData 注册数——本测试没有额外注册，应为空数组）
+    const dataMap = (
+      mgr as unknown as { dataCallbacks: Map<string, unknown[]> }
+    ).dataCallbacks;
+    expect(dataMap.get("S1")?.length ?? 0).toBe(0);
+
+    // 进程退出不再影响已 settle 的 Promise（不抛 unhandled rejection）
+    fake.emitExit(0);
+  });
+
+  it("onData 返回的退订函数：退订后不再收到行", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+
+    const received: string[] = [];
+    const off = mgr.onData("S1", (line) => received.push(line));
+    fake.emitData("a\n");
+    off();
+    fake.emitData("b\n");
+    expect(received).toEqual(["a"]);
   });
 });
 

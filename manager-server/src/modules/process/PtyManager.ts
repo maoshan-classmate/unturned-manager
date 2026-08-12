@@ -247,22 +247,83 @@ export class PtyManager implements IPtyManager {
 
   // ── callbacks ────────────────────────────────────────
 
-  onData(serverId: PtyKey, callback: PtyDataCallback): void {
+  onData(serverId: PtyKey, callback: PtyDataCallback): () => void {
     const cbs = this.dataCallbacks.get(serverId);
     if (cbs) {
       cbs.push(callback);
     } else {
       this.dataCallbacks.set(serverId, [callback]);
     }
+    // 退订：从数组摘除该 callback（settle 后幂等——Map 可能已被 exit 清理）
+    return () => {
+      const list = this.dataCallbacks.get(serverId);
+      if (!list) return;
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
   }
 
-  onExit(serverId: PtyKey, callback: PtyExitCallback): void {
+  onExit(serverId: PtyKey, callback: PtyExitCallback): () => void {
     const cbs = this.exitCallbacks.get(serverId);
     if (cbs) {
       cbs.push(callback);
     } else {
       this.exitCallbacks.set(serverId, [callback]);
     }
+    return () => {
+      const list = this.exitCallbacks.get(serverId);
+      if (!list) return;
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
+  }
+
+  /**
+   * 等待 PTY 输出出现匹配行（ws-wrapper-design §2.4：save 等命令的完成信号探测）。
+   * 三条 settle 路径互斥（settled 标记兜底）：
+   *   ① 某行命中 marker → resolve
+   *   ② 进程先退出 → reject pty-exited（输出流已断，marker 不可能再来）
+   *   ③ 超时 → reject pty-marker-timeout
+   * settle 后双向退订，一次性订阅不泄漏 callback。
+   */
+  waitForMarker(
+    serverId: PtyKey,
+    marker: RegExp,
+    timeoutMs: number,
+  ): Promise<void> {
+    if (!this.processes.has(serverId)) {
+      return Promise.reject(
+        new AppError("pty-not-running", "控制台未在运行", 409),
+      );
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (err?: AppError) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        offData();
+        offExit();
+        if (err) reject(err);
+        else resolve();
+      };
+      const offData = this.onData(serverId, (line) => {
+        if (marker.test(line)) finish();
+      });
+      const offExit = this.onExit(serverId, () => {
+        finish(new AppError("pty-exited", "控制台已关闭", 409));
+      });
+      const timer = setTimeout(() => {
+        finish(
+          new AppError(
+            "pty-marker-timeout",
+            `等待控制台输出超时（${marker.source}）`,
+            504,
+          ),
+        );
+      }, timeoutMs);
+      timer.unref?.();
+    });
   }
 
   // ── destroy ──────────────────────────────────────────
