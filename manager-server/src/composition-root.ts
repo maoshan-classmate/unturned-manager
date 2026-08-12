@@ -16,6 +16,9 @@ import {
   type IPtyManager,
   type ISessionManager,
   type IU3dsStatusProvider,
+  type ILdmDiscoveryService,
+  type ILdmPluginCommandsService,
+  type ILdmPluginSourceService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -36,6 +39,10 @@ import { WorkshopDeleteService } from "./modules/workshop/WorkshopDeleteService.
 import { LogStreamer } from "./modules/logs/LogStreamer.js";
 import { SessionManager } from "./modules/sessions/SessionManager.js";
 import { U3dsStatusProvider } from "./modules/u3ds/U3dsStatusProvider.js";
+import { LdmAssemblyVersionReader } from "./modules/ldm/LdmAssemblyVersionReader.js";
+import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
+import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
+import { LdmPluginSourceService } from "./modules/ldm/LdmPluginSourceService.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -56,6 +63,11 @@ export interface AppContainer {
   ptyManager: IPtyManager;
   sessionManager: ISessionManager;
   u3dsStatus: IU3dsStatusProvider;
+  // LDM（Mod 框架）Phase 1——3 模块 + 1 个 reader（独立于 PtyManager/RocketRuntimeReader）
+  ldmVersionReader: LdmAssemblyVersionReader;
+  ldmDiscovery: ILdmDiscoveryService;
+  ldmCommands: ILdmPluginCommandsService;
+  ldmSource: ILdmPluginSourceService;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -115,6 +127,22 @@ export function buildContainer(db: Database.Database): AppContainer {
 
   // AuthService
   const authService = new AuthService(db);
+
+  // ── LDM Mod 框架 Phase 1 模块 ─────────────────────────────────
+  const ldmVersionReader = new LdmAssemblyVersionReader();
+  // LdmRuntimeStatusReader 当前返回空对象（runtimeStatus 全部 unknown）——
+  // Phase 2 接 PtyManager 真实监听 /rocket plugins 输出解析。
+  const ldmRuntimeStatusReader = async () => ({});
+  const ldmDiscovery = new LdmDiscoveryService(
+    ldmVersionReader,
+    ldmRuntimeStatusReader,
+  );
+  const ldmCommands = new LdmPluginCommandsService(
+    ptyManager,
+    serverManager as unknown as Pick<IServerManager, "getState">,
+    ldmRuntimeStatusReader,
+  );
+  const ldmSource = new LdmPluginSourceService();
 
   // ── WS 请求-应答处理器注册（ws-wrapper-design §2.4）────────────────
   // 三个 ACK 语义的终端操作：关控制台 / 存档 / 关服。ack 经 gateway 回给请求方，
@@ -208,5 +236,9 @@ export function buildContainer(db: Database.Database): AppContainer {
     ptyManager,
     sessionManager,
     u3dsStatus,
+    ldmVersionReader,
+    ldmDiscovery,
+    ldmCommands,
+    ldmSource,
   };
 }

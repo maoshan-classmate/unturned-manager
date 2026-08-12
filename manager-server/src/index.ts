@@ -40,6 +40,7 @@ import { createAuthRouter } from "./routes/auth.js";
 import { createServersRouter } from "./routes/servers.js";
 import { createModsRouter } from "./routes/mods.js";
 import { createModBrowseRouter } from "./routes/mod-browse.js";
+import { createLdmServerRouter, createLdmCommunityRouter } from "./routes/ldm.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createFilesRouter } from "./routes/files.js";
 import { createSteamCmdRouter } from "./routes/steamcmd.js";
@@ -136,6 +137,12 @@ app.use(
 );
 app.use("/api/servers", createConfigRouter(container.configService));
 app.use("/api/servers", createFilesRouter(container.filesService));
+// LDM Mod 框架（Phase 1）——useServers 维度 + 全局 LDM-Community
+app.use("/api/servers/:id/ldm", createLdmServerRouter({
+  discovery: container.ldmDiscovery,
+  commands: container.ldmCommands,
+}));
+app.use("/api/ldm", createLdmCommunityRouter(container.ldmSource));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
