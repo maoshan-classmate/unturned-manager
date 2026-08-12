@@ -23,6 +23,25 @@ const API_QUERY_FILES = `${STEAM_API_BASE}/IPublishedFileService/QueryFiles/v1/`
 /** 所有 Steam API 调用的客户端 timeout（45s = 国内网络访问 Steam 冷启动实测需 20-40s） */
 const FETCH_TIMEOUT_MS = 45_000;
 
+/**
+ * browseMods 进程内缓存 TTL（5 分钟）——重复访问同条件 0 Steam 调用。
+ * 单用户系统（CLAUDE.md §2）+ 进程级 Map 足够，无需 Redis。
+ * ★ 不影响 getModDetails / batchGetDetails——单 Mod 详情走 GetDetails（用户主动点详情弹窗，不在热路径）。
+ */
+const BROWSE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** 进程内缓存：queryKey → { result, expiresAt }；过期惰性清理 */
+const browseCache = new Map<string, { result: BrowseResult; expiresAt: number }>();
+
+/**
+ * 测试钩子：清空 browseMods 进程内缓存。
+ * 仅供 vitest 等单测在 beforeEach 调用——避免用例间缓存残留导致"不同入参却命中旧缓存"。
+ * 生产代码禁止调用（每次启动 cache 自然是空的，无意义）。
+ */
+export function __resetBrowseCacheForTest(): void {
+  browseCache.clear();
+}
+
 // AppID 唯一真源 = shared/constants.ts（此处本地引用用于 WebAPI 参数拼装）
 
 // ─── 实现 ────────────────────────────────────────────────
@@ -77,8 +96,13 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
   }
 
   /**
-   * 浏览/搜索 Steam 工坊——单次 QueryFiles 实时调用，0 缓存
+   * 浏览/搜索 Steam 工坊——单次 QueryFiles 实时调用
    * QueryFiles 一次返回全字段（title/creator/description/preview/vote_data），无需二次调用
+   *
+   * ★ 进程内缓存（5min TTL）：重复访问同条件 0 Steam 调用。
+   *   cacheKey 包含全部入参（query/sort/range/page/pageSize）——任一不同即新条目。
+   *   过期惰性清理（访问时判断 expiresAt，过期则删 + 重发 Steam）。
+   *   不影响 getModDetails / batchGetDetails——单 Mod 详情不在热路径。
    *
    * @param query - 搜索关键词或 fileId
    * @param sort - 排序方式（映射 Steam query_type）
@@ -95,6 +119,17 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     page: number = 1,
     pageSize: number = 10,
   ): Promise<BrowseResult> {
+    const cacheKey = `${query}|${sort}|${timeRange}|${page}|${pageSize}`;
+    const cached = browseCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      logger.debug({ cacheKey }, 'browseMods 命中缓存');
+      return cached.result;
+    }
+    if (cached) {
+      // 过期条目惰性清理
+      browseCache.delete(cacheKey);
+    }
+
     const apiKey = getSteamWebApiKey(this.db);
     if (!apiKey) {
       throw new AppError('workshop-key-missing', '未配置 Steam WebAPI Key，请在系统设置中配置后重试', 503);
@@ -146,11 +181,18 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       const total = qfJson.response.total ?? 0;
 
       if (qfDetails.length === 0) {
-        return { mods: [], total, page, pageSize };
+        // 空结果也缓存——避免重复搜不到词时反复打 Steam
+        const emptyResult: BrowseResult = { mods: [], total, page, pageSize };
+        browseCache.set(cacheKey, {
+          result: emptyResult,
+          expiresAt: Date.now() + BROWSE_CACHE_TTL_MS,
+        });
+        return emptyResult;
       }
 
       // QueryFiles 单次返回全字段（title/creator/description/preview/vote_data），
       // 不二次调 GetDetails——避免两阶段叠加超时。
+      // ★ subscriptions 字段映射（修复 bug：v2.4 之前 ModCard 订阅数永远 undefined）
       const mods: WorkshopModMeta[] = qfDetails.map((d) => {
         const v = d.vote_data;
         return {
@@ -163,10 +205,17 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
           updatedAt: d.time_updated ? new Date(d.time_updated * 1000).toISOString() : undefined,
           // 评分：Steam score 是 0-1，转 0-5
           voteScore: v?.score != null ? v.score * 5 : undefined,
+          // 订阅总数——ModCard「X 订阅」展示用
+          subscriptions: d.subscriptions,
         };
       });
 
-      return { mods, total, page, pageSize };
+      const result: BrowseResult = { mods, total, page, pageSize };
+      browseCache.set(cacheKey, {
+        result,
+        expiresAt: Date.now() + BROWSE_CACHE_TTL_MS,
+      });
+      return result;
     } catch (err) {
       throw mapFetchError(err);
     }
@@ -259,6 +308,7 @@ interface QueryFileDetail {
   preview_url?: string;
   file_size?: number;
   time_updated?: number;
+  subscriptions?: number;
   vote_data?: { score?: number; votes_up?: number; votes_down?: number };
 }
 

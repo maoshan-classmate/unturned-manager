@@ -91,6 +91,8 @@ export interface WorkshopModMeta {
   updatedAt?: string;
   voteScore?: number; // 0-5 星级（Steam vote_data.score * 5）
   tags?: string[];
+  /** 订阅总数（Steam subscriptions 字段）；列表卡片展示用——browseMods 需映射，detail 端 GetDetails 返回 */
+  subscriptions?: number;
 }
 
 // acf 真源条目（VDF 解析结果）

@@ -167,7 +167,10 @@ export function ModsPage() {
       });
       return res.data.data;
     },
-    staleTime: 60_000, // 纯前端防抖（后端 0 缓存）
+    // 5 分钟前端防抖——配合后端 browseMods 进程内缓存（5min TTL）。
+    // 重复访问同筛选条件：后端缓存命中 0 Steam 调用 + 前端缓存命中 0 网络往返。
+    // 首次加载仍要等 Steam（不可控）；切回页面 / 切回旧筛选 = 0ms。
+    staleTime: 5 * 60_000,
     retry: 1,
   });
 
