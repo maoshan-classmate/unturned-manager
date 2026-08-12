@@ -121,7 +121,7 @@ function InstalledTab({ serverId }: { serverId: string }) {
     queryKey: ["ldm", "installed", serverId],
     queryFn: async () => {
       const res = await apiClient.get<{ data: InstalledPluginsResponse }>(
-        `/api/servers/${serverId}/ldm/installed`,
+        `/servers/${serverId}/ldm/installed`,
       );
       return res.data.data;
     },
@@ -131,7 +131,7 @@ function InstalledTab({ serverId }: { serverId: string }) {
 
   const commandMutation = useMutation({
     mutationFn: async (vars: { pluginName: string; action: "load" | "unload" }) => {
-      const url = `/api/servers/${serverId}/ldm/${vars.action}-plugin`;
+      const url = `/servers/${serverId}/ldm/${vars.action}-plugin`;
       const res = await apiClient.post<{ data: { outcome: string; ldmOutput: string } }>(
         url,
         { pluginName: vars.pluginName },
@@ -214,7 +214,7 @@ function SourceTab({
     queryKey: ["ldm", "community", pat ?? ""],
     queryFn: async () => {
       const res = await apiClient.get<{ data: CommunityPluginsResponse }>(
-        `/api/ldm/community-plugins`,
+        `/ldm/community-plugins`,
         { headers: pat ? { "X-Github-Pat": pat } : {} },
       );
       return res.data.data;
@@ -230,7 +230,7 @@ function SourceTab({
   const testPatMutation = useMutation({
     mutationFn: async (pat: string) => {
       const res = await apiClient.post<{ data: PatTestResult }>(
-        "/api/ldm/community-plugins/test-pat",
+        "/ldm/community-plugins/test-pat",
         { pat },
       );
       return res.data.data;
