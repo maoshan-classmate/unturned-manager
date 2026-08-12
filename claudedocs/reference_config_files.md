@@ -86,6 +86,8 @@
 
 ---
 
+---
+
 ## 2. Config.txt — 高级游戏设置
 
 **路径**：`Servers/<ServerID>/Config.txt`  
@@ -113,3 +115,121 @@
 | `Timeout_Queue_Seconds` | float | `15` | `PlayConfigData.cs:405` `Timeout_Queue_Seconds = 15` | — | 队列中无响应超时（秒） | 数字输入 |
 | `Timeout_Game_Seconds` | float | `30` | `PlayConfigData.cs:406` `Timeout_Game_Seconds = 30` | — | 游戏中无响应超时（秒） | 数字输入 |
 | `Max_Clients_With_Same_IP_Address` | int | `64` | `PlayConfigData.cs:279` `Max_Clients_With_Same_IP_Address = 64` | — | 同 IP 最大并发连接数 | 数字输入 |
+---
+
+## 3. Rocket.config.xml — LDM 主框架配置
+
+**路径**：`Servers/<ServerID>/Rocket/Rocket.config.xml`
+**格式**：XML（XmlSerializer，C# 类 `RocketSettings.cs`，XML 根元素 `<RocketConfiguration>`）
+**生成**：**首次启动 U3DS 自动生成**——**不可手写预创建**（[gameserverkings.com](https://www.gameserverkings.com/knowledge-base/unturned/how-to-install-rocketmod-plugins-for-unturned) 警告）
+**真源**：[`Rocket/Rocket.Core/Serialization/RocketSettings.cs`](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile) + [wasabihosting.com](https://docs.wasabihosting.com/games/unturned/server-configuration)
+**生效**：改后需 PTY 终端 `Save` + `Shutdown 10` 重启（**无官方热重载**——U3-SDK Issue #1794）
+
+### 3.1 顶层字段
+
+| XML 元素 | .NET 类型 | 默认 | 含义 | SDK 真源 | Web UI 控件 |
+|---|---|---|---|---|---|
+| `LanguageCode` | string | `"en"` | 翻译文件代码（`Rocket.{code}.translation.xml`） | `RocketSettings.cs` | 下拉（en/zh-CN/...） |
+| `MaxFrames` | int | `60` | 帧预算（部分 Rocket API 用） | `RocketSettings.cs` | 数字 |
+
+### 3.2 `<RCON>` 子组（**本项目不暴露**）
+
+> ⚠️ **ADR-0004 Phase 6 已删 RCON 通道**——UI 隐藏此字段组，避免误改导致明文密码 `"changeme"` 暴露。
+
+| XML 元素 | 类型 | 默认 | 含义 |
+|---|---|---|---|
+| `RCON/Enabled` | bool | `false` | 开关 Telnet RCON |
+| `RCON/Port` | ushort | `27115` | TCP 端口 |
+| `RCON/Password` | string | **`"changeme"`（明文，必须改）** | 凭证 |
+| `RCON/EnableMaxGlobalConnections` | bool | `true` | 全局连接限流 |
+| `RCON/MaxGlobalConnections` | ushort | `10` | 全局连接上限 |
+| `RCON/EnableMaxLocalConnections` | bool | `true` | 本地连接限流 |
+| `RCON/MaxLocalConnections` | ushort | `3` | 本地连接上限 |
+
+### 3.3 `<AutomaticShutdown>` 子组
+
+| XML 元素 | 类型 | 默认 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `AutomaticShutdown/Enabled` | bool | `false` | 周期自动关服开关 | 开关 |
+| `AutomaticShutdown/Interval` | int | `86400` | 间隔秒数（24h） | 数字 |
+
+### 3.4 `<WebPermissions>` 子组
+
+| XML 元素 | 类型 | 默认 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `WebPermissions/Enabled` | bool | `false` | 远程权限同步开关 | 开关 |
+| `WebPermissions/Url` | string | `""` | 同步 URL | 文本 |
+| `WebPermissions/Interval` | int | `180` | 同步间隔秒 | 数字 |
+
+### 3.5 `<WebConfigurations>` 子组
+
+| XML 元素 | 类型 | 默认 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `WebConfigurations/Enabled` | bool | `false` | 远程插件配置同步开关 | 开关 |
+| `WebConfigurations/Url` | string | `""` | 同步 URL | 文本 |
+
+> ❌ **删字段**（老 RocketMod <4.x / 教程误传，LDM master 不存在）：`Economy/*` `InstanceGuid` `InstanceName` `Port` `AutomaticallyDownloadPatches` `EnableLogging` `LogLevel` `LogToFile` `LogToConsole`——面板写入这些字段会被 XmlSerializer 静默忽略。
+
+---
+
+## 4. Rocket.Unturned.config.xml — LDM-Unturned 特有配置
+
+**路径**：`Servers/<ServerID>/Rocket/Rocket.Unturned.config.xml`
+**格式**：XML（XmlSerializer，C# 类 `UnturnedSettings.cs`）
+**生成**：首次启动 U3DS 自动生成（与 Rocket.config.xml 同时）
+**真源**：[`Rocket/Rocket.Unturned/Serialisation/UnturnedSettings.cs`](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile)
+**生效**：改后需重启
+
+| XML 元素 | 类型 | 默认 | 含义 | SDK 真源 | Web UI 控件 |
+|---|---|---|---|---|---|
+| `<AutomaticSave>` / `<Enabled>` | bool | `true` | 定时触发 U3DS `/save` 命令 | `UnturnedSettings.cs` | 开关 |
+| `<AutomaticSave>` / `<Interval>` | int | `1800` | 间隔秒数（30 分钟） | `UnturnedSettings.cs` | 数字 |
+| `<CharacterNameValidation>` | bool | `false` | 启用角色名正则校验 | `UnturnedSettings.cs` | 开关 |
+| `<CharacterNameValidationRule>` | string | `"([\x00-\xAA]\|[\w_\ \.\+\-])+"` | 正则模式（防注入） | `UnturnedSettings.cs` | 文本（高级） |
+| `<LogSuspiciousPlayerMovement>` | bool | `true` | 记录瞬移速度违规 | `UnturnedSettings.cs` | 开关 |
+| `<EnableItemBlacklist>` | bool | `false` | 限制 `/i` 物品（黑名单模式） | `UnturnedSettings.cs` | 开关 |
+| `<EnableItemSpawnLimit>` | bool | `false` | 限制单次刷物品数 | `UnturnedSettings.cs` | 开关 |
+| `<MaxSpawnAmount>` | int | `10` | 配合上一项的单次刷物品上限 | `UnturnedSettings.cs` | 数字 |
+| `<EnableVehicleBlacklist>` | bool | `false` | 限制 `/v` 载具 | `UnturnedSettings.cs` | 开关 |
+
+---
+
+## 5. Permissions.config.xml — LDM 权限组配置
+
+**路径**：`Servers/<ServerID>/Rocket/Permissions.config.xml`
+**格式**：XML（XmlSerializer）
+**生成**：首次启动 U3DS 自动生成
+**真源**：[wasabihosting.com](https://docs.wasabihosting.com/games/unturned/server-configuration) + [restoremonarchy.com](https://restoremonarchy.com/docs/servers/rocket/permissions)
+**生效**：改后需 PTY 写 `/p reload` 或重启
+
+### 5.1 顶层字段
+
+| XML 元素 | 类型 | 默认 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `<DefaultGroup>` | string | `"default"` | 未显式分配玩家的默认组 Id | 下拉（来自 Groups） |
+
+### 5.2 `<Groups>` / `<Group>` 子组
+
+| XML 元素 | 类型 | 默认 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `<Id>` | string | — | 组唯一 ID（kebab-case 推荐） | 文本（唯一） |
+| `<DisplayName>` | string | — | 玩家聊天显示的组名 | 文本 |
+| `<Color>` | enum/string | `white` | `black/blue/clear/cyan/gray/green/grey/magenta/red/white/yellow/rocket/#RRGGBB` | 颜色选择器 |
+| `<Prefix>` | string | `""` | 聊天前缀文本（建议带尾空格） | 文本 |
+| `<Suffix>` | string | `""` | 聊天后缀文本（建议带头空格） | 文本 |
+| `<ParentGroup>` | string (Group Id) | — | 父组 Id（继承父组所有权限） | 下拉（来自 Groups） |
+| `<Priority>` | int | `100` | **数字越小权限越高**；同优先级位置靠上者胜出 | 数字 |
+
+### 5.3 `<Members>` / `<Member>` 子组
+
+| XML 元素 | 类型 | 含义 | Web UI 控件 |
+|---|---|---|---|
+| `<Member>` | ulong (SteamID64) | 玩家 17 位 SteamID | SteamID 输入 + 列表 |
+
+### 5.4 `<Permissions>` / `<Permission>` 子组
+
+| XML 元素 | 属性 | 类型 | 含义 | Web UI 控件 |
+|---|---|---|---|---|
+| `<Permission>` | `Cooldown` (int 秒) | string | 权限字符串（`rocket.kits` / `rocket.tpa` / `rocket.home` / `kit.survival` 等，由各插件定义）；Cooldown 限制命令冷却秒数 | 输入 + 通配支持（`rocket.*`） |
+
+> **通配**：`rocket.*` 通配支持（如 `rocket.kits.*` 匹配 `rocket.kits.vip` 等所有子权限）。

@@ -170,3 +170,89 @@ STOPPED → STARTING → RUNNING → STOPPING → STOPPED（循环，4 态）
 - 后端 tail 两路：日志文件 `Servers/<ID>/Logs/*.log` + spawn 子进程 stdout
 - 通过 `ws` **双向**：出站 `console_line` 推送输出 + 入站 `terminal_input` 写入 PTY stdin（ADR-0004 Phase 3）
 - 前端命令经 WS `terminal_input` 直达 PTY 终端——owner-trust 模型（登录即可执行任意命令，ADR-0004 Phase 6 删 RCON 后为唯一通道）；危险指令由前端卡片拦截
+
+---
+
+## LDM（Legally-Distinct-Missile）Mod 框架接入
+
+> 完整设计：`docs/architecture/ldm-integration-design.md` + 决策：`docs/adr/0006-ldm-framework-integration.md`
+> 真源：[github.com/SmartlyDressedGames/Legally-Distinct-Missile](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile)
+> 选型决策：本项目**只采用 LDM**（OpenMod / RocketMod 已删，commit c5f2ac8）
+
+### 一个 ServerID 的 LDM 目录布局
+
+```
+Servers/<ServerID>/
+└── Rocket/                          # 首次启动 U3DS 自动生成（不可手写预创建）
+    ├── Rocket.config.xml            # LDM 主框架配置（XML / RocketSettings.cs）
+    ├── Rocket.Unturned.config.xml   # LDM-Unturned 特有配置（XML / UnturnedSettings.cs）
+    ├── Permissions.config.xml       # 权限组配置（XML）
+    ├── Logs/                        # LDM 框架日志
+    ├── Libraries/                   # 共享依赖 .dll
+    └── Plugins/
+        ├── <PluginName>.dll         # 插件二进制（玩家从 GitHub Releases 下载）
+        └── <PluginName>/            # Linux 大小写敏感！文件夹名必须 .dll 同名
+            ├── <PluginName>.configuration.xml   # 插件配置（每插件 schema 不同）
+            └── Libraries/                       # 插件私有依赖
+```
+
+### 激活步骤（5 步走）
+
+```bash
+# ① 装 U3DS（SteamCMD +app_update 1110390 validate）—— 已有「安装 Unturned 服务端」按钮
+
+# ② 激活 LDM 主框架（U3DS 装包自带 Extras/Rocket.Unturned/，cp 复制即可）
+cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
+
+# ③ 启动一次 U3DS（生成 Servers/<ID>/Rocket/ + 3 个 XML 自动生成）
+/opt/unturned/ServerHelper.sh +InternetServer/<ServerID> -ThreadedConsole
+
+# ④ 从 LDM-Community (https://ldm-community.github.io/pluginlist) 下载插件 .dll
+#    通过面板「Mod 框架 > 已装插件 > 上传插件」拖拽上传
+
+# ⑤ 编辑配置 → 应用变更 → 面板走 PTY 终端 owner-trust 重启流水线
+```
+
+### 关键约束
+
+| 约束 | 说明 |
+|---|---|
+| **Rocket/ 必须首次启动 U3DS 自动生成** | **不可手写预创建**——gameserverkings.com 警告 |
+| **Linux 大小写敏感** | `Plugins/Uconomy/` ≠ `Plugins/uconomy/`；.dll 文件名必须与子目录名严格一致 |
+| **多实例隔离** | `Modules/Rocket.Unturned/` 全 U3DS 共享一份；`Servers/<ID>/Rocket/` 每实例独立（真源：`Rocket/Rocket.Core/Environment.cs` `RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId = Dedicator.serverID = +InternetServer/<ID>`） |
+| **LDM 插件不上 Steam Workshop** | 走 GitHub Releases + LDM-Community；Workshop Asset Type 只有 Map/Item/Vehicle/Skin/Object/Localization/Server Curation 7 类 |
+| **改配置生效 = 重启** | LDM 无官方热重载（U3-SDK Issue #1794）；走 ADR-0004 §重启流水线（Save + Shutdown 10 + forceKill + spawn） |
+| **不暴露 `/rocket reload`（全局）** | LDM 官方已删；prohibitions.md 钉死；提示 "Please reload individual plugins instead" |
+| **单插件 reload 不保证成功** | `/rocket reload <plugin>` 暴露但加警告 |
+| **不接管 .dll 编译/分发** | 二进制风险；编译/分发不是面板职责 |
+| **不接管全局 `rocket reload`** | 钉死 |
+
+### LDM 与 Commands.dat / Config.txt 的关系
+
+- **完全正交**——Commands.dat 是 U3DS 自身的（U3-SDK 真源），`Rocket.config.xml` / `Rocket.Unturned.config.xml` / `Permissions.config.xml` 是 LDM 框架
+- **端口不冲突**——Commands.dat `Port 27015`（游戏端口），Rocket.config.xml 的 RCON 默认 `27115` Telnet（本项目不用）
+- **共享 admin**——U3DS 的 `Owner`（SteamID64，Commands.dat）和 LDM 的 `Permissions.config.xml` 的 `default` 组**不互通**——需分别配置
+
+### LDM 管理命令（PTY 终端 owner-trust 唯一通道）
+
+| 命令 | 用途 | 面板处理 |
+|---|---|---|
+| `/rocket` 或 `/rocket plugins` | 列出已加载插件（按 Loaded/Unloaded/Failure/Cancelled 分组） | 解析 stdout 展示 |
+| `/rocket info` | 显示 LDM 版本信息 | 「关于 LDM」卡片 |
+| `/rocket load <name>` | 加载已卸载插件（子串匹配 + 大小写不敏感） | 前端按钮 + 调 PTY |
+| `/rocket unload <name>` | 卸载指定插件 | 前端按钮 + 调 PTY |
+| `/rocket reload <name>` | 重新加载指定插件（不保证成功） | 前端按钮 + 调 PTY（加警告） |
+| `/rocket reload`（全局） | 重载所有插件 | ❌ 不暴露（Issue #1794 + 钉死） |
+| `/modules` | U3DS 原生命令，验证 Rocket.Unturned 是否加载 | 「LDM 状态」卡片 |
+| `/p reload` | 重新加载 `Permissions.config.xml` | 前端按钮 + 调 PTY |
+
+### 配置文件原子写 + 备份策略
+
+```typescript
+// 写入前必走流程（复用 ConfigService.atomicWrite）
+const file = `Servers/${serverId}/Rocket/${name}`;
+await fs.copy(file, `${file}.bak.${new Date().toISOString()}`);  // 备份
+await atomicWrite(file, newContent);                              // 原子写
+```
+
+适用范围：`Rocket.config.xml` / `Rocket.Unturned.config.xml` / `Permissions.config.xml` / 所有 `<Plugin>.configuration.xml`。
