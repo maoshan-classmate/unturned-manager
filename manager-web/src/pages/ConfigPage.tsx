@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { COMMANDS_DAT_ENUMS } from "@unturned-manager/shared";
 import {
   Save,
   AlertCircle,
@@ -198,6 +199,15 @@ export function ConfigPage() {
   // v2.2：Workshop 应用变更（重启服务器）二次确认
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // ★ BUG-4：保存 Commands.dat 时保留原始未知键/注释（面板不认识但 U3DS 需要的行不能清掉）。
+  // useRef 不触发渲染——只在加载时记录、保存时原样回传。
+  const originalMetaRef = useRef<{
+    unknown: Record<string, string>;
+    comments: string[];
+  }>({
+    unknown: {},
+    comments: [],
+  });
 
   const fetchConfig = useCallback(async () => {
     if (!server) return;
@@ -210,12 +220,19 @@ export function ConfigPage() {
         );
         const data = res.data.data;
         if (data) {
+          // ★ BUG-4：记录原始未知键/注释——保存时原样回传，防止清空
+          originalMetaRef.current = {
+            unknown: data.unknown ?? {},
+            comments: data.comments ?? [],
+          };
           const known = data.known ?? {};
           const loadouts: LoadoutEntry[] = Array.isArray(data.loadouts)
-            ? data.loadouts.map((l: { skillsetId: number; itemIds: number[] }) => ({
-                skillsetId: Number(l.skillsetId),
-                itemIds: (l.itemIds ?? []).map(Number),
-              }))
+            ? data.loadouts.map(
+                (l: { skillsetId: number; itemIds: number[] }) => ({
+                  skillsetId: Number(l.skillsetId),
+                  itemIds: (l.itemIds ?? []).map(Number),
+                }),
+              )
             : [];
           setFields({
             ...EMPTY_FIELDS,
@@ -227,7 +244,12 @@ export function ConfigPage() {
             // 未配时回填 SDK 默认值 Y/Y/Y/N（CommandWindow.cs:49-52）——与 UI 默认一致
             ...(() => {
               if (known.Log === undefined) {
-                return { LogChat: true, LogJoin: true, LogDeath: true, LogAnticheat: false };
+                return {
+                  LogChat: true,
+                  LogJoin: true,
+                  LogDeath: true,
+                  LogAnticheat: false,
+                };
               }
               const parts = known.Log.split(/\s+/);
               return {
@@ -374,11 +396,14 @@ export function ConfigPage() {
         known.set("Votify", votifyLine);
         await apiClient.put(`/servers/${server.id}/config/commands`, {
           known: Object.fromEntries(known),
-          unknown: {},
-          comments: [],
+          // ★ BUG-4：原样回传加载时记录的未知键/注释，防止保存把面板不认识的指令行清掉
+          unknown: originalMetaRef.current.unknown,
+          comments: originalMetaRef.current.comments,
           // Loadout 重复行独立上传——序列化时 ConfigService 按 loadouts 数组写多行
           loadouts: fields.Loadout,
         });
+        // ★ 重启提示：Commands.dat 是服务端启动时读取的，改完要重启才生效（U3-SDK Provider.cs:6663-6700）
+        toast.success("配置已保存，重启服务器后生效");
       } else if (tab === "txt") {
         // BUG-2 闭环：write 侧走 helper 包成 schema 真实形态——
         // sections: Record<sectionName, { name, entries: ConfigEntry[] }>
@@ -650,7 +675,10 @@ function CommandsTab({
   onChange,
 }: {
   fields: CommandsFields;
-  onChange: (k: keyof CommandsFields, v: string | boolean | LoadoutEntry[]) => void;
+  onChange: (
+    k: keyof CommandsFields,
+    v: string | boolean | LoadoutEntry[],
+  ) => void;
 }) {
   return (
     <div className="p-4 md:p-6">
@@ -663,20 +691,40 @@ function CommandsTab({
               value={String(fields[k])}
               onChange={(v) => onChange(k, v)}
               type={k === "Password" ? "password" : "text"}
-              placeholder={k === "Name" ? "Unturned（5–50 字符）" : k === "Owner" ? "17 位 Steam ID" : undefined}
+              placeholder={
+                k === "Name"
+                  ? "Unturned（5–50 字符）"
+                  : k === "Owner"
+                    ? "17 位 Steam ID"
+                    : undefined
+              }
             />
           ))}
         </ConfigSection>
         <ConfigSection title="地图与模式">
-          {(["Map", "Mode", "Perspective"] as const).map((k) => (
-            <ConfigField
-              key={k}
-              label={FIELD_LABELS[k]}
-              value={String(fields[k])}
-              onChange={(v) => onChange(k, v)}
-              placeholder={k === "Map" ? "PEI" : k === "Mode" ? "Normal" : k === "Perspective" ? "FIRST（专用服务器默认）" : undefined}
-            />
-          ))}
+          {/* 地图：官方地图做建议（datalist 不限制输入——装了 Workshop 地图直接手输地图名即可） */}
+          <ConfigField
+            label={FIELD_LABELS.Map}
+            value={String(fields.Map)}
+            onChange={(v) => onChange("Map", v)}
+            suggestions={COMMANDS_DAT_ENUMS.Map}
+            placeholder="PEI"
+          />
+          {/* 难度/视角：固定枚举下拉，选项来自 shared 常量（EGameMode.cs / ECameraMode.cs 真源） */}
+          <ConfigField
+            label={FIELD_LABELS.Mode}
+            value={String(fields.Mode)}
+            onChange={(v) => onChange("Mode", v)}
+            options={COMMANDS_DAT_ENUMS.Mode}
+            placeholder="使用服务端默认（普通）"
+          />
+          <ConfigField
+            label={FIELD_LABELS.Perspective}
+            value={String(fields.Perspective)}
+            onChange={(v) => onChange("Perspective", v)}
+            options={COMMANDS_DAT_ENUMS.Perspective}
+            placeholder="使用服务端默认（第一人称）"
+          />
           <ConfigToggle
             label={FIELD_LABELS.PvE}
             checked={fields.PvE}
@@ -684,24 +732,29 @@ function CommandsTab({
           />
         </ConfigSection>
         <ConfigSection title="网络">
-          {(["Port", "MaxPlayers", "Timeout", "Queue_Size", "Bind"] as const).map(
-            (k) => (
-              <ConfigField
-                key={k}
-                label={FIELD_LABELS[k]}
-                value={String(fields[k])}
-                onChange={(v) => onChange(k, v)}
-                placeholder={
-                  k === "Port" ? "27015（查询端口 = Port+1）"
-                    : k === "MaxPlayers" ? "8（1–200）"
-                    : k === "Timeout" ? "750（ms）"
-                    : k === "Queue_Size" ? "8"
-                    : k === "Bind" ? "0.0.0.0（监听所有接口）"
-                    : undefined
-                }
-              />
-            ),
-          )}
+          {(
+            ["Port", "MaxPlayers", "Timeout", "Queue_Size", "Bind"] as const
+          ).map((k) => (
+            <ConfigField
+              key={k}
+              label={FIELD_LABELS[k]}
+              value={String(fields[k])}
+              onChange={(v) => onChange(k, v)}
+              placeholder={
+                k === "Port"
+                  ? "27015（查询端口 = Port+1）"
+                  : k === "MaxPlayers"
+                    ? "8（1–200）"
+                    : k === "Timeout"
+                      ? "750（ms）"
+                      : k === "Queue_Size"
+                        ? "8"
+                        : k === "Bind"
+                          ? "0.0.0.0（监听所有接口）"
+                          : undefined
+              }
+            />
+          ))}
         </ConfigSection>
         <ConfigSection title="安全与权限">
           {(
@@ -723,24 +776,20 @@ function CommandsTab({
           ))}
         </ConfigSection>
         <ConfigSection title="日志">
-          <p className="text-xs mb-2" style={{ color: '#64748B' }}>
-            默认值（与 Unturned 服务端保持一致）：记录聊天/进离/死亡，不记录反作弊
+          <p className="text-xs mb-2" style={{ color: "#64748B" }}>
+            默认值（与 Unturned
+            服务端保持一致）：记录聊天/进离/死亡，不记录反作弊
           </p>
-          {(
-            [
-              "LogChat",
-              "LogJoin",
-              "LogDeath",
-              "LogAnticheat",
-            ] as const
-          ).map((k) => (
-            <ConfigToggle
-              key={k}
-              label={FIELD_LABELS[k]}
-              checked={fields[k]}
-              onChange={(v) => onChange(k, v)}
-            />
-          ))}
+          {(["LogChat", "LogJoin", "LogDeath", "LogAnticheat"] as const).map(
+            (k) => (
+              <ConfigToggle
+                key={k}
+                label={FIELD_LABELS[k]}
+                checked={fields[k]}
+                onChange={(v) => onChange(k, v)}
+              />
+            ),
+          )}
         </ConfigSection>
         <ConfigSection title="投票">
           <ConfigToggle
@@ -751,10 +800,22 @@ function CommandsTab({
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-3">
             {(
               [
-                ["VotifyPassCooldown", "通过冷却(秒)", "5（ChatManager.cs:77）"],
-                ["VotifyFailCooldown", "失败冷却(秒)", "60（ChatManager.cs:78）"],
+                [
+                  "VotifyPassCooldown",
+                  "通过冷却(秒)",
+                  "5（ChatManager.cs:77）",
+                ],
+                [
+                  "VotifyFailCooldown",
+                  "失败冷却(秒)",
+                  "60（ChatManager.cs:78）",
+                ],
                 ["VotifyDuration", "持续时长(秒)", "15（ChatManager.cs:79）"],
-                ["VotifyPercentage", "通过百分比(0–100)", "75（ChatManager.cs:80）"],
+                [
+                  "VotifyPercentage",
+                  "通过百分比(0–100)",
+                  "75（ChatManager.cs:80）",
+                ],
                 ["VotifyPlayers", "最少玩家数", "3（ChatManager.cs:81）"],
               ] as const
             ).map(([k, label, ph]) => (
@@ -779,9 +840,11 @@ function CommandsTab({
                   onChange={(v) => onChange(k, v)}
                   type={k === "GSLT" ? "password" : "text"}
                   placeholder={
-                    k === "Chatrate" ? "0.25（秒）"
-                      : k === "Cycle" ? "3600（秒/昼夜循环）"
-                      : undefined
+                    k === "Chatrate"
+                      ? "0.25（秒）"
+                      : k === "Cycle"
+                        ? "3600（秒/昼夜循环）"
+                        : undefined
                   }
                 />
               ))}
