@@ -120,7 +120,7 @@ theme: {
 | `2:3` | 🎨 Console | `/console` | ✅ P0 |
 | `2:4` | 🎨 Mods | `/mods` | ✅ P0（**核心差异化**） |
 | `2:5` | 🎨 Players | `/players` | ✅ P0 |
-| `2:6` | 🎨 Config（5 子页 stack：Commands/Config.txt/Workshop/OpenMod/RocketMod） | `/config/[tab]` | ✅ P0（**做 Commands.dat 一栏，5 个 Tab v1.1 后做**） |
+| `2:6` | 🎨 Config（5 子页 stack：Commands/Config.txt/Workshop/OpenMod/RocketMod） | `/config/[tab]` | ✅ P0（**做 Commands.dat 一栏；2026-08-12 LDM 选型后 OpenMod/RocketMod 两个 Tab 规划职责由 LdmPage 取代**（见 ldm-integration-design §7.5——LDM 插件不上 Workshop）；Workshop Tab 保留做 WorkshopDownloadConfig.json 下载管理） |
 | `3:117` | 🎨 Server Setup | `/server-setup` | ✅ P0（**核心差异化**） |
 | `12:16326` | 🎨 Files | `/files` | ✅ **P0**（**骨干功能**——文件管理/上传/上下文菜单/权限对话框都完整画了，收回 P0） |
 | `23:19917` | 🎨 System Settings | `/settings` | ⏳ **P1**（账户/安全/网页/日志/默认值 5 卡做完就上） |
@@ -137,6 +137,8 @@ theme: {
 - `20:18829` RocketMod Tab
 
 **实现侧建议**：要么用同一个 Page + 5 个 Frame 互斥（visible 切换）；要么存 5 张图片备查。**代码侧只实现 Commands.dat 一个 Tab 做 v1 demo，其他 4 个 v1.1 后做**。
+
+> ⚠️ **2026-08-12 更新**：LDM 选型定死（commit `c5f2ac8`）后，Figma 的 Workshop/OpenMod/RocketMod 三个 Tab 的**规划职责已转移**——LDM 接入方案（ldm-integration-design §7）定义独立 `<LdmPage>`（4 Tab：已装插件/框架配置/权限组/插件来源），Config 页保持 Commands.dat + Config.txt + Workshop 下载管理。OpenMod/RocketMod Tab 不再实现。
 
 ### 5.2 Files 页面真实结构（收回 P0）
 
@@ -214,7 +216,7 @@ theme: {
 | `recharts`（图表） | Dashboard 有 Player Activity Chart + Resource Usage Chart 2 处实例 | ✅ |
 | `@tanstack/react-table`（表格） | Players 用 `PlayerTable` 组件，列：Player/SteamID/Character/Ping/Online/Actions | ✅ |
 | `lucide-react`（图标） | 设计稿用 emoji（🎨 ⚡ 🖥️ 等），**真正的图标**用 lucide，对应组件：如 ModCard 详情用 `Eye`、移除用 `X`、订阅用 `Plus` | ✅（需实现时映射） |
-| `rcon-srcds` | Console 的连接状态指示器「Connected (OpenMod RCON 25545)」已经用上 | ✅ |
+| ~~`rcon-srcds`~~ | ~~Console 的连接状态指示器「Connected (OpenMod RCON 25545)」已经用上~~ | ⛔ 已退役（ADR-0004 Phase 6 删依赖 + RCON 通道，命令走 PTY 终端） |
 | `ws` | Dashboard 实时推送（玩家数 / Mod 数 / CPU/RAM）需要 ws 推动 | ✅ |
 
 ---

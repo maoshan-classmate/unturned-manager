@@ -19,8 +19,8 @@
 | 7 | RconBindAddress 在 Commands.dat？ | ❌ **不存在此指令**。全网无一命中。 | 高 | 穷举搜索未命中 |
 | 8 | Game Labs / SynUW 是什么？ | ❌ 不存在于 Unturned 生态。 | 高 | 穷举搜索未命中 |
 | 9 | Alpine Linux musl 兼容性？ | ❌ 不官方支持。Unity Linux player 仅支持 glibc。直接用 Ubuntu/Debian。 | 高 | 常识 + 搜索确认 |
-| 10 | RocketMod XML vs JSON 比例？ | XML 是绝对主流（FREAKHOSTING：~99% 社区 mods）。JSON 极少数。面板**必支持 XML，JSON 可延后**。 | 中 | FREAKHOSTING、GameServerKings |
-| 11 | OpenMod reload 历史失败报告？ | 仅 1 个无关 GitHub Issue（#843，HarmonyLib 初始化失败）。无 reload 专项崩溃报告。 | — | GitHub Issues 搜索 |
+| 10 | LDM（RocketMod 官方分叉）插件配置 XML vs JSON 比例？ | XML 是绝对主流（FREAKHOSTING：~99% 社区 mods）。JSON 极少数。面板**必支持 XML，JSON 可延后**（2026-08-12 LDM 选型后不变——LDM 继承 RocketMod 的 `Configuration.xml` 约定，真源 `Rocket.Core/Environment.cs`）。 | 中 | FREAKHOSTING、GameServerKings、LDM 源码 |
+| 11 | ~~OpenMod reload 历史失败报告？~~ | **已作废（2026-08-12）**——OpenMod 已删（commit `c5f2ac8`），LDM 定死。LDM 全局 reload 官方已删（U3-SDK Issue #1794 + `command_rocket_reload_disabled`），单插件 reload 不保证成功，改配置必须重启。 | — | GitHub Issues 搜索 + LDM 选型决策 |
 | 12 | meta.dat 版本比较文档？ | 全网无资料。SDG 官方文档未提及。 | — | 搜索未命中 |
 | 13 | 旧 CLI 参数（-port/-map）vs Commands.dat？ | 全网无资料。 | — | 搜索未命中 |
 
@@ -34,9 +34,9 @@
 
 ---
 
-## 🔧 真·需实机验证（3 项）
+## 🔧 真·需实机验证（2 项）
 
-以下三项在互联网上**没有任何文档、Issue、社区帖子能给出答案**。必须在真实 U3DS 环境上测试才能确认。
+以下两项在互联网上**没有任何文档、Issue、社区帖子能给出答案**。必须在真实 U3DS 环境上测试才能确认。
 
 ### 1. 旧 CLI 参数（-port/-map/-pvp）是否仍覆盖 Commands.dat？
 
@@ -54,20 +54,9 @@
 
 ---
 
-### 2. OpenMod `reload` 在生产中的实际成功率
+### ~~2. OpenMod `reload` 在生产中的实际成功率~~（已作废 2026-08-12）
 
-**背景**：RocketMod 的 reload 有已知严重问题（U3-SDK Issue #1794 建议删除该功能）。OpenMod 的 reload 官方文档列为标准流程，无公开崩溃报告，但也没有系统性的可靠性验证。RocketMod 的前车之鉴意味着不能仅凭"没有 Issue"就假设它可靠。
-
-**验证方法**：
-1. 在测试服务器安装 5 个常用 OpenMod 插件（Economy/Teleport/Kit/Shop/Vote）
-2. 每个插件修改其 `config.yaml` 的一个字段
-3. `openmod reload <PluginId>` → 执行 10 次
-4. 每次 reload 后执行 RCON `Players` 测试服务器响应
-5. 记录是否出现：插件报错 / RCON 断连 / 服务器卡顿 / 内存上涨
-
-**影响**：决定面板的配置保存流程——
-- reload 可靠 → "保存配置 → 自动 reload → 即时生效"
-- reload 不可靠 → "保存配置 → 提示重启服务器"
+**作废原因**：OpenMod 已删除（commit `c5f2ac8`），LDM 定死。LDM 的 reload 语义已由源码 + U3-SDK Issue #1794 确定：**全局 `/rocket reload` 官方已删**（`command_rocket_reload_disabled`="Please reload individual plugins instead"），**单插件 `/rocket reload <name>` 不保证成功**，改配置生效必须走重启流水线（ADR-0004 §重启流水线：Save + Shutdown 10 + forceKill + spawn）。面板策略已钉死「改配置 = 重启」——无需再实机验证 reload 成功率。
 
 ---
 
@@ -90,8 +79,8 @@
 
 | 类别 | 数量 |
 |---|---|
-| ✅ 补充搜索已核查 | 13 |
+| ✅ 补充搜索已核查 | 13（#11 已作废，有效 12 条） |
 | ❌ 推翻的原假设 | 1（Mono） |
-| 🔧 真·需实机验证 | **3** |
+| 🔧 真·需实机验证 | **2**（第 2 项 OpenMod reload 2026-08-12 已作废） |
 
-仅三件事真正需要一台测试服务器才能确认。其余 13 条已通过各种信息来源闭环。
+仅两件事真正需要一台测试服务器才能确认。其余已通过各种信息来源闭环。

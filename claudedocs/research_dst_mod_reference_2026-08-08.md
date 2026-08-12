@@ -15,7 +15,7 @@
 | **Mod 信息获取** | Steam WebAPI `IPublishedFileService/QueryFiles/v1` + `GetDetails/v1`，**必须带 WebAPI Key** | **直接解决本项目 `?xml=1` 失效问题**——放弃零凭证 XML，迁移到带 Key 的 JSON 接口 | ⭐⭐⭐ |
 | **Mod 订阅下载** | SteamCMD `+workshop_download_item 322330 <id>` → 临时区 → 原子复制到游戏目录 → 维护 `appworkshop_*.acf` 清单 | 下载命令换成 AppID **`304930`**（游戏本体，非服务端 `1110390`——2026-08-11 实机教训）；「临时区+原子移动+acf 维护+失败回滚」模式可整体借鉴 | ⭐⭐⭐ |
 | **Mod 管理** | 「目录扫描 + acf 解析 + WebAPI 元数据合并」三源合一展示已下载/已启用 | 模式通用，字段与路径按 U3DS 语义替换 | ⭐⭐⭐ |
-| **Mod 配置** | 读 mod 自带 `modinfo.lua`（声明 schema）→ 弹窗表单 → 写 `modoverrides.lua` | **Unturned 无此机制**——必须改为「OpenMod/RocketMod 插件配置」，不能照搬弹窗 | ⭐（模式）+⚠️ 差异化 |
+| **Mod 配置** | 读 mod 自带 `modinfo.lua`（声明 schema）→ 弹窗表单 → 写 `modoverrides.lua` | **Unturned 无此机制**——必须改为「LDM 插件配置」（`Servers/<ID>/Rocket/Plugins/<Name>/<Name>.configuration.xml`，XML），不能照搬弹窗 | ⭐（模式）+⚠️ 差异化 |
 
 **一句话**：DST 平台是把「Steam 官方 WebAPI（元数据）+ SteamCMD（下载）+ acf 清单（状态）+ 游戏配置文件（启用/配置）」串成完整闭环。Unturned 的对应物是 `WorkshopDownloadConfig.json` + `Servers/<ID>/Workshop/` + `appworkshop_304930.acf`，前三条可直接映射，第四条（mod 配置）语义不同需改造。
 
@@ -125,7 +125,7 @@ steamcmd/steamcmd.sh +force_install_dir <dmp_files>/mods/ugc/<cluster>
 | 下载 | SteamCMD `workshop_download_item 322330` 临时区+复制 | 改 AppID **`304930`**（游戏本体，非服务端 `1110390`——2026-08-11 实机修正），**下载到 staging 不停服；应用（移动进 content + 改 File_IDs）必须重启**（见 §5.3 修正，已落盘 `unturned-sop.md`） | ⭐⭐ |
 | 已下载状态 | 目录扫描 + `appworkshop_322330.acf` 解析 | 目录 `Servers/<ID>/Workshop/steamapps/workshop/content/304930/*` + `appworkshop_304930.acf`；acf 解析器可移植（Node 需 VDF 解析库或自写） | ⭐⭐⭐ |
 | 启用/禁用 | `modoverrides.lua` 键增删 | `WorkshopDownloadConfig.json` 的 `File_IDs` 增删（面板只写 `File_IDs`，其余只读，已有 `writeWorkshopFileIds`） | ⭐⭐（机制对应，文件不同） |
-| mod 配置 | `modinfo.lua` schema → `modoverrides.lua` | **Unturned 无对应物** → 改为「OpenMod 插件 config.yaml / RocketMod Configuration.xml」编辑（已有 ConfigService 支持，前端补 Tab） | ⚠️ 差异化 |
+| mod 配置 | `modinfo.lua` schema → `modoverrides.lua` | **Unturned 无对应物** → 改为「LDM 插件 Configuration.xml」编辑（ConfigService 原子写支持，LDM 接入后前端补 Mod 框架页） | ⚠️ 差异化 |
 | 并发控制 | `atomic` 计数器 + mutex | 复用本项目 `activeOperation` 竞态门控 | ⭐ |
 | 临时区清理 | scheduler `ModDownloadClean` | 可选：SteamCMD staging 目录清理任务 | ⭐ |
 | WebAPI Key 配置 | 全局设置存 Key | 面板 Settings 加「Steam WebAPI Key」配置项 | ⭐⭐⭐ |
@@ -135,7 +135,7 @@ steamcmd/steamcmd.sh +force_install_dir <dmp_files>/mods/ugc/<cluster>
 | DMP 做法 | 为什么不能照搬 | Unturned 应做的 |
 |---|---|---|
 | **下载不停服**（临时区+移动） | **部分成立（已修正）**。DST 游戏运行时扫 mod 目录 → 下载完移动即热生效；Unturned 无热加载，但下载到 staging 可不停服（U3DS 只 mount `content/304930/`，不扫 staging），**应用（移动进 content + 改 File_IDs）必须重启** | **可借鉴**：SteamCMD 下载到 `Workshop/staging/`（不停服）→ 重启流水线内移动进 `content/304930/` 生效。validate / 更新已加载 mod / 更新二进制仍停服。**已落盘到 `unturned-sop.md` §Workshop 内容下载 + `architecture-spec.md` §1.4** |
-| **mod 配置弹窗**（modinfo.lua） | Unturned Workshop mod 无 modinfo.lua / modoverrides.lua 机制 | 不做 mod 配置弹窗；「配置」落在插件层（OpenMod/RocketMod），或 WorkshopDownloadConfig.json 的只读字段展示 |
+| **mod 配置弹窗**（modinfo.lua） | Unturned Workshop mod 无 modinfo.lua / modoverrides.lua 机制 | 不做 mod 配置弹窗；「配置」落在插件层（LDM），或 WorkshopDownloadConfig.json 的只读字段展示 |
 | **每世界独立 mod 配置**（ModInOne 分支） | Unturned 是每 ServerID 一份 WorkshopDownloadConfig.json，无「世界」层级 | 保持每 ServerID 一份 |
 | **screen 进程管理 / Lua 注入防护** | 技术栈不同 | 保持 ProcessSupervisor spawn `ServerHelper.sh`；配置格式为 JSON/YAML，无 Lua 注入面 |
 

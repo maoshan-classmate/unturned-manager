@@ -39,6 +39,6 @@
 
 ## 配置文件优先级
 
-启动参数文件（启动参数与模式）→ 游戏配置文件（玩法与浏览器）→ 创意工坊订阅清单（Mod）→ RocketMod 与 OpenMod 插件配置
+启动参数文件（启动参数与模式）→ 游戏配置文件（玩法与浏览器）→ 创意工坊订阅清单（Mod）→ LDM 插件配置（`Rocket/` 目录，2026-08-12 选型定死 LDM-only）
 
 相关：[[architecture-spec-current-state]]、[[session-checkpoint-2026-08-11-phase6-rcon-removal]]、[[session-checkpoint-2026-08-11-phase7-session-recovery]]
