@@ -10,6 +10,7 @@ import { ConfigPage } from "./pages/ConfigPage.js";
 import { FilesPage } from "./pages/FilesPage.js";
 import { ServerSetupPage } from "./pages/ServerSetupPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
+import { LdmPage } from "./pages/LdmPage.js";
 import { Toaster } from "./components/ui/sonner.js";
 
 function AppLayout() {
@@ -51,6 +52,7 @@ function AppLayout() {
               element={<ServerSetupPage />}
             />
             <Route path="/:serverId/settings" element={<SettingsPage />} />
+            <Route path="/:serverId/ldm" element={<LdmPage />} />
           </Routes>
         </main>
       </div>
