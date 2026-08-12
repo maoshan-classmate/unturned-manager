@@ -11,7 +11,8 @@ import {
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
-import { Button } from "../components/ui/button.js";
+import { Button, buttonVariants } from "../components/ui/button.js";
+import { cn } from "../lib/utils.js";
 
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
@@ -147,10 +148,14 @@ export function DashboardPage() {
 
         {/* ── 跳转入口 ── */}
         <div className="flex items-center gap-2">
+          {/*
+           * 复用 buttonVariants 样式——保留 a 链接语义（路由跳转、Cmd+Click 新标签页开），
+           * 不强行用 Button 渲染（base-ui 官方不推荐把 Button render 成 a：链接有独立语义）。
+           * 同一按钮视觉 = 全站视觉一致性闭环。
+           */}
           <a
             href={`/${server.id}/server-setup`}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded text-xs"
-            style={{ backgroundColor: "#1E293B", color: "#F1F5FB", border: "1px solid #334155" }}
+            className={cn(buttonVariants({ variant: "secondary", size: "default" }))}
           >
             <ArrowRight size={14} />
             前往服务器设置
