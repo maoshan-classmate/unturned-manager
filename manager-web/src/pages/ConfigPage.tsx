@@ -27,6 +27,13 @@ import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { Button } from "../components/ui/button.js";
+import {
+  buildTxtSections,
+  readBoolEntry,
+  readStringEntry,
+  EMPTY_TXT_FIELDS as EMPTY_TXT,
+  type ConfigTxtFields,
+} from "./configTxtAdapter.js";
 
 type ConfigTab = "commands" | "txt" | "workshop";
 
@@ -145,48 +152,8 @@ const EMPTY_FIELDS: CommandsFields = {
 
 // ─── Config.txt fields ─────────────────────────────────
 
-interface ConfigTxtFields {
-  Login_Token: string;
-  完整描述: string;
-  列表描述: string;
-  图标URL: string;
-  缩略图URL: string;
-  VAC反作弊: boolean;
-  BattlEye: boolean;
-  最大Ping: string;
-  定时关机: boolean;
-  更新自动关机: boolean;
-  生成倍率: string;
-  物品耐久: boolean;
-  掉落消失: string;
-  重生时间: string;
-  肩后视角: boolean;
-  自由建造: boolean;
-  玩家伤害: boolean;
-  允许自杀: boolean;
-}
-
-/** 空白初始值——全部从服务端 Config.txt 实际内容读取 */
-const EMPTY_TXT: ConfigTxtFields = {
-  Login_Token: "",
-  完整描述: "",
-  列表描述: "",
-  图标URL: "",
-  缩略图URL: "",
-  VAC反作弊: false,
-  BattlEye: false,
-  最大Ping: "",
-  定时关机: false,
-  更新自动关机: false,
-  生成倍率: "",
-  物品耐久: false,
-  掉落消失: "",
-  重生时间: "",
-  肩后视角: false,
-  自由建造: false,
-  玩家伤害: false,
-  允许自杀: false,
-};
+// ConfigTxtFields interface 与 EMPTY_TXT 默认值已迁移至 ./configTxtAdapter.ts
+// ——helper 必须可独立单测（owner 网），不在 ConfigPage.tsx 内联。
 
 // ─── Workshop row ──────────────────────────────────────
 
@@ -306,30 +273,32 @@ export function ConfigPage() {
         const res = await apiClient.get(`/servers/${server.id}/config/txt`);
         const raw = res.data.data;
         if (raw?.sections) {
-          const b = raw.sections["浏览器"] ?? {},
-            s = raw.sections["服务器"] ?? {};
-          const i = raw.sections["物品"] ?? {},
-            g = raw.sections["玩法开关"] ?? {};
+          // BUG-2 闭环：read 侧走 helper 解 entries[]——schema 真实形态是
+          // sections[中文] = { name, entries: ConfigEntry[] }，不是裸 kv map
+          const b = raw.sections["浏览器"],
+            s = raw.sections["服务器"];
+          const i = raw.sections["物品"],
+            g = raw.sections["玩法开关"];
           setTxtFields({
             ...EMPTY_TXT,
-            Login_Token: b.Login_Token ?? "",
-            完整描述: b["完整描述"] ?? "",
-            列表描述: b["列表描述"] ?? "",
-            图标URL: b["图标URL"] ?? "",
-            缩略图URL: b["缩略图URL"] ?? "",
-            VAC反作弊: s["VAC反作弊"] !== undefined,
-            BattlEye: s.BattlEye !== undefined,
-            最大Ping: s["最大Ping(ms)"] ?? "",
-            定时关机: s["定时关机"] !== undefined,
-            更新自动关机: s["更新自动关机"] !== undefined,
-            生成倍率: i["生成倍率"] ?? "",
-            物品耐久: i["物品耐久"] !== undefined,
-            掉落消失: i["掉落消失(s)"] ?? "",
-            重生时间: i["重生时间(s)"] ?? "",
-            肩后视角: g["肩后视角"] !== undefined,
-            自由建造: g["自由建造"] !== undefined,
-            玩家伤害: g["玩家伤害"] !== undefined,
-            允许自杀: g["允许自杀"] !== undefined,
+            Login_Token: readStringEntry(b, "Login_Token"),
+            完整描述: readStringEntry(b, "完整描述"),
+            列表描述: readStringEntry(b, "列表描述"),
+            图标URL: readStringEntry(b, "图标URL"),
+            缩略图URL: readStringEntry(b, "缩略图URL"),
+            VAC反作弊: readBoolEntry(s, "VAC反作弊"),
+            BattlEye: readBoolEntry(s, "BattlEye"),
+            最大Ping: readStringEntry(s, "最大Ping(ms)"),
+            定时关机: readBoolEntry(s, "定时关机"),
+            更新自动关机: readBoolEntry(s, "更新自动关机"),
+            生成倍率: readStringEntry(i, "生成倍率"),
+            物品耐久: readBoolEntry(i, "物品耐久"),
+            掉落消失: readStringEntry(i, "掉落消失(s)"),
+            重生时间: readStringEntry(i, "重生时间(s)"),
+            肩后视角: readBoolEntry(g, "肩后视角"),
+            自由建造: readBoolEntry(g, "自由建造"),
+            玩家伤害: readBoolEntry(g, "玩家伤害"),
+            允许自杀: readBoolEntry(g, "允许自杀"),
           });
         }
       } else {
@@ -411,35 +380,11 @@ export function ConfigPage() {
           loadouts: fields.Loadout,
         });
       } else if (tab === "txt") {
+        // BUG-2 闭环：write 侧走 helper 包成 schema 真实形态——
+        // sections: Record<sectionName, { name, entries: ConfigEntry[] }>
+        const sections = buildTxtSections(txtFields);
         await apiClient.put(`/servers/${server.id}/config/txt`, {
-          sections: {
-            浏览器: {
-              Login_Token: txtFields.Login_Token,
-              完整描述: txtFields.完整描述,
-              列表描述: txtFields.列表描述,
-              图标URL: txtFields.图标URL,
-              缩略图URL: txtFields.缩略图URL,
-            },
-            服务器: {
-              VAC反作弊: txtFields.VAC反作弊,
-              BattlEye: txtFields.BattlEye,
-              "最大Ping(ms)": txtFields.最大Ping,
-              定时关机: txtFields.定时关机,
-              更新自动关机: txtFields.更新自动关机,
-            },
-            物品: {
-              生成倍率: txtFields.生成倍率,
-              物品耐久: txtFields.物品耐久,
-              "掉落消失(s)": txtFields.掉落消失,
-              "重生时间(s)": txtFields.重生时间,
-            },
-            玩法开关: {
-              肩后视角: txtFields.肩后视角,
-              自由建造: txtFields.自由建造,
-              玩家伤害: txtFields.玩家伤害,
-              允许自杀: txtFields.允许自杀,
-            },
-          },
+          sections: Object.fromEntries(sections.map((s) => [s.name, s])),
         });
       }
       setDirty(false);
