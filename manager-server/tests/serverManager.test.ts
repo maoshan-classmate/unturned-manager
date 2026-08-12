@@ -20,6 +20,11 @@ vi.mock("../src/modules/server/startScript.js", () => ({
   detectStartScript: vi.fn(async () => "ServerHelper.sh"),
   ensureStartScriptExecutable: vi.fn(async () => {}),
   startScriptNames: vi.fn(() => ["ServerHelper.sh", "ExampleServer.sh"]),
+  // BUG-1：restoreStartCommand/startPty 会调用 normalizeStartCommand——mock 默认不过问（原样返回）
+  normalizeStartCommand: vi.fn((cmd: string) => ({
+    command: cmd,
+    changed: false,
+  })),
 }));
 
 // ─── Mocks ────────────────────────────────────────────────
@@ -204,7 +209,8 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(pty.write).toHaveBeenCalledWith(
       "S1" as ServerId,
-      "./ServerHelper.sh +InternetServer/S1 -ThreadedConsole\r",
+      // BUG-1：+InternetServer 必须在末位（U3-SDK tryGetServer 取到行末）
+      "./ServerHelper.sh -ThreadedConsole +InternetServer/S1\r",
     );
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.RUNNING);
     const states = bcast.events
@@ -499,7 +505,8 @@ describe("ServerManager — PTY 崩溃检测 + 5s 硬重启（ADR-0004 Phase 2�
     expect(pty.spawn).toHaveBeenCalledTimes(1); // 不重 spawn
     expect(pty.write).toHaveBeenLastCalledWith(
       "T5" as ServerId,
-      "./ServerHelper.sh +InternetServer/T5 -ThreadedConsole\r",
+      // BUG-1：+InternetServer 必须在末位
+      "./ServerHelper.sh -ThreadedConsole +InternetServer/T5\r",
     );
     expect(mgr.getState("T5" as ServerId)).toBe(ServerState.RUNNING);
   });

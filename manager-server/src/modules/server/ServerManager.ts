@@ -17,11 +17,15 @@ import type {
 import { ServerState } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
 import { AppError } from "../../utils/AppError.js";
-import { formatOperationType, formatServerState } from "../../utils/serverStateLabels.js";
+import {
+  formatOperationType,
+  formatServerState,
+} from "../../utils/serverStateLabels.js";
 import { resolveInstallDir, resolveServerPath } from "./pathResolver.js";
 import {
   detectStartScript,
   ensureStartScriptExecutable,
+  normalizeStartCommand,
 } from "./startScript.js";
 import {
   getStartCommand,
@@ -463,10 +467,24 @@ export class ServerManager implements IServerManager {
     const { id, installDir } = entry.config;
 
     // 生成 / 复用 startCommand（缓存到 config，避免每次探测 + chmod）
+    // ★ BUG-1 兜底：任何来源（生成 / DB 恢复 / 用户编辑）都过 normalizeStartCommand——
+    //   保证 +InternetServer/<id> 在末位（U3-SDK tryGetServer 取到行末，见 startScript.ts）。
+    //   changed 时写回 DB，旧格式的已持久化命令一次重启即自愈。
     let startCommand = entry.config.startCommand;
     if (!startCommand) {
       startCommand = await this.buildStartCommand(id, installDir);
       entry.config = { ...entry.config, startCommand };
+    } else {
+      const { command, changed } = normalizeStartCommand(startCommand);
+      if (changed) {
+        logger.info(
+          { serverId, from: startCommand, to: command },
+          "startCommand 已归一化（+InternetServer 未在末位）",
+        );
+        startCommand = command;
+        entry.config = { ...entry.config, startCommand };
+        setStartCommand(this.db, id, command);
+      }
     }
 
     let pid: number;
@@ -616,7 +634,14 @@ export class ServerManager implements IServerManager {
 
   /**
    * 生成 U3DS 启动命令（ADR-0004 §6.1）：detectStartScript 探测 → chmod +x →
-   * `./<script> +InternetServer/<id> -ThreadedConsole`。Phase 4 用户可在控制卡片编辑覆盖。
+   * `./<script> -ThreadedConsole +InternetServer/<id>`。Phase 4 用户可在控制卡片编辑覆盖。
+   *
+   * ★ BUG-1 修复（2026-08-13 实机根因）：`+InternetServer/<id>` 必须是命令行**最后一个参数**。
+   * U3-SDK `CommandLine.tryGetServer` 把 serverID 从 `+internetserver/` 一直取到行末
+   * （CommandLine.cs:203-216），而 ServerHelper.sh 透传 `$@`——若写成
+   * `+InternetServer/<id> -ThreadedConsole`，serverID 会被污染成 `<id> -ThreadedConsole`，
+   * U3DS 去读 `Servers/<id> -ThreadedConsole/`，面板写入的 `Servers/<id>/` 全部失效。
+   * 故把 `-ThreadedConsole` 前置，保证 server 参数在末位。
    *
    * @throws {AppError} code=start-script-not-found, status=409 当 installDir 无 U3DS 启动脚本
    */
@@ -635,10 +660,9 @@ export class ServerManager implements IServerManager {
       );
     }
     await ensureStartScriptExecutable(installDir, script);
-    // 对齐 GSM3 docs 启动方式：统一带 +InternetServer/<id> + -ThreadedConsole。
-    // ServerHelper.sh 透传参数；ExampleServer.sh 自带 +InternetServer/Default 会被后置参数覆盖——
-    // 保证启动的是用户创建的 <id> 实例而非 Default（BUG-3/7 潜在错实例修复）。
-    return `./${script} +InternetServer/${id} -ThreadedConsole`;
+    // 对齐 GSM3 docs 启动方式：统一带 -ThreadedConsole + +InternetServer/<id>。
+    // -ThreadedConsole 前置（在 server 参数之前），确保 +InternetServer/<id> 是命令行最后一个参数。
+    return `./${script} -ThreadedConsole +InternetServer/${id}`;
   }
 
   /**
@@ -760,7 +784,7 @@ export class ServerManager implements IServerManager {
       try {
         await this.configService.backup(
           serverId,
-          "Server/WorkshopDownloadConfig.json",
+          "WorkshopDownloadConfig.json",
         );
       } catch (err) {
         // 备份失败：文件可能还不存在（首次启动），降级为 warn，不阻塞
@@ -899,13 +923,22 @@ export class ServerManager implements IServerManager {
    * ADR-0004 Phase 4：从 settings K-V 恢复 startCommand 到 in-memory config。
    * loadServersFromDisk 时调用——用户编辑过的 startCommand 跨重启保留。
    * ★ Phase 6：RCON 通道已删除，对应 restoreRcon 不再需要。
+   * ★ BUG-1：恢复时过 normalizeStartCommand（+InternetServer 必须末位），changed 则自愈持久化。
    */
   private restoreStartCommand(serverId: ServerId): void {
     const entry = this.servers.get(serverId);
     if (!entry) return;
     const persisted = getStartCommand(this.db, serverId);
     if (persisted) {
-      entry.config = { ...entry.config, startCommand: persisted };
+      const { command, changed } = normalizeStartCommand(persisted);
+      if (changed) {
+        logger.info(
+          { serverId, from: persisted, to: command },
+          "恢复 startCommand 时已归一化（+InternetServer 未在末位）",
+        );
+        setStartCommand(this.db, serverId, command);
+      }
+      entry.config = { ...entry.config, startCommand: command };
     }
   }
 }
