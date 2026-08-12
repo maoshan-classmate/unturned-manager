@@ -347,11 +347,15 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 manager-server/src/modules/ldm/
 ├── LdmDiscoveryService.ts        # 读 Rocket.config.xml + Rocket.Unturned.config.xml + Permissions.config.xml + Plugins/ 目录
 ├── LdmConfigWriter.ts            # 写上述 3 个 XML + 各 Configuration.xml（原子写 + 备份 + 回滚）
-├── LdmApplyService.ts            # PTY 终端 owner-trust 重启流水线（复用 ServerManager.applyChangesCore）
+├── LdmApplyService.ts            # 薄业务层，调 ServerManager.applyChangesCore（§5.6 抽出的核心流水线）
 ├── LdmPluginSourceService.ts     # 拉取 LDM-Community 公开插件列表（本地缓存，供前端展示/外链）
 ├── LdmPluginCommandsService.ts   # PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态
+├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（§5.5 准确方案，零依赖）
 ├── RocketConfigXmlParser.ts      # 自写 XML 解析（保留注释/属性顺序/嵌套，与 VdfParser 同思路）
 └── (各模块 .test.ts)
+
+manager-server/src/modules/server/ServerManager.ts
+└── applyChangesCore(serverId, opts)   # §5.6 抽出的 9 步流水线本体（mod_apply / ldm_apply 共用）
 ```
 
 ### 5.2 `LdmDiscoveryService`（读取类）
@@ -412,7 +416,8 @@ export interface RocketConfig {
 
 **实现要点**：
 - `readRocketConfig`：自写 `RocketConfigXmlParser`（与现有 `VdfParser` 同思路，保留注释/属性顺序/嵌套深度）。
-- `listInstalledPlugins`：`fs.readdir` + `fs.stat` 拿 .dll 时间戳 + `mono`/`Process` 调 .NET 程序集读版本号。
+- `listInstalledPlugins`：`fs.readdir` + `fs.stat` 拿 .dll 时间戳 + **`LdmAssemblyVersionReader` 解析 PE 元数据**读版本号（见 §5.5 准确方案）。
+- **错误处理**：Rocket/ 目录不存在 → 返回 `{ plugins: [], rocketConfig: null }`，UI 友好提示「未检测到 Mod 框架。请复制 U3DS 装包自带的 Extras 到 Modules 目录并重启实例」。
 - **错误处理**：Rocket/ 目录不存在 → 返回 `{ plugins: [], rocketConfig: null }`，UI 友好提示「未检测到 Mod 框架。请复制 U3DS 装包自带的 Extras 到 Modules 目录并重启实例」。
 
 ### 5.3 `LdmConfigWriter`（写类）
@@ -463,6 +468,119 @@ export interface ILdmConfigWriter {
 
 ### 5.4 ~~`LdmWorkshopService`~~ **已删除**——LDM 插件不上 Steam Workshop
 
+**底层逻辑**：.NET 程序集的 `AssemblyVersion` 不是 PE 头字段，而是 .NET 元数据流 `#~` 里的 `AssemblyVersionAttribute` 字符串属性。Mono CLI 调用方式（spawn `mono --assembly`）虽准，但开发期本机无 mono 拖慢 CI；PE 元数据流纯 Node 解析，部署零依赖。
+
+**模块结构**（严格对齐 `backend-development.md` 三层规范）：
+
+```
+manager-server/src/modules/ldm/
+└── LdmAssemblyVersionReader.ts    # 单文件模块（纯函数，零状态，零依赖注入）
+shared/
+├── contracts/ldm.ts               # + ILdmAssemblyVersionReader 接口
+└── schemas/ldm.schema.ts          # 不变（version 字段已存在）
+```
+
+**接口**（`shared/contracts/ldm.ts`）：
+
+```typescript
+/**
+ * 从 LDM 插件 .dll 读 AssemblyVersion 属性。
+ * 纯函数，零状态，零外部副作用——可并发调用（多个插件同时读版本号）。
+ * 失败一律返回 null，绝不抛异常——版本号只是展示字段，不影响插件启用/卸载/配置。
+ */
+export interface ILdmAssemblyVersionReader {
+  /** 读 .dll 的 AssemblyVersion（格式 "major.minor.patch.build"，如 "3.2.1.0"） */
+  readVersion(dllPath: string): string | null;
+}
+```
+
+**实现要点**（`LdmAssemblyVersionReader.ts`）：
+
+```typescript
+import { PEFile, PEOptions } from 'pe-library';
+
+export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
+  /**
+   * 读 .dll 的 AssemblyVersion。
+   * 步骤：
+   *  ① PE 头解析定位 CLI Header 拿 MetaDataDirectoryAddress
+   *  ② 元数据根 → #~ 流 → #Strings heap
+   *  ③ 扫 TypeRef 表找 "System.Reflection.AssemblyVersionAttribute"
+   *  ④ 读 FixedArg（字符串 UserString）→ 返回 "major.minor.patch.build"
+   *
+   * 真源：ECMA-335 Partition II §22（AssemblyVersionAttribute 在 #~ 流的 CustomAttribute 表）
+   *
+   * @param dllPath - .dll 绝对路径
+   * @returns 版本字符串（如 "3.2.1.0"）；解析失败/非 .NET 程序集/无 AssemblyVersion 属性 → null
+   */
+  readVersion(dllPath: string): string | null {
+    try {
+      const buf = readFileSync(dllPath);
+      const pe = new PEFile(buf, PEOptions.flags(0));
+      // ... ~20 行 #~ 流解析
+    } catch {
+      return null;  // 绝不抛——版本号只是展示
+    }
+  }
+}
+```
+
+**失败语义**（写进 JSDoc）：
+- 文件不存在 → null
+- 非 PE 文件 → null
+- PE 但非 .NET（无 CLI Header） → null
+- .NET 但无 AssemblyVersionAttribute → null（用 AssemblyFileVersionAttribute 兜底）
+- 元数据损坏 → null + pino warn（不阻塞列表渲染）
+
+**集成点**（`LdmDiscoveryService.listInstalledPlugins`）：
+
+```typescript
+async listInstalledPlugins(serverId: ServerId): Promise<InstalledPlugin[]> {
+  const pluginsDir = path.join(resolveServerPath(serverId), 'Rocket', 'Plugins');
+  const dlls = await fs.readdir(pluginsDir).catch(() => []);
+  return await Promise.all(
+    dlls
+      .filter((f) => f.endsWith('.dll'))
+      .map(async (f) => {
+        const full = path.join(pluginsDir, f);
+        const stat = await fs.stat(full);
+        const name = f.replace(/\.dll$/, '');
+        return {
+          name,
+          version: this.versionReader.readVersion(full),  // 同步内联，性能好
+          hasConfig: await this.hasPluginConfig(pluginsDir, name),
+          enabled: false,  // 由 LdmPluginCommandsService 解析 /rocket plugins 后回填
+          configPath: path.join(pluginsDir, name, `${name}.configuration.xml`),
+        };
+      }),
+  );
+}
+```
+
+**单测**（≥ 6 用例，对应 backend-development.md 强制 ≥80% 行覆盖）：
+1. 真 .NET .dll → 返回 "3.2.1.0"
+2. 无 AssemblyVersionAttribute → 返回 null
+3. PE 但非 .NET（无 CLI Header）→ 返回 null
+4. 文件不存在 → 返回 null（不抛）
+5. 文件损坏 → 返回 null（不抛）
+6. 并发 10 个 .dll → 全部正确
+
+**为什么不用 mono CLI**：
+- 本机开发无 mono → 拖慢开发体验
+- Linux 部署虽强制装 mono，但 `mono --assembly` 输出解析脆（不同 mono 版本格式略异）
+- `pe-library` 零依赖（141KB unpacked），CI 无需额外镜像
+
+**依赖**（`manager-server/package.json`）：
+```json
+"dependencies": {
+  "pe-library": "^2.0.1"
+}
+```
+
+### 5.5 `LdmAssemblyVersionReader`（.dll 版本号读取 — A1 准确方案）
+
+> **拍板**：用 `pe-library@2.0.1`（MIT、零依赖、Node 原生）读 .NET PE 元数据，**不走 mono CLI**。
+
 **调研结论（关键）**：LDM 插件走 **GitHub Releases + LDM-Community 列表**分发，**不上 Steam Workshop**（[Steam Workshop 主站](https://steamcommunity.com/app/304930/workshop/) Asset Type 清单里没有 Plugin 类）。前端 `ModsPage` 现有的 Workshop 浏览与 LDM 插件无关。
 
 **修改原设计**：
@@ -471,35 +589,125 @@ export interface ILdmConfigWriter {
 - ✅ 新增 `LdmPluginSourceService`：定期拉取 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist) 公开数据（JSON API），面板本地缓存；前端展示 + 外链到 GitHub Releases 下载页
 - ✅ 插件下载与上传：用户从 GitHub 下载 .dll 后，通过 **Files API** 拖拽上传到 `Rocket/Plugins/<Name>.dll`
 
-### 5.5 与 `applyModChanges` 的对接
+### 5.6 与 `applyModChanges` 的对接（A2 拍板：抽 `LdmApplyService`）
 
-**改 LDM 配置生效 = 走 `ServerManager.applyModChanges` 同款 9 步流水线**（已存在）。但 LDM 不改 WorkshopDownloadConfig.json 的 File_IDs——File_IDs 只记录 Steam Workshop 资源包（AppID 304930）；LDM 插件**不上 Workshop**（走 GitHub Releases + 面板上传），配置项全在 `Rocket/` 目录，**与 File_IDs 完全无关**。
+> **拍板**：抽出独立 `LdmApplyService`，公共流水线提到 `ServerManager.applyChangesCore`。
+> **模块意识**：严格对齐 `backend-development.md` 三层结构（contracts 接口 → class 实现 → 路由工厂注入），预留第三应用方抽象入口。
 
-新增轻量级流水线（不改 Mod 列表时也用得上）：
+**底层逻辑**：当前 `ServerManager.applyModChanges` 是 145 行的 9 步流水线，**与 LDM 应用 80% 相同**（PTY Say + Save + Shutdown + waitExit + spawn + 广播）。按 backend-development.md「重复的数据库操作 ≥3 模块共用→新建共享模块」——现在是 2 个，**预防性抽 base method + 薄业务模块**，比等到 3 个再重构便宜。
+
+**模块结构**：
+
+```
+manager-server/src/modules/ldm/
+└── LdmApplyService.ts            # 薄业务层（activeOperation 类型 + WS 事件名 + 业务 hook）
+
+manager-server/src/modules/server/ServerManager.ts
+└── applyChangesCore(serverId, opts) → 重构抽出（9 步流水线本体）
+
+shared/
+└── contracts/ldm.ts               # + ILdmApplyService
+```
+
+**接口**（`shared/contracts/ldm.ts`）：
 
 ```typescript
 /**
- * 应用 LDM 配置变更——复用 PTY 终端 owner-trust 重启链路。
- * 与 applyModChanges 的区别：不写 WorkshopDownloadConfig.json（File_IDs 与 LDM 无关）。
+ * 应用 LDM 配置变更——PTY 终端 owner-trust 重启流水线。
+ * 不写 WorkshopDownloadConfig.json（File_IDs 只含 Workshop 资源包，与 LDM 无关）。
  */
-async applyLdmChanges(serverId: ServerId, changedPlugins: string[]): Promise<void> {
-  // ① activeOperation 校验（防竞态）
-  // ② PTY 写 Say 公告
-  // ③ PTY 写 Save
-  // ④ PTY 写 Shutdown 10
-  // ⑤ waitExit bash（30s 超时 forceKill）
-  // ⑥ spawn 新 bash + 1s 塞 startCommand
-  // ⑦ WS 广播 ldm_apply_progress { stage }
+export interface ILdmApplyService {
+  /**
+   * @param serverId - 实例标识
+   * @param changedPlugins - 变更的插件名列表（仅供日志与 UI 提示，重启本体由 applyChangesCore 完成）
+   * @throws AppError('operation-conflict') 当已有 activeOperation
+   * @throws AppError('server-not-running') 当实例未运行
+   */
+  applyChanges(serverId: ServerId, changedPlugins: string[]): Promise<void>;
 }
 ```
 
-**决策**：是否抽出独立 `LdmApplyService`？
-- **抽**：语义清晰，与 `WorkshopApplyService` 对称
-- **不抽**：直接复用 `ServerManager.applyModChanges`，传 `modIds=[]`（File_IDs 不变），单独加一个 `ldmChanged: string[]` 参数
+**实现要点**（`LdmApplyService.ts`）：
 
-**推荐**：抽出 `LdmApplyService`（继承 80% `applyModChanges` 逻辑；公共部分提到 `ServerManager.applyChangesCore(serverId, { type: 'mod_apply' | 'ldm_apply', payload })`）。
+```typescript
+/**
+ * LDM 配置变更应用服务——薄业务层。
+ *
+ * 关键设计决策（A2 拍板）：
+ * - 抽出独立模块而非在 ServerManager 加 ldmApply 分支，遵循 backend-development.md
+ *   「重复的数据库操作 ≥3 模块共用→新建共享模块」原则（现在是 2 个：mod_apply + ldm_apply；
+ *   将来加 modpack_apply 时零成本接入）
+ * - 流水线本体（Say + Save + Shutdown + waitExit + spawn + broadcast）抽到
+ *   ServerManager.applyChangesCore，本模块仅负责 activeOperation 类型 / WS 事件类型 / 业务 hook
+ * - 三个应用方（mod / ldm / 未来 modpack）共享同一个 activeOperation 互斥区，由 opts.kind 区分
+ */
+export class LdmApplyService implements ILdmApplyService {
+  constructor(
+    private readonly serverManager: IServerManager,
+    private readonly broadcaster: IBroadcaster,
+  ) {}
 
-> ⚠️ 此处抽象触发条件**恰好达到**（≥2 个模块：WorkshopApplyService + LdmApplyService 都跑同一套 PTY 重启流水线）—— **遵循 `backend-development.md` 模块抽象规范**「重复的数据库操作 ≥3 模块共用→新建共享模块」（差 1，先抽 base method 备好第三处）。
+  async applyChanges(serverId: ServerId, changedPlugins: string[]): Promise<void> {
+    await this.serverManager.applyChangesCore(serverId, {
+      kind: 'ldm_apply',
+      eventType: 'ldm_apply_progress',
+      activeOpType: 'ldm_apply',
+      preShutdownHook: async () => {
+        // LDM 应用前无额外操作（配置已写入完成才调 apply，hook 仅做日志）
+        logger.info({ serverId, changedPlugins }, 'LDM 变更应用开始');
+      },
+      postReadyHook: async () => {
+        logger.info({ serverId, changedPlugins }, 'LDM 变更应用完成');
+      },
+    });
+  }
+}
+```
+
+**`ServerManager.applyChangesCore` 重构契约**（抽出后的签名）：
+
+```typescript
+/**
+ * 应用变更核心流水线——mod_apply / ldm_apply / 未来 modpack_apply 共用。
+ * 不在路由层直接调——必须经 Service 层包装。
+ *
+ * @param opts.kind - 'mod_apply' | 'ldm_apply' | 'modpack_apply'（预留第三处）
+ * @param opts.eventType - WS 广播事件名（mod_apply_progress / ldm_apply_progress / modpack_apply_progress）
+ * @param opts.activeOpType - activeOperation.type（防竞态互斥）
+ * @param opts.preShutdownHook - 关服前回调（业务层日志/校验）
+ * @param opts.postReadyHook - 启动就绪后回调（业务层后处理）
+ */
+async applyChangesCore(
+  serverId: ServerId,
+  opts: ApplyChangesOptions,
+): Promise<void> { /* 145 行流水线本体 */ }
+```
+
+**事件类型扩展**（`shared/types/events.ts`）：
+
+```typescript
+/** 现状：只有 mod_apply_progress；A2 抽完后扩展为联合类型 */
+export type ApplyProgressEvent =
+  | { type: 'mod_apply_progress'; serverId: string; stage: ModApplyStage; ... }
+  | { type: 'ldm_apply_progress'; serverId: string; stage: LdmApplyStage; ... };
+```
+
+**重构影响**：
+- `ServerManager.applyModChanges` → 改为薄壳（20 行）调 `applyChangesCore` + `kind: 'mod_apply'`
+- `WorkshopApplyService` 内的任何调用方同步改
+- 兼容性：API 端点 8 `/api/servers/:id/ldm/apply` 不变（路由层只调 `ILdmApplyService.applyChanges`）
+
+**单测**（≥ 4 用例）：
+1. `applyChanges` 正常路径 → activeOperation='ldm_apply' → 流水线跑完 → 释放
+2. 已有 activeOperation → 抛 `operation-conflict`
+3. 实例非 RUNNING → 抛 `server-not-running`
+4. `preShutdownHook` 抛错 → 流水线仍走 finally 清理 activeOperation
+
+**完成定义**：
+- [ ] `applyChangesCore` 从 `applyModChanges` 抽出，原方法变薄壳
+- [ ] `LdmApplyService` 实现 + 单测
+- [ ] WS 事件类型扩展为联合
+- [ ] `composition-root.ts` 注入 `LdmApplyService`
 
 ---
 
@@ -857,7 +1065,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 - [ ] 没引入 `any`
 - [ ] `.research/U3-SDK` 未动
 - [ ] `unturned-sop.md` / `prohibitions.md` / `reference_ui_terms.md` / `reference_config_files.md §3` 同步更新
-- [ ] §12 调研回填已完成（8 项，含子任务补充 #1b/#7，2026-08-12）；唯一遗留项 5（.dll 版本号读取方式）在 Phase B 实施时定
+- [ ] §12 调研回填已完成（8 项，含子任务补充 #1b/#7，2026-08-12）；A1/A2 用户拍板后无遗留
 
 ---
 
@@ -869,8 +1077,9 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 |---|---|---|
 | A1 | `shared/types/domain.ts` 加 `RocketConfig` / `RocketUnturnedConfig` / `PermissionsConfig` / `InstalledPlugin` / `LdmState` / `CommunityPlugin` 类型 | 6 类型 + JSDoc |
 | A2 | `shared/schemas/ldm.schema.ts` | 9 个 Zod schema（§6.2） |
-| A3 | `shared/contracts/ldm.ts` | 5 个接口（Discovery / ConfigWriter / Apply / PluginSource / PluginCommands） |
+| A3 | `shared/contracts/ldm.ts` | 6 个接口（Discovery / ConfigWriter / Apply / PluginSource / PluginCommands / AssemblyVersionReader） |
 | A4 | `RocketConfigXmlParser.ts` 自写（保留注释/属性顺序/CDATA） | 解析/序列化 + 8 单测 |
+| A5 | `manager-server/package.json` 加 `pe-library@^2.0.1` 依赖 | 1 行 + lockfile |
 
 ### Phase B：核心模块
 
@@ -878,9 +1087,10 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 |---|---|---|
 | B1 | `LdmDiscoveryService.ts` | 4 方法 + 单测（含 LDM 未装场景） |
 | B2 | `LdmConfigWriter.ts` | 4 方法 + 单测（含写失败回滚） |
-| B3 | `LdmApplyService.ts` | 走 ServerManager PTY 重启 + 抽 `applyChangesCore` 共用方法 |
+| B3 | `ServerManager.applyChangesCore` 抽出（`applyModChanges` 变薄壳）+ `LdmApplyService.ts` | 4 单测 + 重构 ServerManager 一处 |
 | B4 | `LdmPluginCommandsService.ts` | PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态 + 单测 |
 | B5 | `LdmPluginSourceService.ts` | 拉取 LDM-Community 列表 + 本地缓存 + 单测 |
+| B6 | `LdmAssemblyVersionReader.ts` | PE 元数据解析（`pe-library`）+ 6 单测（真 .dll / 无属性 / 非 .NET / 不存在 / 损坏 / 并发） |
 
 ### Phase C：API 层
 
@@ -916,7 +1126,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | F2 | 单测全绿（≥ 80% 行覆盖；RocketConfigXmlParser ≥ 8 用例） |
 | F3 | E2E：加载插件（不停服）→ 改配置 → 应用 → 实例重启 → 列表刷新（mock Rocket/ 目录） |
 | F4 | 文档更新：`unturned-sop.md` 加 LDM 章节；`reference_config_files.md §3` 加 Rocket.config.xml；`reference_ui_terms.md` 加「LDM → Mod 框架」对照 |
-| F5 | 提交：3 个提交（Phase A-C 后端 / D-E 前端 / F 验证+文档） |
+| F5 | 提交：4 个提交（Phase A 共享类型+依赖 / B 核心模块含 applyChangesCore 重构 / C-E API+前端 / F 验证+文档） |
 
 ---
 
@@ -931,12 +1141,12 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | 2 | LDM 控制台命令 | §2.7（13 命令：`/rocket` `/rocket plugins` `/rocket info` `/rocket load/unload/reload` `/modules` `/p reload` 等）；全局 `/rocket reload` 已禁用 | `Rocket.Unturned/Commands/CommandRocket.cs` + U3-SDK Issue #1794 |
 | 3 | LDM Steam Workshop | **不上**——Workshop Asset Type 无 Plugin 类；走 GitHub Releases + LDM-Community | [Steam Workshop](https://steamcommunity.com/app/304930/workshop/) 实测 |
 | 4 | Configuration.xml schema | **无统一标准**——面板做通用 Monaco XML 编辑器（不解析字段） | `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate = "{0}.configuration.xml"` |
-| 5 | .dll 版本号读取方式 | **未定**——Phase B 实施时定（mono 调 / 读 AssemblyInfo）；`ModuleConfig.cs:65` 有 `Version` 字段可参考 | U3-SDK `Framework/Modules/ModuleConfig.cs` |
+| 5 | .dll 版本号读取方式 | ✅ **已定**（2026-08-12 用户拍板 A1）：`pe-library@^2.0.1` PE 元数据流解析 `AssemblyVersionAttribute`（ECMA-335 Partition II §22 真源）；零依赖、不走 mono CLI；详见设计文档 §5.5 | LDM 仓 `Rocket/Rocket.Core/Plugins/RocketPluginManager.cs` `Assembly.Load(File.ReadAllBytes(path))` + `AssemblyName` |
 | 6 | LDM 启动日志格式 | U3DS stdout 含 `[LDM] Loaded plugin X.Y.Z`；前端 xterm.js 已实时渲染，**无需特殊解析**（ConsolePage 已接） | LDM 仓 `Module.cs:249` |
 | 7 | 多实例隔离 | §8——`Environment.cs` 源码铁证：`RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId` | `Rocket.Core/Environment.cs` |
 
-**遗留（不阻塞评审，阻塞实施 PR 的一部分）**：
-- 项 5 `.dll` 版本号读取方式——Phase B 定，先读 U3-SDK `ModuleConfig.cs:65` `Version` 字段方案
+**遗留（不阻塞评审，不阻塞实施 PR）**：
+- **无遗留**——A1/A2 已用户拍板（2026-08-12）；A1 用 `pe-library@^2.0.1` 解析 PE 元数据、A2 抽 `LdmApplyService` 薄业务层 + `applyChangesCore` 共用方法；详见 §5.5/§5.6
 
 ---
 

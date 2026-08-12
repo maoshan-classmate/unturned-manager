@@ -46,9 +46,10 @@
 | **接入范围** | 仅配置 + 启停 + 插件来源 | 全接管（编译/分发/热重载/兼容性矩阵） | 编译/分发超出面板职责；LDM 无官方热重载（钉死）；兼容性矩阵维护成本无限 |
 | **LDM 安装** | ❌ 不做（引导式：用户复制 U3DS 装包自带的 Extras 到 Modules 激活） | 面板自动 cp | 遵循「不自动装」决策 |
 | **插件 .dll 分发** | ⚠️ 仅用户主动上传（Files API）；**不自动下载/同步** | 自动从 GitHub/Workshop 同步 | 二进制风险 + 编译分发不是面板职责 |
-| **改 LDM 配置生效方式** | PTY 终端 owner-trust 重启流水线 | 调 `rocket reload` 任何形式 | LDM 无热重载（U3-SDK Issues #1794）；改 PTY 流水线对齐 ADR-0004 |
+| **改 LDM 配置生效方式** | 抽 `LdmApplyService` 薄业务层 + `ServerManager.applyChangesCore` 9 步流水线共用 | 在 `ServerManager.applyModChanges` 加 ldmApply 分支 | backend-development.md 「重复 ≥3 模块共用→新建共享」原则（现在是 2 个：mod_apply + ldm_apply；预留 modpack_apply 第三处）；模块意识 = 三层结构 + 依赖注入 + destroy() |
 | **配置文件读权限** | ✅ Rocket.config.xml 结构化读 | 仅原文 | 字段表有限（10–15 字段），结构化对用户友好 |
 | **Configuration.xml 读权限** | ✅ 原文读 + XML 通用编辑器写 | 强解插件 schema | 插件 schema 由插件开发者决定，面板不强解（维护成本无限） |
+| **.dll 版本号读取** | ✅ PE 元数据解析（`pe-library@^2.0.1`，零依赖） | mono CLI 反射 | 开发期本机无 mono 拖 CI；PE 元数据纯 Node 解析（ECMA-335 Partition II §22 真源） |
 | **数据真源** | 文件系统（`Rocket/` + `Plugins/<Name>/`） | 新增 SQLite 表 | 真源唯一 = 文件系统；B2 决策「目录扫描真源」已定 |
 | **API 命名空间** | `/api/servers/:id/ldm/*` | 复用 `/api/mods/*` | 与资源包管理边界清晰，UI Tab 分开 |
 | **前端页面** | 新建 `<LdmPage>` 顶层路由 | 加进 `<ConfigPage>` | LDM 是独立功能维度，4 Tab 已满；放 ConfigPage 会破坏三行原则 |
@@ -86,16 +87,20 @@
 manager-server/src/modules/ldm/
 ├── LdmDiscoveryService.ts        # 读 Rocket.config.xml + Rocket.Unturned.config.xml + Permissions.config.xml + Plugins/ 目录
 ├── LdmConfigWriter.ts            # 写上述 3 个 XML 文件（原子写 + 备份 + 回滚）
-├── LdmApplyService.ts            # PTY 终端 owner-trust 重启流水线（复用 ServerManager.applyChangesCore）
+├── LdmApplyService.ts            # 薄业务层（activeOperation 类型 / WS 事件名 / 业务 hook），调 ServerManager.applyChangesCore
 ├── LdmPluginSourceService.ts     # 拉取 [LDM-Community](https://ldm-community.github.io/pluginlist) 公开插件列表（本地缓存）
 ├── LdmPluginCommandsService.ts   # PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态
+├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（pe-library@^2.0.1 零依赖方案）
 ├── RocketConfigXmlParser.ts      # 自写 XML 解析（保留注释/属性顺序/CDATA/嵌套）
 └── (单测文件 .test.ts)
+
+manager-server/src/modules/server/ServerManager.ts
+└── applyChangesCore(serverId, opts)   # §5.6 抽出的 9 步流水线本体（mod_apply / ldm_apply 共用，预留第三应用方）
 
 shared/
 ├── types/domain.ts                # + RocketConfig / RocketUnturnedConfig / PermissionsConfig / InstalledPlugin / LdmState / CommunityPlugin
 ├── schemas/ldm.schema.ts          # 9 个 Zod schema
-└── contracts/ldm.ts               # ILdmDiscoveryService + ILdmConfigWriter + ILdmApplyService + ILdmPluginSourceService + ILdmPluginCommandsService
+└── contracts/ldm.ts               # 6 个接口：ILdmDiscoveryService + ILdmConfigWriter + ILdmApplyService + ILdmPluginSourceService + ILdmPluginCommandsService + ILdmAssemblyVersionReader
 
 manager-web/src/
 ├── pages/LdmPage.tsx              # 4 Tab（已装插件 / 框架配置 / 权限组 / 插件来源）
