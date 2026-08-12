@@ -279,7 +279,7 @@
 | **LDM 主框架更新** | ❌ 不做 | U3DS 装包跟随更新；面板只读不写 |
 | **插件 .dll 安装** | ⚠️ **Web 上传 .dll**（Files API） | 走 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist) 外链 + GitHub Releases 下载 → 拖拽上传；不上 Steam Workshop |
 | **插件 .dll 升级/删除** | ⚠️ Files API（替换/删除） | 同上 |
-| **插件清单展示** | ✅ 做 | `readdir Servers/<ID>/Rocket/Plugins/` → `[{name, version, hasConfig, enabled, loaded}]` |
+| **插件清单展示** | ✅ 做 | `readdir Servers/<ID>/Rocket/Plugins/` → `[{name, version, sizeBytes, hasConfig, modifiedAtIso, runtimeStatus}]` |
 | **插件启用/禁用** | ✅ 做 | 通过 LDM 框架：`/rocket load <name>` 或 `/rocket unload <name>` 经 PTY 终端；或改 Rocket.config.xml + 重启 |
 | **插件配置编辑**（Configuration.xml） | ✅ 做 | 各插件字段由插件 schema 决定；面板做**通用 Monaco XML 编辑器**（不做字段 schema 自动发现——schema 演进跟插件版本走，维护成本高） |
 | **Rocket.config.xml 结构化编辑** | ✅ 做 | 字段表已确认（16 字段），逐字段控件 |
@@ -384,14 +384,17 @@ export interface ILdmDiscoveryService {
   readAllPluginConfigs(serverId: ServerId): Promise<Map<string, string>>;
 }
 
-/** 已装插件描述 */
+/** 已装插件描述（Phase 1 字段集；configPath 为 Phase 2 新增——见 workflow §9 路线图） */
 export interface InstalledPlugin {
   name: string;                  // 插件目录名 = 插件标识
-  version: string | null;        // 从 .dll 元数据读（System.Reflection 或 mono）
+  version: string | null;        // 从 .dll 元数据读（自写 PE 流式解析）
+  sizeBytes: number;             // .dll 文件大小（列表展示用）
   hasConfig: boolean;            // Configuration.xml 是否存在
-  enabled: boolean;              // 运行时加载状态（RUNNING 时解析 /rocket plugins stdout；STOPPED 时未知，UI 提示「实例未运行」）
+  modifiedAtIso: string;         // .dll 最后修改时间（排序/更新检测用）
+  runtimeStatus: 'loaded' | 'unloaded' | 'failure' | 'cancelled' | 'unknown';  // 运行时加载状态
+                                  // Phase 1 填充：列表加载时（实例 RUNNING）由 Discovery 注入的「运行时状态读取器」
+                                  //   同步解析 /rocket plugins stdout（D1）；非 RUNNING 或解析失败 = 'unknown'
                                   // 启停走 PTY 命令 /rocket load/unload，Rocket.config.xml 无 PluginMapping 节点
-  configPath: string;            // 绝对路径，方便 UI 跳转
 }
 
 /** Rocket.config.xml 结构化对象（真源：RocketSettings.cs，字段已回填） */
@@ -466,7 +469,9 @@ export interface ILdmConfigWriter {
 
 **复用现有 `ConfigService.atomicWrite`**（已实现 temp + rename + 备份，line 60）。
 
-### 5.4 ~~`LdmWorkshopService`~~ **已删除**——LDM 插件不上 Steam Workshop
+### 5.4 LdmAssemblyVersionReader（.dll 版本号读取 — 完整规格）
+
+> 本节为 reader 完整规格（接口 / 实现要点 / 失败语义 / 集成点 / 单测）；选型拍板结论见 §5.5。
 
 **底层逻辑**：.NET 程序集的 `AssemblyVersion` 不是 PE 头字段，而是 .NET 元数据流 `#~` 里的 `AssemblyVersionAttribute` 字符串属性。Mono CLI 调用方式（spawn `mono --assembly`）虽准，但开发期本机无 mono 拖慢 CI；PE 元数据流纯 Node 解析，部署零依赖。
 
@@ -489,35 +494,31 @@ shared/
  * 失败一律返回 null，绝不抛异常——版本号只是展示字段，不影响插件启用/卸载/配置。
  */
 export interface ILdmAssemblyVersionReader {
-  /** 读 .dll 的 AssemblyVersion（格式 "major.minor.patch.build"，如 "3.2.1.0"） */
-  readVersion(dllPath: string): string | null;
+  /** 读 .dll 的 AssemblyVersion（格式 "major.minor.patch.build"，如 "3.2.1.0"）；解析失败返回 null，永不抛错 */
+  readVersion(dllPath: string): Promise<string | null>;
 }
 ```
 
 **实现要点**（`LdmAssemblyVersionReader.ts`）：
 
 ```typescript
-import { PEFile, PEOptions } from 'pe-library';
-
+/** 自写 PE 流式解析（拍板：pe-library 已 archived 否决）——方案细节与单测见 workflow_sprint5_ldm_phase1.md §3 */
 export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
   /**
    * 读 .dll 的 AssemblyVersion。
-   * 步骤：
-   *  ① PE 头解析定位 CLI Header 拿 MetaDataDirectoryAddress
-   *  ② 元数据根 → #~ 流 → #Strings heap
-   *  ③ 扫 TypeRef 表找 "System.Reflection.AssemblyVersionAttribute"
-   *  ④ 读 FixedArg（字符串 UserString）→ 返回 "major.minor.patch.build"
-   *
-   * 真源：ECMA-335 Partition II §22（AssemblyVersionAttribute 在 #~ 流的 CustomAttribute 表）
+   * 步骤（ECMA-335 Partition II §22 真源）：
+   *  ① 读 PE 头（DOS→PE signature→Optional Header）→ data directory[14] 拿 CLI Header RVA
+   *  ② CLI Header → Metadata root（头 4 字节 'BSJB' 签名校验）
+   *  ③ 元数据根 → #~ 流 → CustomAttribute 表 + #Strings heap
+   *  ④ 扫 TypeRef/TypeDef 找 "System.Reflection.AssemblyVersionAttribute" → 读 FixedArg 返回 "major.minor.patch.build"
    *
    * @param dllPath - .dll 绝对路径
-   * @returns 版本字符串（如 "3.2.1.0"）；解析失败/非 .NET 程序集/无 AssemblyVersion 属性 → null
+   * @returns 版本字符串（如 "3.2.1.0"）；解析失败/非 .NET/无 AssemblyVersion 属性 → null（永不抛）
    */
-  readVersion(dllPath: string): string | null {
+  async readVersion(dllPath: string): Promise<string | null> {
     try {
-      const buf = readFileSync(dllPath);
-      const pe = new PEFile(buf, PEOptions.flags(0));
-      // ... ~20 行 #~ 流解析
+      // ~20 行流式解析（仅扫 PE 头 + CLI 头 + 关键 metadata stream，限制 4KB 扫描窗口）
+      // 单文件 ≤ 5ms，不整读文件进内存
     } catch {
       return null;  // 绝不抛——版本号只是展示
     }
@@ -547,39 +548,38 @@ async listInstalledPlugins(serverId: ServerId): Promise<InstalledPlugin[]> {
         const name = f.replace(/\.dll$/, '');
         return {
           name,
-          version: this.versionReader.readVersion(full),  // 同步内联，性能好
+          version: await this.versionReader.readVersion(full),  // 流式解析（单文件 ≤ 5ms）
+          sizeBytes: stat.size,
           hasConfig: await this.hasPluginConfig(pluginsDir, name),
-          enabled: false,  // 由 LdmPluginCommandsService 解析 /rocket plugins 后回填
-          configPath: path.join(pluginsDir, name, `${name}.configuration.xml`),
+          modifiedAtIso: stat.mtime.toISOString(),
+          runtimeStatus: await this.runtimeStatusReader.read(serverId, name),  // 经构造注入的「运行时状态读取器」（D1：RUNNING 时同步调一次 /rocket plugins 解析；非 RUNNING → 'unknown'）
+          // configPath 为 Phase 2 新增（workflow §9）——Phase 1 前端不跳转配置目录
         };
       }),
   );
 }
 ```
 
-**单测**（≥ 6 用例，对应 backend-development.md 强制 ≥80% 行覆盖）：
+**单测**（≥ 8 用例，对应 backend-development.md 强制 ≥80% 行覆盖）：
 1. 真 .NET .dll → 返回 "3.2.1.0"
 2. 无 AssemblyVersionAttribute → 返回 null
 3. PE 但非 .NET（无 CLI Header）→ 返回 null
 4. 文件不存在 → 返回 null（不抛）
-5. 文件损坏 → 返回 null（不抛）
+5. 文件损坏（PE 头合法但 metadata 截断）→ 返回 null（不抛）
 6. 并发 10 个 .dll → 全部正确
+7. 文件 0 字节 → 返回 null
+8. 100MB 假 .dll → 返回 null（不 OOM）
 
 **为什么不用 mono CLI**：
 - 本机开发无 mono → 拖慢开发体验
 - Linux 部署虽强制装 mono，但 `mono --assembly` 输出解析脆（不同 mono 版本格式略异）
-- `pe-library` 零依赖（141KB unpacked），CI 无需额外镜像
+- 自写流式解析零依赖（仅 Node 内置 `fs` + `Buffer`），CI 无需额外镜像
 
-**依赖**（`manager-server/package.json`）：
-```json
-"dependencies": {
-  "pe-library": "^2.0.1"
-}
-```
+**依赖**（`manager-server/package.json`）：无新增——自写解析仅用 Node 内置 `fs` + `Buffer`
 
 ### 5.5 `LdmAssemblyVersionReader`（.dll 版本号读取 — A1 准确方案）
 
-> **拍板**：用 `pe-library@2.0.1`（MIT、零依赖、Node 原生）读 .NET PE 元数据，**不走 mono CLI**。
+> **拍板**：**自写 PE 元数据流式解析**（零依赖，仅 Node 内置 `fs` + `Buffer`），**不走 mono CLI、不用 `pe-library`**（pe-library 已 archived）。方案细节与单测见 `claudedocs/workflow_sprint5_ldm_phase1.md` §3。
 
 **调研结论（关键）**：LDM 插件走 **GitHub Releases + LDM-Community 列表**分发，**不上 Steam Workshop**（[Steam Workshop 主站](https://steamcommunity.com/app/304930/workshop/) Asset Type 清单里没有 Plugin 类）。前端 `ModsPage` 现有的 Workshop 浏览与 LDM 插件无关。
 
@@ -727,7 +727,12 @@ export type ApplyProgressEvent =
 | 8 | POST | `/api/servers/:id/ldm/apply` | 应用配置变更（重启流水线） | `LdmApplyRequestSchema`（{changedPlugins: string[]}） | `OperationResponseSchema` | 走 PTY 重启 |
 | 9 | GET | `/api/ldm/community-plugins` | LDM-Community 公开插件列表（缓存） | — | `CommunityPluginListSchema` | 复用 LdmPluginSourceService |
 | 10 | POST | `/api/servers/:id/files` | 插件 .dll 上传（Files API 复用） | multipart | `FileUploadResponseSchema` | **复用** FilesService；Linux 大小写校验 |
-| 11 | WS | `ldm_apply_progress` | 重启进度事件 | — | 见 §6.4 | — |
+| 11 | POST | `/api/ldm/community-plugins/test-pat` | PAT 测连通性 | `X-GitHub-PAT` 请求头 | `OperationResponseSchema` | Phase 1 |
+| 12 | GET | `/api/servers/:id/ldm/status` | 统一状态（LDM 主框架装没装 / Rocket/ 存在 / 插件总数） | — | `LdmStatusSchema` | Phase 3 |
+| 13 | GET | `/api/ldm/community-plugins/:slug` | 插件详情（GitHub Releases 外链 + 最近版本） | path: slug | `CommunityPluginDetailSchema` | Phase 3 |
+| 14 | POST | `/api/servers/:id/ldm/reload-plugin` | 单插件 reload（二次确认） | `ReloadPluginSchema` | `OperationResponseSchema` | Phase 4 |
+| 15 | GET | `/api/servers/:id/ldm/plugins/search` | 按 .dll 名 / 版本筛选 | query: q | `InstalledPlugin[]` | Phase 4 |
+| 16 | WS | `ldm_apply_progress` | 重启进度事件 | — | 见 §6.4 | — |
 
 ### 6.2 Zod Schema（`shared/schemas/ldm.schema.ts`）
 
@@ -738,9 +743,10 @@ import { z } from 'zod';
 export const InstalledPluginSchema = z.object({
   name: z.string().min(1),
   version: z.string().nullable(),
+  sizeBytes: z.number().int().nonnegative(),
   hasConfig: z.boolean(),
-  enabled: z.boolean(),
-  configPath: z.string(),
+  modifiedAtIso: z.string().datetime(),
+  runtimeStatus: z.enum(['loaded', 'unloaded', 'failure', 'cancelled', 'unknown']),
 });
 
 /** Rocket.config.xml 结构化（真源 RocketSettings.cs，字段已回填） */
@@ -1007,7 +1013,7 @@ LdmPluginCommandsService 经 PTY 写 /rocket load BetterEconomy
   ↓
 解析 stdout → WS 推插件状态 → 列表刷新
   ↓
-前端 toast「BetterEconomy 已加载」
+前端 toast「已触发加载」（成功=命令已接受，非加载最终成功——CommandRocket.cs:114-115 先 Say 后执行）
 
 场景 B：改插件配置（需重启生效）
 ──────────────────────────────────
@@ -1111,8 +1117,8 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | E2 | `Modules/Rocket.Unturned/` 全 U3DS 共享 | LDM 仓加载逻辑 | ❌（面板层不做） | 这是 U3DS 安装期的操作，属「不自动装」决策 |
 | **F. 信息查询 / 运行时状态** | | | | |
 | F1 | 插件运行时加载状态（已加载 / 已卸载 / 失败 / 取消） | `/rocket plugins` stdout | ✅ | 解析后挂在「已装插件」卡片 |
-| F2 | 插件 .dll 版本号 | `pe-library` PE 元数据 + `AssemblyVersionAttribute` | ✅ | ECMA-335 Partition II §22 真源；零依赖 |
-| F3 | LDM 主框架版本（空参 `/rocket`） | stdout 解析 | ✅ | 显示在「关于 LDM」卡片 |
+| F2 | 插件 .dll 版本号 | 自写 PE 流式解析 + `AssemblyVersionAttribute` | ✅ | ECMA-335 Partition II §22 真源；零依赖 |
+| F3 | LDM 主框架版本（空参 `/rocket`） | stdout 解析 | ✅ | **与 D2 同一能力，归 Phase 2**（Phase 1 前端 2 Tab 无落位）；「关于 LDM」卡片显示 |
 | F4 | 各插件兼容 U3DS 版本信息 | 插件仓库 README / GitHub Releases | ⚠️ 只展示不验证 | 不接管兼容性矩阵（每 LDM × 每插件 × 每 U3DS = O(n³)，维护成本无限） |
 | **G. 插件来源 / 生态** | | | | |
 | G1 | LDM-Community 公开插件列表 | https://ldm-community.github.io/pluginlist | ✅ | 进程内缓存 5min（与 mod 浏览同模式） |
@@ -1154,7 +1160,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | 权限系统 C1–C4 | XML 树形编辑 | 同 A3 |
 | 控制台命令 D1–D5 | PTY stdout 解析 | ADR-0004 Phase 3 终端（已存在） |
 | 多实例隔离 E1 | `pathResolver.resolveServerPath` | 已存在 |
-| 信息查询 F1–F4 | PTY + PE 元数据 | 新增 `LdmAssemblyVersionReader`（pe-library 零依赖） |
+| 信息查询 F1–F4 | PTY + PE 元数据 | 新增 `LdmAssemblyVersionReader`（自写流式解析，零依赖） |
 | 插件来源 G1–G3 | 缓存列表 + Files API | 同 mod 浏览 5min 缓存模式 |
 | 日志 H1–H2 | PTY 控制台复用 | ConsolePage（已存在） |
 
@@ -1175,11 +1181,11 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 期 | 主题 | 能力切片 | 端点 | 前端组件 | 后端模块 | 工作量 |
 |---|---|---|---|---|---|---|
-| **Phase 1 — MVP** | 看得到 + 启停得了 | F1 / F2 / F3 + B1 / B3 + **G1 双源融合** + D1 | 4 端点 + 1 PAT-test | `LdmPage` **2 Tab**（已装插件 / 插件来源，Tab 2 顶部固定 GitHub PAT 卡） | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天 |
+| **Phase 1 — MVP** | 看得到 + 启停得了 | F1 / F2 + B1 / B3 + **G1 双源融合** + D1 | 4 端点 + 1 PAT-test | `LdmPage` **2 Tab**（已装插件 / 插件来源，Tab 2 顶部固定 GitHub PAT 卡） | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天 |
 | **Phase 2 — 完整配置** | 改得了配置 | A1 / A2 / A3 / A4 / C1–C4 + B2 / D2 / D3 / D4 / H1 | +6 端点（=10） | 4 Tab 齐 | + `LdmConfigWriter` / `RocketConfigXmlParser` / `LdmApplyService` / `applyChangesCore` 抽出 | +12–15 人天 |
 | **Phase 3 — 生态接入** | 找得到 + 下载方便 | G2 / G3 + 高级 UX（I1 引导 SOP 卡片 / F4 兼容信息展示） | +2 端点（=12） | 引导卡片 + 详情链接 | 无新模块（仅前端+已有模块拼接） | +5–7 人天 |
 | **Phase 4 — 高级能力** | 已知边界的能力 | B4 单插件 reload + 插件搜索/筛选 | +2 端点（=14） | 二次确认弹窗 + 筛选 chip | `LdmPluginCommandsService` 增 reload 方法 | +3–5 人天 |
-| **合计** | — | 19 + 3 项能力 | **12 端点 + WS 1** | 1 页面 4 Tab | 6 服务模块 + 1 工具模块 | **30–39 人天** |
+| **合计** | — | 19 + 3 项能力 | **14 端点 + WS 1** | 1 页面 4 Tab | 6 服务模块 + 1 工具模块 | **30–39 人天** |
 
 ### 12.2 Phase 1 — MVP（10–12 人天）
 
@@ -1187,12 +1193,12 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 维度 | 内容 |
 |---|---|
-| **能力** | F1（运行时状态）+ F2（.dll 版本）+ F3（LDM 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ **G1 走 HTML 解析 + GitHub API 双源融合**（用户拍板 2026-08-12；PAT 放 LdmPage Tab 顶部）+ D1（`/rocket plugins` 解析） |
+| **能力** | F1（运行时状态）+ F2（.dll 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ **G1 走 HTML 解析 + GitHub API 双源融合**（用户拍板 2026-08-12；PAT 放 LdmPage Tab 顶部）+ D1（`/rocket plugins` 解析） |
 | **端点** | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`<br>`GET /api/ldm/community-plugins`（**双源融合**响应）<br>`POST /api/ldm/community-plugins/test-pat`（PAT 测连通性） |
 | **前端** | `<LdmPage>` 2 Tab：①「已装插件」②「插件来源」**顶部固定 GitHub PAT 配置卡**（PAT 输入 + 测试按钮 + 限流状态显示）。架构层决策：PAT 不进 SettingsPage。 |
 | **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（PE 元数据流式解析，零依赖） / `LdmPluginSourceService`（HTML 解析 + GitHub API 批量补充 + 5min 进程内缓存） |
 | **不做** | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3） |
-| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 6 用例 / `LdmPluginSourceService` ≥ 13 用例含双源融合 + 限流处理 / `LdmPluginCommandsService` ≥ 4 用例 / `LdmDiscoveryService` ≥ 5 用例 = 28 用例）；E2E「上传 .dll → 列表出现 → load → 状态变 Loaded → unload → 状态变 Unloaded」+ E2E「配 PAT → 拉双源列表 → 限流显示 5000/h」 |
+| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 8 用例 / `LdmPluginSourceService` ≥ 13 用例含双源融合 + 限流处理 / `LdmPluginCommandsService` ≥ 8 用例 / `LdmDiscoveryService` ≥ 7 用例 = 36 用例）；E2E「上传 .dll → 列表出现 → load → 状态徽章变更 → unload → 状态徽章变更」+ E2E「配 PAT → 拉双源列表 → 限流显示 5000/h」 |
 | **详细规格** | `claudedocs/workflow_sprint5_ldm_phase1.md`（单期实施契约层）<br>调研证据：`claudedocs/research_ldm_community_source_2026-08-12.md` |
 
 ### 12.3 Phase 2 — 完整配置（+12–15 人天）
@@ -1203,11 +1209,11 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 |---|---|
 | **能力** | A1（A1）/ A2（A2）/ A3（A3）/ A4（plugin config 通用 XML）/ C1–C4（A3 扩展）+ B2（`Libraries/` 上传）+ D2（空参 `/rocket` 版本信息）+ D3（`/modules`）+ D4（`/p reload`）+ H1（`Rocket/Logs/` tail） |
 | **端点** | + 6 端点 = **10 端点**：<br>`GET /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/plugins/:name/config`<br>`PUT /api/servers/:id/ldm/rocket-config`<br>`PUT /api/servers/:id/ldm/permissions-config`<br>`POST /api/servers/:id/ldm/apply`<br>`WS ldm_apply_progress` |
-| **前端** | `<LdmPage>` 4 Tab 齐：<br>① 已装插件（继承 Phase 1）<br>② 框架配置（双卡片 Rocket.config.xml + Rocket.Unturned.config.xml 结构化字段编辑器 + XML 高级视图切换）<br>③ 权限组（Permissions.config.xml 树形编辑器：Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown）<br>④ 插件配置（每个插件 → Monaco XML 编辑器对话框） |
-| **后端模块** | + `LdmConfigWriter`（3 XML 原子写 + 备份 + 回滚） / `RocketConfigXmlParser`（自写保留注释/属性顺序/CDATA） / `LdmApplyService`（薄业务层）+ **`ServerManager.applyChangesCore` 抽出**（与 `applyModChanges` 共用，预留 modpack_apply 第三处） |
+| **前端** | `<LdmPage>` 4 Tab 齐：<br>① 已装插件（继承 Phase 1）<br>② 框架配置（顶部「关于 LDM」卡 = 空参 `/rocket` 版本信息 D2 +「LDM 状态」卡 = `/modules` D3；下方双卡片 Rocket.config.xml + Rocket.Unturned.config.xml 结构化字段编辑器 + XML 高级视图切换）<br>③ 权限组（Permissions.config.xml 树形编辑器：Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown）<br>④ 插件配置（每个插件 → Monaco XML 编辑器对话框） |
+| **后端模块** | + `LdmConfigWriter`（3 XML 原子写 + 备份 + 回滚） / `RocketConfigXmlParser`（自写保留注释/属性顺序/CDATA） / `LdmApplyService`（薄业务层）+ **`ServerManager.applyChangesCore` 抽出**（与 `applyModChanges` 共用，预留 modpack_apply 第三处）<br>`LdmPluginCommandsService` 增 `readLdmVersion(serverId)`（D2：空参 `/rocket` stdout 解析版本行 `Rocket v<版本> for Unturned v<游戏版本>`）+ `readModulesState(serverId)`（D3：`/modules` 输出） |
 | **依赖** | 必须 Phase 1 完成（`LdmDiscoveryService` 提供 `readState` 给 ConfigWriter 复用） |
 | **不做** | 通用 Monaco XML 编辑器（强解 schema）/ 重启流水线外的其他生效路径 |
-| **验证门槛** | typecheck 0；`RocketConfigXmlParser` 单测 ≥ 8 用例（注释保留 / 属性顺序 / CDATA / 嵌套 / 未知键保留）；`applyChangesCore` 单测 ≥ 4（mod_apply / ldm_apply 两条路径 + 重入保护）；E2E「改 Rocket.config.xml → 应用 → 实例 STOPPED→STARTING→RUNNING → 配置落盘 + stdout 含新配置生效信号」 |
+| **验证门槛** | typecheck 0；`RocketConfigXmlParser` 单测 ≥ 8 用例（注释保留 / 属性顺序 / CDATA / 嵌套 / 未知键保留）；`applyChangesCore` 单测 ≥ 4（mod_apply / ldm_apply 两条路径 + 重入保护）；`readLdmVersion` 单测 ≥ 2（版本行解析 + 非 RUNNING 报错）；E2E「改 Rocket.config.xml → 应用 → 实例 STOPPED→STARTING→RUNNING → 配置落盘 + stdout 含新配置生效信号」+ E2E「框架配置 Tab 顶部显示 LDM 版本（D2）+ 模块加载状态（D3）」 |
 
 ### 12.4 Phase 3 — 生态接入（+5–7 人天）
 
@@ -1259,7 +1265,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | 门控 | 检查项 | 工具 |
 |---|---|---|
 | **类型检查** | `tsc --noEmit` 前后端 + shared | `pnpm run typecheck` |
-| **单测覆盖率** | 改到的文件行覆盖 ≥ 80%；`LdmAssemblyVersionReader` ≥ 6 用例；`RocketConfigXmlParser` ≥ 8 用例；`applyChangesCore` ≥ 4 用例 | `pnpm run test:cov` |
+| **单测覆盖率** | 改到的文件行覆盖 ≥ 80%；`LdmAssemblyVersionReader` ≥ 8 用例；`RocketConfigXmlParser` ≥ 8 用例；`applyChangesCore` ≥ 4 用例 | `pnpm run test:cov` |
 | **E2E** | 本期主流程至少 1 用例跑通（playwright） | `pnpm run test:e2e` |
 | **实机验证** | 本期能力在 Linux 真机 U3DS 跑通 | `decision-no-auto-install-steamcmd-u3ds.md` 留待 Sprint 5 |
 | **接口契约** | ajv 加在所有新增 API 边界 | `pnpm run test:contract` |

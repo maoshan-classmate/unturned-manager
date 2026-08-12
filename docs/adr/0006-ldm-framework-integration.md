@@ -49,7 +49,7 @@
 | **改 LDM 配置生效方式** | 抽 `LdmApplyService` 薄业务层 + `ServerManager.applyChangesCore` 9 步流水线共用 | 在 `ServerManager.applyModChanges` 加 ldmApply 分支 | backend-development.md 「重复 ≥3 模块共用→新建共享」原则（现在是 2 个：mod_apply + ldm_apply；预留 modpack_apply 第三处）；模块意识 = 三层结构 + 依赖注入 + destroy() |
 | **配置文件读权限** | ✅ Rocket.config.xml 结构化读 | 仅原文 | 字段表有限（10–15 字段），结构化对用户友好 |
 | **Configuration.xml 读权限** | ✅ 原文读 + XML 通用编辑器写 | 强解插件 schema | 插件 schema 由插件开发者决定，面板不强解（维护成本无限） |
-| **.dll 版本号读取** | ✅ PE 元数据解析（`pe-library@^2.0.1`，零依赖） | mono CLI 反射 | 开发期本机无 mono 拖 CI；PE 元数据纯 Node 解析（ECMA-335 Partition II §22 真源） |
+| **.dll 版本号读取** | ✅ PE 元数据解析（**自写流式解析**，零依赖；`pe-library` 已 archived 否决） | mono CLI 反射 | 开发期本机无 mono 拖 CI；PE 元数据纯 Node 解析（ECMA-335 Partition II §22 真源） |
 | **数据真源** | 文件系统（`Rocket/` + `Plugins/<Name>/`） | 新增 SQLite 表 | 真源唯一 = 文件系统；B2 决策「目录扫描真源」已定 |
 | **API 命名空间** | `/api/servers/:id/ldm/*` | 复用 `/api/mods/*` | 与资源包管理边界清晰，UI Tab 分开 |
 | **前端页面** | 新建 `<LdmPage>` 顶层路由 | 加进 `<ConfigPage>` | LDM 是独立功能维度，4 Tab 已满；放 ConfigPage 会破坏三行原则 |
@@ -90,7 +90,7 @@ manager-server/src/modules/ldm/
 ├── LdmApplyService.ts            # 薄业务层（activeOperation 类型 / WS 事件名 / 业务 hook），调 ServerManager.applyChangesCore
 ├── LdmPluginSourceService.ts     # 拉取 [LDM-Community](https://ldm-community.github.io/pluginlist) 公开插件列表（本地缓存）
 ├── LdmPluginCommandsService.ts   # PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态
-├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（pe-library@^2.0.1 零依赖方案）
+├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（自写流式解析，零依赖）
 ├── RocketConfigXmlParser.ts      # 自写 XML 解析（保留注释/属性顺序/CDATA/嵌套）
 └── (单测文件 .test.ts)
 
@@ -113,7 +113,7 @@ manager-web/src/
 └── lib/utils.ts                   # + formatPluginVersion / parseRocketStatus 等
 ```
 
-### 3.3 API 端点（9 个 + 1 复用）
+### 3.3 API 端点（14 个 ldm REST + 1 复用 files + 1 WS）
 
 ```
 GET    /api/servers/:id/ldm/installed         → ILdmDiscoveryService.readState
@@ -125,6 +125,12 @@ POST   /api/servers/:id/ldm/load-plugin       → LdmPluginCommandsService（PTY
 POST   /api/servers/:id/ldm/unload-plugin     → LdmPluginCommandsService（PTY /rocket unload，不停服）
 POST   /api/servers/:id/ldm/apply             → ILdmApplyService.applyChanges（重启流水线）
 GET    /api/ldm/community-plugins             → ILdmPluginSourceService（LDM-Community 列表，本地缓存）
+POST   /api/ldm/community-plugins/test-pat    → ILdmPluginSourceService（PAT 测连通性，Phase 1）
+GET    /api/servers/:id/ldm/status            → ILdmDiscoveryService.getLdmStatus（Phase 3）
+GET    /api/ldm/community-plugins/:slug       → ILdmPluginSourceService.getCommunityPlugin（Phase 3）
+POST   /api/servers/:id/ldm/reload-plugin     → LdmPluginCommandsService.reloadPlugin（Phase 4，二次确认）
+GET    /api/servers/:id/ldm/plugins/search    → LdmDiscoveryService.searchPlugins（Phase 4）
+POST   /api/servers/:id/files                 → FilesService 复用（.dll 上传）
 WS     ldm_apply_progress                     → 重启进度事件
 ```
 
@@ -192,7 +198,7 @@ WS     ldm_apply_progress                     → 重启进度事件
 > - §11.1「LDM 框架全功能盘点」全表（A1–A4 / B1–B5 / C1–C4 / D1–D5 / E1–E2 / F1–F4 / G1–G5 / H1–H3 / I1–I2 / J1–J8 列出了对应真源与接入决策）
 > - §12「多期接入规划」按 Phase 1–4 切片，每期含能力清单 / 端点 / 前端组件 / 后端模块 / 验证门槛
 > - 本节保留作为「调研过程快照 + A1/A2 决策时序记录」，不替代设计文档
-> **A1/.dll 版本号读取** 后续在设计文档 §5.5 定为 `pe-library@^2.0.1` PE 元数据方案（ECMA-335 Partition II §22 真源；零依赖、不走 mono CLI；2026-08-12 用户拍板）
+> **A1/.dll 版本号读取** 后续在设计文档 §5.5 定为**自写 PE 流式解析**（ECMA-335 Partition II §22 真源；零依赖、不走 mono CLI；`pe-library` 已 archived 否决——2026-08-12 用户拍板）
 
 `docs/architecture/ldm-integration-design.md` 原 §12「调研回填记录」列 8 项待回填项（#1–#6 + 子任务补充 #1b RUC.x + #7 多实例），**调研 agent 已全部完成**：
 
@@ -202,7 +208,7 @@ WS     ldm_apply_progress                     → 重启进度事件
 | 2 | LDM 控制台命令 | 12 命令（`/rocket`(空参=版本) `/rocket plugins` `/rocket load/unload/reload <p>` `/modules` `/p reload` 等；**无 `/rocket info`**——版本=空参 `/rocket`） | LDM 仓 `Rocket.Unturned/Commands/CommandRocket.cs` |
 | 3 | LDM Steam Workshop | **不上**——走 GitHub Releases + LDM-Community | 实测 Steam Workshop Asset Type 无 Plugin 类 |
 | 4 | Configuration.xml schema | **无统一标准**——通用 Monaco XML 编辑器 | LDM 仓 `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate = "{0}.configuration.xml"` |
-| 5 | .dll 版本号读取 | 已定 → `pe-library@^2.0.1` PE 元数据 | U3-SDK `ModuleConfig.cs` 65 行 + ECMA-335 §22 |
+| 5 | .dll 版本号读取 | 已定 → 自写 PE 流式解析（`pe-library` 已 archived 否决） | U3-SDK `ModuleConfig.cs` 65 行 + ECMA-335 §22 |
 | 6 | LDM 启动日志格式 | 模块启动 banner = `Rocket Unturned v... for Unturned v...`（`U.cs:151`）；插件加载失败 = `Failed to load X, unloading now...`（`RocketPlugin.cs:132`，主要路径）+ `Failed to load plugin X.`（`U.cs:200`，次要路径）；**加载成功无 stdout 行**（不存在 `[LDM] Loaded plugin X.Y.Z`——2026-08-12 源码核对，旧 `Module.cs:249` 引证作废） | LDM 仓 `Rocket.Unturned/U.cs:151/200` + `Rocket.Core/Plugins/RocketPlugin.cs:132` |
 | 1b | Rocket.Unturned.config.xml | 设计文档 §2.4b（AutomaticSave / CharacterNameValidation / LogSuspiciousPlayerMovement / Item/Vehicle Blacklist 9 字段） | `Rocket.Unturned/Serialisation/UnturnedSettings.cs` |
 | 7 | 多实例隔离 | 设计文档 §8 + §11.1 E1–E2（`Environment.cs` 源码铁证） | `Rocket.Core/Environment.cs` |

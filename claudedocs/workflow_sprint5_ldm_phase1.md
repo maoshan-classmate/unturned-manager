@@ -50,7 +50,7 @@
  * @field sizeBytes .dll 文件大小（前端做合规校验显示，非 LDM 自身关注）
  * @field hasConfig <插件名>.configuration.xml 是否存在
  * @field modifiedAtIso .dll 文件 mtime（ISO）—— 用户判断插件是否最近改过
- * @field runtimeStatus 运行时加载状态；STOPPED 时为 unknown，UI 提示「实例未运行」
+ * @field runtimeStatus 运行时加载状态；非 RUNNING 时（STOPPED/STARTING/STOPPING）为 unknown，UI 提示「实例未运行」
  */
 export interface InstalledPlugin {
   name: string;
@@ -177,7 +177,9 @@ export interface ILdmDiscoveryService {
   /**
    * 列已装插件——扫描 Servers/<id>/Rocket/Plugins/ 目录，解析 .dll 元数据。
    * @param serverId 实例标识
-   * @returns 插件列表 + LDM 状态检测结果
+   * @returns 插件列表 + LDM 状态检测结果（runtimeStatus 填充：实例 RUNNING 时列表加载同步调一次
+   *   `/rocket plugins`（D1）解析；非 RUNNING 或解析失败 = 'unknown'——Discovery 经注入的
+   *   「运行时状态读取器」获得，不直接持 PTY 引用）
    * @throws AppError('server-not-found') 实例不存在
    * @throws AppError('filesystem-error') 读取失败（Permission denied / IO 错误）
    * 单实例扫描 ≤ 50 个插件性能 ≤ 200ms（PE 解析 1 个 ≤ 5ms）
@@ -242,13 +244,13 @@ export interface ILdmPluginSourceService {
 
 /**
  * .NET DLL 版本号读取器（PE 元数据流式解析）。
- * 抽象接口——实现可换（pe-library / 自写 / AsmResolver），契约不变。
+ * 抽象接口——实现可换（自写 / AsmResolver；pe-library 已 archived 否决），契约不变。
  */
 export interface ILdmAssemblyVersionReader {
   /**
    * @param dllPath 绝对路径
    * @returns `'1.2.3.4'` 形式（按 AssemblyVersionAttribute）；解析失败 / 非 .NET / 不存在 = null
-   * @throws AppError('version-read-failed') 文件存在但解析过程出错（区别于文件不存在）
+   * 永不抛错——解析失败一律返回 null（§3.2 失败安全降级语义，与文件不存在的 null 无差别）
    *
    * 性能：单文件 ≤ 5ms（流式读，限制 4KB 扫描窗口——PE 头 + CLI 头 + 关键 metadata stream）
    */
@@ -339,7 +341,7 @@ export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
 
 **降级即返回 `null`——前端拿 `version: null` 显示「未知」徽章**；用户从 GitHub Releases 页可查实际版本。
 
-### 3.4 单测用例（≥ 6 个）
+### 3.4 单测用例（≥ 8 个）
 
 | # | 场景 | 期望 |
 |---|---|---|
@@ -347,7 +349,7 @@ export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
 | 2 | 真 .dll 但**无** AssemblyVersionAttribute | 返回 `null` |
 | 3 | 非 .NET（普通 .exe / .so / PNG 头） | 返回 `null` |
 | 4 | 文件 0 字节 | 返回 `null` |
-| 5 | 文件不存在（路径无效） | 抛 `AppError('version-read-failed')` |
+| 5 | 文件不存在（路径无效） | 返回 `null`（接口契约与 §3.3 矩阵一致：不存在 = null，Reader 兜底不抛错） |
 | 6 | 文件存在但中间损坏（PE 头合法但 metadata 截断） | 返回 `null`（不抛） |
 | 7 | 10 个文件并发 readVersion（不阻塞测试 1s） | 全部正确返回 |
 | 8 | 100MB 假 .dll | 返回 `null`（不 OOM） |
@@ -371,7 +373,7 @@ export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
 | `/rocket unload <name>\r` | 同步 | 命中 `command_rocket_unload_plugin`；未加载则 `command_rocket_not_loaded` | 插件不存在 → `command_rocket_plugin_not_found` | **1** |
 | `/rocket reload <name>\r` | 同步 | 命中 `command_rocket_reload_plugin`（要求已 Loaded） | 未加载 → `command_rocket_not_loaded` | **4**（Phase 1 不实现） |
 | `/rocket reload` | — | — | 输出 `command_rocket_reload_disabled` + 引用 Issue #1794 | ❌ 钉死（不暴露） |
-| `/rocket plugins` | 同步 | 4 行分组输出（`command_rocket_plugins_loaded/unloaded/failure/cancelled`）→ 解析 runtimeStatus | — | **2**（Phase 1 用「最近已知状态」缓存） |
+| `/rocket plugins` | 同步 | 4 行分组输出（`command_rocket_plugins_loaded/unloaded/failure/cancelled`）→ 解析 runtimeStatus | — | **1**（列表加载时同步解析一次填充 runtimeStatus，对齐主设计文档 §12.2 D1） |
 | `/rocket`（**空参**，不是 `/rocket info`） | 同步 | 输出版本行 `Rocket v<版本> for Unturned v<游戏版本>` | — | **2** |
 | `/modules` | 同步 | 验证 Rocket.Unturned 加载 | — | **2** |
 
@@ -399,7 +401,7 @@ export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
 ```typescript
 /**
  * LDM 插件命令服务——PTY 终端 owner-trust 唯一通道。
- * 落盘 `mananger-server/src/modules/ldm/LdmPluginCommandsService.ts`。
+ * 落盘 `manager-server/src/modules/ldm/LdmPluginCommandsService.ts`。
  */
 export class LdmPluginCommandsService implements ILdmPluginCommandsService {
   /** 单次 PTY 写命令的最大等待时间（10s）—— LDM 加载 .dll 通常 < 1s，留 10x 余量 */
@@ -500,7 +502,7 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
 }
 ```
 
-### 4.4 单测用例（≥ 4 个）
+### 4.4 单测用例（≥ 8 个）
 
 | # | 场景 | 期望 |
 |---|---|---|
@@ -526,7 +528,7 @@ PtyTimeoutMs = 10_000,
 | 'pty-timeout'               // 504 - 10s 内未收到 LDM 响应
 | 'operation-conflict'        // 409 - 同 server 已有命令在跑
 | 'filesystem-error'          // 500 - 读写 Rocket/ 目录失败
-| 'version-read-failed'       // 500 - PE 解析过程中抛出（区别于「解析失败返回 null」）
+| 'version-read-failed'       // 500 - 保留未用（Reader 失败安全降级恒返回 null，永不抛此码）
 | 'community-source-unreachable' // 502 - LDM-Community 不可达且无 stale 缓存
 | 'community-source-malformed'   // 502 - LDM-Community 主页 HTML 结构异常（解析出 0 plugin 或缺关键元素）
 | 'community-source-rate-limited' // 429 - GitHub API 限流（x-ratelimit-remaining=0）
@@ -553,7 +555,8 @@ type CacheEntry = {
   fetchedAtIso: string;
 };
 
-const communityCache: CacheEntry | null = null;  // 单例（不分页——Phase 1 一次性全集）
+// ⚠️ 示意代码（最终实现见 §5.3）——变量必须 `let`：`const` 声明后二次赋值是 TS 编译错误
+let communityCache: CacheEntry | null = null;  // 单例（不分页——Phase 1 一次性全集）
 
 export function __resetCommunityCacheForTest(): void {
   communityCache = null;
@@ -764,7 +767,7 @@ export class LdmPluginSourceService implements ILdmPluginSourceService {
 }
 ```
 
-### 5.4 单测用例（≥ 7 个）
+### 5.4 单测用例（≥ 13 个）
 
 | # | 场景 | 期望 |
 |---|---|---|
@@ -810,7 +813,7 @@ fs.stat(dllPath)  // 取 sizeBytes / modifiedAtIso
 fs.access(<插件名>.configuration.xml) → hasConfig
   │
   ▼
-runtimeStatus: 内存缓存 → 「实例 RUNNING 时上次 /rocket plugins 解析」/ 非 RUNNING → 'unknown'
+runtimeStatus: 内存缓存 → 「实例 RUNNING 时列表加载同步调一次 /rocket plugins 解析」/ 非 RUNNING → 'unknown'
   │
   ▼
 { plugins: [...], ldmNotDetected: false }
@@ -819,11 +822,11 @@ runtimeStatus: 内存缓存 → 「实例 RUNNING 时上次 /rocket plugins 解�
 ### 6.2 关键点
 
 - **并行解析**：50 个 Promise.all(PE reader) 比串行快 10x
-- **runtimeStatus 缓存**：Discovery 不持有 live state；当 ServerManager 即将做 PTY 切换时清缓存（Phase 2 引入）
+- **runtimeStatus 填充**（D1，对齐主设计文档 §12.2）：Discovery 不实时订阅——Phase 1 在 listInstalledPlugins 时若实例 RUNNING，经注入的「运行时状态读取器」同步调一次 `/rocket plugins` 解析填充（每次列表加载都刷新，非实时）；PTY 切换时清缓存（Phase 2 引入 WS 事件驱动）
 - **LDM 未装场景**：`ldmNotDetected: true` 时返回空列表 + 标志，前端引导 5 步 SOP
 - **大小写校验**：上传时（Files API 已有）做 `.dll` 名与子目录名严格一致；Phase 1 先读列表不强制，仅在该 .dll 没有同名 `<Name>/` 子目录时给 `hasConfig=false`（plugin 仍可加载，只是没配置）
 
-### 6.3 单测用例（≥ 5 个）
+### 6.3 单测用例（≥ 7 个）
 
 | # | 场景 | 期望 |
 |---|---|---|
@@ -833,6 +836,7 @@ runtimeStatus: 内存缓存 → 「实例 RUNNING 时上次 /rocket plugins 解�
 | 4 | Rocket/Plugins/Foo.dll 无 Foo/ 子目录 | 1 插件 + hasConfig=false |
 | 5 | Runner 读 .dll 抛 IO 错 | 整列表失败 → 抛 `filesystem-error` |
 | 6 | 50 个 .dll（mock PE reader 全返回 "1.0.0"） | 性能 ≤ 200ms |
+| 7 | 实例 RUNNING + mock `/rocket plugins` 输出（Loaded/Unloaded/Failure 分组） | 插件 runtimeStatus 正确填充（loaded/unloaded/failure）；非 RUNNING 或未解析 → unknown |
 
 ---
 
@@ -918,7 +922,7 @@ runtimeStatus: 内存缓存 → 「实例 RUNNING 时上次 /rocket plugins 解�
 ### 7.7 否决项（Phase 1 不做）
 
 - 全文搜索插件（Phase 4 加）
-- 运行时状态实时刷新（Phase 2 引入 WS 推送时再做）
+- 运行时状态**实时**刷新（Phase 1 仅列表加载时同步解析一次，非实时；实时靠 WS 推送，Phase 2 做）
 - 插件版本号变更检测（Phase 2）
 - 批量操作（多选 / 批量 load）（Phase 3+ UX）
 
@@ -1047,24 +1051,36 @@ useQuery({
 | **类型检查** | `pnpm run typecheck` 零错误 | tsc --noEmit |
 | **ESLint** | 零警告 | `pnpm run lint` |
 | **单测覆盖率** | 改到的文件行覆盖 ≥ 80% | `pnpm run test:cov` |
-| **PE reader** | ≥ 6 用例（§3.4） | vitest |
-| **Plugin commands** | ≥ 4 用例（§4.4） | vitest |
-| **Discovery** | ≥ 5 用例（§6.3） | vitest |
-| **Community source** | ≥ 3 用例（§5.4） | vitest |
-| **合计新增单测** | ≥ 18 用例 | vitest |
+| **PE reader** | ≥ 8 用例（§3.4 列 8 条） | vitest |
+| **Plugin commands** | ≥ 8 用例（§4.4 列 8 条） | vitest |
+| **Discovery** | ≥ 7 用例（§6.3 列 7 条） | vitest |
+| **Community source** | ≥ 13 用例（§5.4 列 13 条） | vitest |
+| **合计新增单测** | ≥ 36 用例（8+8+7+13） | vitest |
 
 ### 8.2 E2E（Playwright）
 
-**主流程 1 用例**：5 步全跑通
+对齐 design §12.2 承诺的 2 个 E2E：
+
+**E2E ① 主流程**：5 步全跑通
 
 ```
 GIVEN 已装 LDM 主框架（MOCK Rocket/ 目录含 2 个 .dll）
 WHEN  ① 打开 Mod 框架页面
        ② 上传 Uconomy.dll（mock Files API）
        ③ 列表出现 3 插件
-       ④ 点击「加载」→ toast「加载成功」
+       ④ 点击「加载」→ toast「已触发加载」（成功=命令已接受，非加载最终成功——Phase 2 /rocket plugins 复核兜底）
        ⑤ 点击「卸载」→ toast「卸载成功」
 THEN  列表操作按钮可点 + 状态徽章变更
+```
+
+**E2E ② 插件来源 + PAT**：双源融合 + 限流显示
+
+```
+GIVEN 已配 GitHub PAT（mock GitHub API 返回 tag_name/pushed_at）
+WHEN  ① 打开「插件来源」Tab
+       ② 列表加载 → 双源融合（HTML slug/name + GitHub tag_name/updatedAtIso）
+       ③ 查看限流显示
+THEN  列表含 25 插件种子 + 最新版本真实填充 + 限流显示 5000/h
 ```
 
 ### 8.3 接口契约
@@ -1083,10 +1099,10 @@ THEN  列表操作按钮可点 + 状态徽章变更
 ### 8.5 提交规范
 
 - **commit 1**：「Phase 1 共享类型 + Zod schema + 6 契约接口」+ PE reader fixture
-- **commit 2**：「Phase 1 PE 解析准确方案 + 单测 6 用例」
-- **commit 3**：「Phase 1 LDM-Community 进程内缓存 + 单测 3 用例」
-- **commit 4**：「Phase 1 Discovery 单测 5 用例 + filesystem-error 错误码」
-- **commit 5**：「Phase 1 PTY 写 /rocket load/unload + stdout 解析 + 单测 7 用例」
+- **commit 2**：「Phase 1 PE 解析准确方案 + 单测 ≥ 8 用例」
+- **commit 3**：「Phase 1 LDM-Community 进程内缓存 + 单测 ≥ 13 用例」
+- **commit 4**：「Phase 1 Discovery 单测 ≥ 7 用例 + filesystem-error 错误码」
+- **commit 5**：「Phase 1 PTY 写 /rocket load/unload + stdout 解析 + 单测 ≥ 8 用例」
 - **commit 6**：「Phase 1 4 REST 端点 + WS 事件注册 + composition-root 注入」
 - **commit 7**：「Phase 1 <LdmPage> 2 Tab（已装插件 / 插件来源）+ 全部前端组件 + 路由」
 - **commit 8**：「Phase 1 E2E 主流程 + 文档同步 + 收尾」
@@ -1099,14 +1115,14 @@ THEN  列表操作按钮可点 + 状态徽章变更
 
 | 关注点 | Phase 1 落定 | Phase 2 扩展方向 |
 |---|---|---|
-| `InstalledPlugin` | 5 字段 | + `configPath` / `dependencies: string[]` |
+| `InstalledPlugin` | 6 字段（name/version/sizeBytes/hasConfig/modifiedAtIso/runtimeStatus） | + `configPath` / `dependencies: string[]` |
 | `CommunityPlugin` | 7 字段 | + `tags` / `screenshots` |
 | `ILdmDiscoveryService` | `listInstalledPlugins` | + `readRocketConfig` / `readPermissionsConfig` / `readPluginConfig` |
 | `ILdmPluginCommandsService` | `loadPlugin` / `unloadPlugin` | + `reloadPlugin`（Phase 4） |
 | `ILdmPluginSourceService` | `listCommunityPlugins` | + `getCommunityPlugin(slug)` |
 | `ILdmAssemblyVersionReader` | `readVersion` | 不变 |
 | `LdmPluginCommandsService` 互斥锁 | per-server 单锁 | 升级为 `activeOperation` 互斥（与 mod_apply/ldm_apply 共享） |
-| `LdmDiscoveryService` runtimeStatus | 内存缓存「上次解析」 | 改 WS 推送事件驱动 |
+| `LdmDiscoveryService` runtimeStatus | 列表加载同步解析一次（非实时） | 改 WS 推送事件驱动 |
 
 ---
 
@@ -1114,7 +1130,7 @@ THEN  列表操作按钮可点 + 状态徽章变更
 
 | 风险 | 缓解 | 回滚方案 |
 |---|---|---|
-| PE 解析写错——读错字段返回乱字符串 | 单测覆盖真 .dll fixture；CI 每次跑全 6 用例 | 入口统一 `LdmAssemblyVersionReader`，版本号返回 `null` 不影响主功能 |
+| PE 解析写错——读错字段返回乱字符串 | 单测覆盖真 .dll fixture；CI 每次跑全 ≥ 8 用例 | 入口统一 `LdmAssemblyVersionReader`，版本号返回 `null` 不影响主功能 |
 | LDM-Community 上游改格式 | 解析失败 → 静默 fallback + stale 缓存 | 旧格式保留 30 天兜底 |
 | PTY stdout 串扰（前端控制台同时打其他命令） | success 锚 / failure 锚用 pluginName 锚定 | 失败概率极低；timeout 兜底 |
 | `/rocket load <name>` 子串匹配歧义 | pluginName 走 Zod 校验 `[A-Za-z0-9._-]+`；Linux 大小写校验 | 失败 → outcome=failure + ldmOutput 兜底 |
