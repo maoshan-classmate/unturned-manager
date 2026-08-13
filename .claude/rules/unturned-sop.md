@@ -114,7 +114,7 @@ Loadout 255/1100/1101
 - SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=默认全部技能组
 - ItemID：`0`–`65535` ushort，可在游戏内 `Items.asset` 查到；非法 ItemID 会触发该条 Loadout 命令报错中止（`CommandLoadout.cs:33-39`）；合法 ushort 但指向不存在物品的 ID 命令层不校验
 
-面板编辑器：`claudedocs/reference_config_files.md` §1.8 + Figma ConfigPage Tab「Commands.dat」→「开局物品（Loadout）」区块。
+面板编辑器：`claudedocs/reference_config_files.md` §1.7 + Figma ConfigPage Tab「Commands.dat」→「开局物品（Loadout）」区块。
 
 ## WorkshopDownloadConfig.json 规则
 

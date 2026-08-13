@@ -36,7 +36,8 @@
 | SDG 文档站 — 最新版 | https://docs.smartlydressedgames.com/en/latest/ | Read the Docs 托管的最新版分支（含未稳定内容） |
 | 服务端搭建指南 | https://docs.smartlydressedgames.com/en/stable/servers/server-hosting.html | 官方服务端托管教程（U3DS 安装/配置/端口/GSLT） |
 | GSLT 指南 | https://docs.smartlydressedgames.com/en/latest/servers/game-server-login-tokens.html | Game Server Login Token 配置说明 |
-| 官方文档 GitHub | https://github.com/SmartlyDressedGames/Unturned-Docs | SDG 官方文档源仓库（可提 PR 贡献） |
+| 官方文档 GitHub | https://github.com/SmartlyDressedGames/Unturned-Docs | SDG 官方文档源仓库（可提 PR 贡献）；本仓库已克隆到 `.research/unturned-docs/` 备用 |
+| 社区维护 Commands.dat 参考 | https://unturned.wiki.gg/Commands | Commands.dat 字段的最完整英文参考（社区维护）；与 U3-SDK 偶有冲突，以 SDK 为准 |
 | 服务端托管规则 | https://docs.smartlydressedgames.com/en/stable/servers/server-hosting-rules.html | 盈利化/内容限制/Anycast 等规则 |
 | GSM3 Unturned 食用说明 | https://docs.gsm.xiaozhuhouses.asia/%E6%B8%B8%E6%88%8F%E7%99%BE%E7%A7%91/Steam/%E6%9C%AA%E8%BD%AC%E5%8F%98%E8%80%85%E9%A3%9F%E7%94%A8%E8%AF%B4%E6%98%8E.html | GSM3 平台的 Unturned 单服开服教程（Commands.dat 示例/ExampleServer.sh/Mod 添加流程） |
 | U3-SDK（客户端源码） | `.research/U3-SDK` | AppID `304930`，仅供 schema 参考、禁止编译 |
