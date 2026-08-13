@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.js";
 import { WebSocketProvider } from "./contexts/WebSocketContext.js";
+import { CurrentServerProvider } from "./contexts/CurrentServerContext.js";
 import { Sidebar } from "./components/layout/Sidebar.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
@@ -35,27 +36,29 @@ function AppLayout() {
   }
 
   return (
-    <WebSocketProvider>
-      <div className="flex h-screen bg-slate-900">
-        <Sidebar />
-        <main className="flex-1 overflow-auto p-6">
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/login" element={<Navigate to="/" replace />} />
-            <Route path="/:serverId/console" element={<ConsolePage />} />
-            <Route path="/:serverId/mods" element={<ModsPage />} />
-            <Route path="/:serverId/config/commands" element={<ConfigPage />} />
-            <Route path="/:serverId/files" element={<FilesPage />} />
-            <Route
-              path="/:serverId/server-setup"
-              element={<ServerSetupPage />}
-            />
-            <Route path="/:serverId/settings" element={<SettingsPage />} />
-            <Route path="/:serverId/ldm" element={<LdmPage />} />
-          </Routes>
-        </main>
-      </div>
-    </WebSocketProvider>
+    <CurrentServerProvider>
+      <WebSocketProvider>
+        <div className="flex h-screen bg-slate-900">
+          <Sidebar />
+          <main className="flex-1 overflow-auto p-6">
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="/:serverId/console" element={<ConsolePage />} />
+              <Route path="/:serverId/mods" element={<ModsPage />} />
+              <Route path="/:serverId/config/commands" element={<ConfigPage />} />
+              <Route path="/:serverId/files" element={<FilesPage />} />
+              <Route
+                path="/:serverId/server-setup"
+                element={<ServerSetupPage />}
+              />
+              <Route path="/:serverId/settings" element={<SettingsPage />} />
+              <Route path="/:serverId/ldm" element={<LdmPage />} />
+            </Routes>
+          </main>
+        </div>
+      </WebSocketProvider>
+    </CurrentServerProvider>
   );
 }
 

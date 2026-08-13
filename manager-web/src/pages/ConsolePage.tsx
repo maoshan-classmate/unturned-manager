@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Terminal as TerminalIcon,
   Send,
@@ -10,6 +10,8 @@ import {
   Unplug,
 } from "lucide-react";
 import { useServer } from "../hooks/useServer.js";
+import { useRequireServer } from "../hooks/useRequireServer.js";
+import { useCurrentServer } from "../contexts/CurrentServerContext.js";
 import { useConsole } from "../hooks/useConsole.js";
 import { useSessionManager } from "../hooks/useSessionManager.js";
 import { Button } from "../components/ui/button.js";
@@ -51,24 +53,38 @@ const DEFAULT_SHUTDOWN_DELAY_S = 10;
  * 模型），危险指令由前端 ConfirmDialog 拦截（owner-trust 下无服务端 428 门控）。
  */
 export function ConsolePage() {
-  const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
-  const { servers, loading } = useServer();
-  // serverId 不在真实服务端列表里 → 跳回首页。
-  const currentServer = servers.find((s) => s.id === serverId);
-  useEffect(() => {
-    if (loading) return;
-    if (!currentServer) {
-      navigate("/", { replace: true });
-    }
-  }, [loading, currentServer, navigate]);
+  const guard = useRequireServer();
+  const { servers } = useServer();
+  const { setCurrentServerId } = useCurrentServer();
+  // 守卫副作用去重：empty / missing 同一状态只触发一次跳转 + 提示
+  const handledRef = useRef<string | null>(null);
 
-  if (!currentServer || !serverId) {
+  useEffect(() => {
+    // ready / loading 时重置标记——允许后续状态切换重新提示
+    if (guard.status === "ready" || guard.status === "loading") {
+      handledRef.current = null;
+      return;
+    }
+    if (handledRef.current === guard.status) return;
+    handledRef.current = guard.status;
+
+    if (guard.status === "empty") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("请先选择一个实例");
+    } else if (guard.status === "missing") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("该服务器实例不存在");
+    }
+  }, [guard.status, navigate]);
+
+  if (guard.status !== "ready") {
     // 守卫跳转极短暂——渲染占位避免 useConsole 等钩子触发副作用
     return null;
   }
 
-  const isServerRunning = currentServer.state === "RUNNING";
+  const currentServer = servers.find((s) => s.id === guard.serverId);
+  const isServerRunning = currentServer?.state === "RUNNING";
   // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
   const { saved: savedSessions } = useSessionManager();
   const {
@@ -80,7 +96,7 @@ export function ConsolePage() {
     save,
     shutdown,
     closeTerminal,
-  } = useConsole(serverId);
+  } = useConsole(guard.serverId);
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -269,15 +285,14 @@ export function ConsolePage() {
             <button
               key={s.id}
               onClick={() => {
-                // Navigate to new serverId (handled by parent)
-                window.location.hash = `/${s.id}/console`;
+                setCurrentServerId(s.id);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs transition-colors"
               style={{
                 backgroundColor:
-                  s.id === serverId ? "#22C55E20" : "transparent",
-                color: s.id === serverId ? "#22C55E" : "#94A3B8",
-                border: `1px solid ${s.id === serverId ? "#22C55E40" : "#334155"}`,
+                  s.id === guard.serverId ? "#22C55E20" : "transparent",
+                color: s.id === guard.serverId ? "#22C55E" : "#94A3B8",
+                border: `1px solid ${s.id === guard.serverId ? "#22C55E40" : "#334155"}`,
               }}
             >
               {s.name || s.id}
@@ -293,7 +308,7 @@ export function ConsolePage() {
             历史控制台:
           </span>
           {savedSessions
-            .filter((s) => s.id !== serverId)
+            .filter((s) => s.id !== guard.serverId)
             .map((s) => (
               <button
                 key={s.id}

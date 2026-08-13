@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { COMMANDS_DAT_ENUMS } from "@unturned-manager/shared";
 import {
   Save,
@@ -25,6 +26,7 @@ import {
   type DataTableColumn,
 } from "../components/shared/DataTable.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
+import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { Button } from "../components/ui/button.js";
@@ -180,8 +182,32 @@ const PAGE_SIZE = 10;
 
 /** Config 页面——Figma 2:6 */
 export function ConfigPage() {
+  // 取值来源切到共享层（sc:design 第 4 阶段）：守卫钩子统一处理无实例场景
+  const navigate = useNavigate();
+  const guard = useRequireServer();
+  const handledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (guard.status === "ready" || guard.status === "loading") {
+      handledRef.current = null;
+      return;
+    }
+    if (handledRef.current === guard.status) return;
+    handledRef.current = guard.status;
+
+    if (guard.status === "empty") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("请先选择一个实例");
+    } else if (guard.status === "missing") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("该服务器实例不存在");
+    }
+  }, [guard.status, navigate]);
+
+  if (guard.status !== "ready") return null;
+
   const { servers, loading: serverLoading, error: serverError } = useServer();
-  const server = servers[0];
+  const server = servers.find((s) => s.id === guard.serverId);
 
   const [tab, setTab] = useState<ConfigTab>("commands");
   const [fields, setFields] = useState<CommandsFields>(EMPTY_FIELDS);

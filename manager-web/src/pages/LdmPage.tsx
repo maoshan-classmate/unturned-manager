@@ -2,9 +2,9 @@
  * LDM Mod 框架页面——2 Tab：已装插件 / 插件来源。
  * 设计见 docs/architecture/ldm-integration-design.md §12.2 Phase 1。
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Package,
@@ -28,6 +28,7 @@ import { PageState } from "../components/shared/PageState.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { Input } from "../components/ui/input.js";
 import { formatSize, formatDate, errorMessage } from "../lib/utils.js";
+import { useRequireServer } from "../hooks/useRequireServer.js";
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -80,7 +81,28 @@ type PatFormValues = z.infer<typeof patSchema>;
 // ─── 组件 ────────────────────────────────────────────────
 
 export function LdmPage() {
-  const { serverId } = useParams<{ serverId: string }>();
+  // 取值来源切到共享层（sc:design 第 4 阶段）
+  const navigate = useNavigate();
+  const guard = useRequireServer();
+  const handledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (guard.status === "ready" || guard.status === "loading") {
+      handledRef.current = null;
+      return;
+    }
+    if (handledRef.current === guard.status) return;
+    handledRef.current = guard.status;
+
+    if (guard.status === "empty") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("请先选择一个实例");
+    } else if (guard.status === "missing") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("该服务器实例不存在");
+    }
+  }, [guard.status, navigate]);
+
   const [activeTab, setActiveTab] = useState<"installed" | "source">("installed");
   const [pat, setPat] = useState<string | null>(null);
 
@@ -89,6 +111,9 @@ export function LdmPage() {
     const saved = localStorage.getItem("ldm.githubPat");
     if (saved) setPat(saved);
   }, []);
+
+  if (guard.status !== "ready") return null;
+  const serverId = guard.serverId;
 
   return (
     <div className="space-y-4">
@@ -106,9 +131,9 @@ export function LdmPage() {
         ]}
       />
       {activeTab === "installed" ? (
-        <InstalledTab serverId={serverId ?? ""} />
+        <InstalledTab serverId={serverId} />
       ) : (
-        <SourceTab serverId={serverId ?? ""} pat={pat} onPatChange={setPat} />
+        <SourceTab serverId={serverId} pat={pat} onPatChange={setPat} />
       )}
     </div>
   );

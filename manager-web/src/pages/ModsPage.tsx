@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Package, AlertCircle } from "lucide-react";
-import { useParams } from "react-router-dom";
-import { useServer } from "../hooks/useServer.js";
+import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useSteamCmdProgress } from "../hooks/useSteamCmdProgress.js";
 import { apiClient } from "../api/client.js";
 import {
@@ -84,16 +84,30 @@ function getApiError(err: unknown, fallback: string): string {
  * 数据流：React Query 前端防抖（browse 60s staleTime），后端 0 缓存。
  */
 export function ModsPage() {
-  // 浏览 Steam 创意工坊是全局操作——走 /api/mods（不依赖 serverId）。
-  // 仅「下载」需要 serverId（下载到哪个服务器），从 useServer 拿第一个真实服务器。
-  const { serverId: routeServerId } = useParams<{ serverId: string }>();
-  const { servers } = useServer();
-  // URL 上的 serverId 在真实列表里 → 用它；否则用列表第一个
-  const validIds = new Set(servers.map((s) => s.id));
-  const serverId =
-    routeServerId && validIds.has(routeServerId)
-      ? routeServerId
-      : servers[0]?.id ?? "";
+  // 取值来源切到共享层（sc:design 第 4 阶段）：守卫钩子先校验实例有效性
+  const navigate = useNavigate();
+  const guard = useRequireServer();
+  const handledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (guard.status === "ready" || guard.status === "loading") {
+      handledRef.current = null;
+      return;
+    }
+    if (handledRef.current === guard.status) return;
+    handledRef.current = guard.status;
+
+    if (guard.status === "empty") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("请先选择一个实例");
+    } else if (guard.status === "missing") {
+      void navigate("/server-setup", { replace: true });
+      toast.warning("该服务器实例不存在");
+    }
+  }, [guard.status, navigate]);
+
+  if (guard.status !== "ready") return null;
+  const serverId = guard.serverId;
 
   // 搜索 & 筛选
   const [searchInput, setSearchInput] = useState("");
