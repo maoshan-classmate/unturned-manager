@@ -1,5 +1,17 @@
 import { test, expect } from "@playwright/test";
 
+// sc:design 第 8 批：实例类页面现在依赖共享层 currentServerId，不再从 URL 取。
+// e2e 后端成立实例（有 Server/Commands.dat）用 ApiServer；登录后先写入 localStorage，
+// 再整页 goto 让 Provider 重新 mount 读到。
+async function selectActiveInstance(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "unturned-manager.currentServerId",
+      "ApiServer",
+    );
+  });
+}
+
 test.describe("unturned-manager E2E 冒烟测试", () => {
   test("登录页面渲染正常", async ({ page }) => {
     await page.goto("/");
@@ -21,13 +33,15 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     // 所有页面路由无 JS 错误（未登录时重定向到登录页是正常行为）
     const routes = [
       "/",
-      "/_default",
-      "/test-server/console",
-      "/test-server/mods",
-      "/test-server/config/commands",
-      "/test-server/files",
-      "/test-server/server-setup",
+      "/console",
+      "/mods",
+      "/config/commands",
+      "/files",
+      "/server-setup",
       "/settings",
+      // 兼容迁移期——旧实例路径重定向到纯路径（无 JS 错误）
+      "/test-server/console",
+      "/test-server/server-setup",
     ];
 
     for (const route of routes) {
@@ -57,7 +71,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     // 等登录完成跳转（侧边栏出现 = 登录成功）
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/test-server/mods");
+    await page.goto("/mods");
     // 页面壳（标题 + 搜索框）应立即可见——即使 Steam 未通/服务器不存在也渲染（问题 8）
     await expect(page.getByPlaceholder("搜索 Mod 名称...")).toBeVisible({
       timeout: 10_000,
@@ -85,7 +99,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/test-server/mods");
+    await page.goto("/mods");
     // 页面壳（搜索框）立即渲染 = 不是整页 loading
     await expect(page.getByPlaceholder("搜索 Mod 名称...")).toBeVisible({
       timeout: 10_000,
@@ -116,7 +130,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/test-server/mods");
+    await page.goto("/mods");
     // 等列表出现第一个「详情」按钮（不等 Steam 数据返回，卡片先出壳）
     const detailBtn = page.locator('button:has-text("详情")').first();
     await expect(detailBtn).toBeVisible({ timeout: 60_000 });
@@ -172,8 +186,9 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    // 等 WSContext 建连——路由切到任一 server 触发
-    await page.goto("/test-server/console");
+    // 等 WSContext 建连——路由切到控制台页触发
+    await selectActiveInstance(page);
+    await page.goto("/console");
     await page.waitForTimeout(2_000); // 给 ensureAccessToken + 建连 + subscribe 留时间
 
     const urls = await page.evaluate(
@@ -226,7 +241,8 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/test-server/console");
+    await selectActiveInstance(page);
+    await page.goto("/console");
 
     // 等首次 WS 建连 + 3 秒模拟 401 + 退避重连(默认 1s) + 第二次建连
     await page.waitForTimeout(6_000);
@@ -251,7 +267,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/test-server/server-setup");
+    await page.goto("/server-setup");
 
     // Header 标题 + 实例库侧栏
     await expect(page.getByText("服务器部署与管理")).toBeVisible({
@@ -302,7 +318,7 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/_default/server-setup");
+    await page.goto("/server-setup");
 
     // 打开创建弹窗
     await page.getByRole("button", { name: /新建/ }).first().click();
@@ -320,8 +336,12 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       timeout: 10_000,
     });
 
-    // 删除——hover 侧栏该行触发垃圾桶按钮（opacity-0 → 100）
-    await page.locator(`a[href="/${serverId}/server-setup"]`).hover();
+    // 删除——hover 实例库该行触发垃圾桶按钮（opacity-0 → 100）。
+    // 侧栏实例库行是 .group div（sc:design 第 8 批：实例库链接改为点选按钮，不再有 a[href=...]）
+    await page
+      .locator(`div.group`, { hasText: serverId })
+      .first()
+      .hover();
     await page.getByRole("button", { name: `删除实例 ${serverId}` }).click();
     // ConfirmDialog 二次确认（label 精确 "删除"）
     await expect(page.getByText("删除实例", { exact: true })).toBeVisible({
@@ -351,8 +371,9 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    // 进 ConfigPage（默认 tab = commands；路由精确 /:serverId/config/commands）
-    await page.goto("/_default/config/commands");
+    // 进 ConfigPage（默认 tab = commands；需先选中实例——本地有 ApiServer 的 Commands.dat）
+    await selectActiveInstance(page);
+    await page.goto("/config/commands");
     await expect(page.getByText("服务器配置")).toBeVisible({ timeout: 10_000 });
 
     // Loadout 区块可见——若 _default 已有 Commands.dat，Loadout 列表可能非空，
@@ -417,7 +438,9 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       .click();
     await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/_default/console");
+    // 控制台页需先选中实例（ApiServer 是本地成立实例）
+    await selectActiveInstance(page);
+    await page.goto("/console");
     // 页面壳（标题）——heading 避免撞侧边栏链接
     await expect(
       page.getByRole("heading", { name: "控制台" }),

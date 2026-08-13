@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Package, AlertCircle } from "lucide-react";
-import { useRequireServer } from "../hooks/useRequireServer.js";
+import { useCurrentServer } from "../contexts/CurrentServerContext.js";
 import { useSteamCmdProgress } from "../hooks/useSteamCmdProgress.js";
 import { apiClient } from "../api/client.js";
 import {
@@ -84,30 +83,10 @@ function getApiError(err: unknown, fallback: string): string {
  * 数据流：React Query 前端防抖（browse 60s staleTime），后端 0 缓存。
  */
 export function ModsPage() {
-  // 取值来源切到共享层（sc:design 第 4 阶段）：守卫钩子先校验实例有效性
-  const navigate = useNavigate();
-  const guard = useRequireServer();
-  const handledRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (guard.status === "ready" || guard.status === "loading") {
-      handledRef.current = null;
-      return;
-    }
-    if (handledRef.current === guard.status) return;
-    handledRef.current = guard.status;
-
-    if (guard.status === "empty") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("请先选择一个实例");
-    } else if (guard.status === "missing") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("该服务器实例不存在");
-    }
-  }, [guard.status, navigate]);
-
-  if (guard.status !== "ready") return null;
-  const serverId = guard.serverId;
+  // 浏览 Steam 创意工坊是全局操作（不需要实例）；仅「下载」需要 serverId。
+  // 取值来源：共享层当前选中实例（sc:design 第 4 阶段）；无实例时浏览照常，下载禁用。
+  const { currentServerId } = useCurrentServer();
+  const serverId = currentServerId ?? "";
 
   // 搜索 & 筛选
   const [searchInput, setSearchInput] = useState("");

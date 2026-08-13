@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Rocket, Plus, Server, Trash2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useCurrentServer } from "../contexts/CurrentServerContext.js";
 import type { U3dsStatus } from "@unturned-manager/shared";
 import { Button } from "../components/ui/button.js";
 import { Card } from "../components/shared/Card.js";
@@ -44,15 +45,16 @@ const TIPS: never[] = [];
  * 数据来源:Gateway 已有 endpoints(servers / steamcmd/status / config/commands / scheduled-tasks)。
  */
 export function ServerSetupPage() {
-  const { serverId: routeServerId } = useParams<{ serverId: string }>();
   const { servers, loading, error, refresh, addServer, removeServer } =
     useServer();
+  // sc:design 第 4/8 批：实例标识脱离 URL——当前实例从共享层取，无 URL 依赖
+  const { currentServerId, setCurrentServerId, clear } = useCurrentServer();
 
-  // 路由 serverId 优先;否则选第一个真实服务器
+  // 共享层选中实例优先;否则选第一个真实服务器
   const validIds = new Set(servers.map((s) => s.id));
   const currentId =
-    routeServerId && validIds.has(routeServerId)
-      ? routeServerId
+    currentServerId && validIds.has(currentServerId)
+      ? currentServerId
       : (servers[0]?.id ?? "");
   const currentServer = servers.find((s) => s.id === currentId);
 
@@ -86,10 +88,16 @@ export function ServerSetupPage() {
       // 真实删除:DELETE /servers/:id + 内部 refresh(ADR-0003 B2 目录扫描真源)
       await removeServer(deleteTarget);
       toast.success(`实例「${deleteTarget}」已删除`);
-      // 若删除当前选中实例,跳转到首个剩余实例;无剩余则回首页
+      // 若删除当前选中实例,选中首个剩余实例;无剩余则清除选择并回首页
       if (deleteTarget === currentId) {
         const next = servers.filter((s) => s.id !== deleteTarget)[0];
-        navigate(next ? `/${next.id}/server-setup` : "/");
+        if (next) {
+          setCurrentServerId(next.id);
+        } else {
+          // 无剩余实例——清掉共享层选择（localStorage 同步清空），跳回首页
+          clear();
+          navigate("/");
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "删除实例失败");
@@ -182,9 +190,10 @@ export function ServerSetupPage() {
                       s.id === currentId ? "bg-slate-700/30" : ""
                     }`}
                   >
-                    <a
-                      href={`/${s.id}/server-setup`}
-                      className="flex items-center gap-2 flex-1 min-w-0"
+                    <button
+                      type="button"
+                      onClick={() => setCurrentServerId(s.id)}
+                      className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     >
                       <span
                         className="inline-block h-2 w-2 rounded-full shrink-0"
@@ -206,7 +215,7 @@ export function ServerSetupPage() {
                           className="text-emerald-500 shrink-0"
                         />
                       )}
-                    </a>
+                    </button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -271,11 +280,14 @@ export function ServerSetupPage() {
           </div>
         </div>
 
-        {/* 创建实例 Dialog — 全页根级挂载 */}
+        {/* 创建实例 Dialog — 全页根级挂载；创建成功后自动选中新实例（侧栏/页面立即切换） */}
         <CreateServerDialog
           open={createOpen}
           onClose={() => setCreateOpen(false)}
-          onCreated={addServer}
+          onCreated={async (server) => {
+            await addServer(server);
+            setCurrentServerId(server.id);
+          }}
         />
 
         {/* 删除实例 ConfirmDialog */}
