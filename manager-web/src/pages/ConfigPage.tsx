@@ -270,7 +270,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
                   LogAnticheat: false,
                 };
               }
-              const parts = known.Log.split(/\s+/);
+              const parts = known.Log.split("/");
               return {
                 LogChat: parts[0]?.toUpperCase() === "Y",
                 LogJoin: parts[1]?.toUpperCase() === "Y",
@@ -314,32 +314,32 @@ function ConfigContent({ serverId }: { serverId: string }) {
         const res = await apiClient.get(`/servers/${server.id}/config/txt`);
         const raw = res.data.data;
         if (raw?.sections) {
-          // BUG-2 闭环：read 侧走 helper 解 entries[]——schema 真实形态是
-          // sections[中文] = { name, entries: ConfigEntry[] }，不是裸 kv map
-          const b = raw.sections["浏览器"],
-            s = raw.sections["服务器"];
-          const i = raw.sections["物品"],
-            g = raw.sections["玩法开关"];
+          // BUG-2 闭环 + Bug B-1 修复：read 侧走 helper 解 entries[]——
+          // Bug B-1 改用 SDK 英文 section 名（[Browser]/[Server]/[Items]/[Gameplay]）+ SDK 英文 key（PlayConfigData.cs C# 字段名）
+          const b = raw.sections["Browser"],
+            s = raw.sections["Server"];
+          const i = raw.sections["Items"],
+            g = raw.sections["Gameplay"];
           setTxtFields({
             ...EMPTY_TXT,
             Login_Token: readStringEntry(b, "Login_Token"),
-            完整描述: readStringEntry(b, "完整描述"),
-            列表描述: readStringEntry(b, "列表描述"),
-            图标URL: readStringEntry(b, "图标URL"),
-            缩略图URL: readStringEntry(b, "缩略图URL"),
-            VAC反作弊: readBoolEntry(s, "VAC反作弊"),
-            BattlEye: readBoolEntry(s, "BattlEye"),
-            最大Ping: readStringEntry(s, "最大Ping(ms)"),
-            定时关机: readBoolEntry(s, "定时关机"),
-            更新自动关机: readBoolEntry(s, "更新自动关机"),
-            生成倍率: readStringEntry(i, "生成倍率"),
-            物品耐久: readBoolEntry(i, "物品耐久"),
-            掉落消失: readStringEntry(i, "掉落消失(s)"),
-            重生时间: readStringEntry(i, "重生时间(s)"),
-            肩后视角: readBoolEntry(g, "肩后视角"),
-            自由建造: readBoolEntry(g, "自由建造"),
-            玩家伤害: readBoolEntry(g, "玩家伤害"),
-            允许自杀: readBoolEntry(g, "允许自杀"),
+            Desc_Full: readStringEntry(b, "Desc_Full"),
+            Desc_Server_List: readStringEntry(b, "Desc_Server_List"),
+            Icon: readStringEntry(b, "Icon"),
+            Thumbnail: readStringEntry(b, "Thumbnail"),
+            VAC_Secure: readBoolEntry(s, "VAC_Secure"),
+            BattlEye_Secure: readBoolEntry(s, "BattlEye_Secure"),
+            Max_Ping_Milliseconds: readStringEntry(s, "Max_Ping_Milliseconds"),
+            Enable_Scheduled_Shutdown: readBoolEntry(s, "Enable_Scheduled_Shutdown"),
+            Enable_Update_Shutdown: readBoolEntry(s, "Enable_Update_Shutdown"),
+            Spawn_Chance: readStringEntry(i, "Spawn_Chance"),
+            Has_Durability: readBoolEntry(i, "Has_Durability"),
+            Despawn_Dropped_Time: readStringEntry(i, "Despawn_Dropped_Time"),
+            Respawn_Time: readStringEntry(i, "Respawn_Time"),
+            Allow_Shoulder_Camera: readBoolEntry(g, "Allow_Shoulder_Camera"),
+            Allow_Freeform_Buildables: readBoolEntry(g, "Allow_Freeform_Buildables"),
+            Friendly_Fire: readBoolEntry(g, "Friendly_Fire"),
+            Can_Suicide: readBoolEntry(g, "Can_Suicide"),
           });
         }
       } else {
@@ -395,8 +395,13 @@ function ConfigContent({ serverId }: { serverId: string }) {
             if (val) known.set(key, "");
           } else if (val) known.set(key, String(val));
         }
-        // Log 4 字段合成单行 'Y/N Y/N Y/N Y/N'（Chat/Join/Death/Anticheat）——总是写入，UI 默认 = SDK 默认（Y/Y/Y/N）
-        const logLine = `${fields.LogChat ? "Y" : "N"} ${fields.LogJoin ? "Y" : "N"} ${fields.LogDeath ? "Y" : "N"} ${fields.LogAnticheat ? "Y" : "N"}`;
+        // Log 4 字段合成单行 'Y/N/Y/N/Y/N/Y/N'（Chat/JoinLeave/Death/Anticheat，`/` 分隔，CommandLog.cs:18 Parser.getComponentsFromSerial(_, '/')，长度必须 = 4）——总是写入，UI 默认 = SDK 默认（Y/Y/Y/N，CommandWindow.cs:49-52）
+        const logLine = [
+          fields.LogChat ? "Y" : "N",
+          fields.LogJoin ? "Y" : "N",
+          fields.LogDeath ? "Y" : "N",
+          fields.LogAnticheat ? "Y" : "N",
+        ].join("/");
         known.set("Log", logLine);
         // Votify 6 字段合成单行 'Y/PassCooldown/FailCooldown/Duration/Percentage/Players'——总是写入，UI 默认 = SDK 默认（N/5/60/15/75/3，ChatManager.cs:76-81）
         const votifyLine = [
@@ -591,7 +596,11 @@ function ConfigContent({ serverId }: { serverId: string }) {
             <CommandsTab fields={fields} onChange={handleFieldChange} />
           )}
           {tab === "txt" && (
-            <ConfigTxtTab fields={txtFields} onChange={handleTxtChange} />
+            <ConfigTxtTab
+              fields={txtFields}
+              onChange={handleTxtChange}
+              currentMode={fields.Mode}
+            />
           )}
           {tab === "workshop" && (
             <WorkshopTab
@@ -857,21 +866,33 @@ function CommandsTab({
 function ConfigTxtTab({
   fields,
   onChange,
+  currentMode,
 }: {
   fields: ConfigTxtFields;
   onChange: (k: keyof ConfigTxtFields, v: string | boolean) => void;
+  /** 当前 Commands.dat 的 Mode 值（Easy/Normal/Hard）——[Items]/[Gameplay] 写入值应用此 mode */
+  currentMode: string;
 }) {
   return (
     <div className="p-4 md:p-6 space-y-6">
+      <div className="rounded-md border px-3 py-2" style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}>
+        <p className="text-xs" style={{ color: "#94A3B8" }}>
+          当前生效 mode = <span style={{ color: "#22C55E" }}>{currentMode || "（未配置）"}</span>
+        </p>
+        <p className="mt-1 text-xs" style={{ color: "#64748B" }}>
+          [Items]/[Gameplay] 段写入的值对应当前 Mode 命令指定的难度（U3DS `PlayConfigData.cs:2856-2873` 单 section 格式，不支持 per-mode 字段值）。
+          切换 mode 请到「启动参数」卡片改 Mode 选项并保存。
+        </p>
+      </div>
       <TxtSection
         title="浏览器"
         fields={
           [
             ["Login_Token", "Steam 浏览器登录令牌", "text"],
-            ["完整描述", "完整描述", "text"],
-            ["列表描述", "列表描述", "text"],
-            ["图标URL", "图标URL", "text"],
-            ["缩略图URL", "缩略图URL", "text"],
+            ["Desc_Full", "完整描述", "text"],
+            ["Desc_Server_List", "列表描述", "text"],
+            ["Icon", "图标URL", "text"],
+            ["Thumbnail", "缩略图URL", "text"],
           ] as const
         }
         txtFields={fields}
@@ -881,11 +902,11 @@ function ConfigTxtTab({
         title="服务器"
         fields={
           [
-            ["VAC反作弊", "VAC反作弊", "toggle"],
-            ["BattlEye", "BattlEye", "toggle"],
-            ["最大Ping", "最大Ping(ms)", "text"],
-            ["定时关机", "定时关机", "toggle"],
-            ["更新自动关机", "更新自动关机", "toggle"],
+            ["VAC_Secure", "VAC反作弊", "toggle"],
+            ["BattlEye_Secure", "BattlEye", "toggle"],
+            ["Max_Ping_Milliseconds", "最大Ping(ms)", "text"],
+            ["Enable_Scheduled_Shutdown", "定时关机", "toggle"],
+            ["Enable_Update_Shutdown", "更新自动关机", "toggle"],
           ] as const
         }
         txtFields={fields}
@@ -895,10 +916,10 @@ function ConfigTxtTab({
         title="物品"
         fields={
           [
-            ["生成倍率", "生成倍率", "text"],
-            ["物品耐久", "物品耐久", "toggle"],
-            ["掉落消失", "掉落消失(s)", "text"],
-            ["重生时间", "重生时间(s)", "text"],
+            ["Spawn_Chance", "生成倍率", "text"],
+            ["Has_Durability", "物品耐久", "toggle"],
+            ["Despawn_Dropped_Time", "掉落消失(s)", "text"],
+            ["Respawn_Time", "重生时间(s)", "text"],
           ] as const
         }
         txtFields={fields}
@@ -908,10 +929,10 @@ function ConfigTxtTab({
         title="玩法开关"
         fields={
           [
-            ["肩后视角", "肩后视角", "toggle"],
-            ["自由建造", "自由建造", "toggle"],
-            ["玩家伤害", "玩家伤害", "toggle"],
-            ["允许自杀", "允许自杀", "toggle"],
+            ["Allow_Shoulder_Camera", "肩后视角", "toggle"],
+            ["Allow_Freeform_Buildables", "自由建造", "toggle"],
+            ["Friendly_Fire", "玩家伤害", "toggle"],
+            ["Can_Suicide", "允许自杀", "toggle"],
           ] as const
         }
         txtFields={fields}

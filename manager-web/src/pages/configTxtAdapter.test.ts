@@ -1,5 +1,5 @@
 /**
- * configTxtAdapter 单测（BUG-2 闭环 owner 网，2026-08-13）。
+ * configTxtAdapter 单测（BUG-2 闭环 owner 网，2026-08-13；Bug B-1 英文 key 同步 2026-08-13）。
  *
  * 颗粒度最小：只测 helper 4 个函数的纯逻辑，不引入 React/jsdom。
  * 边界覆盖：
@@ -7,6 +7,9 @@
  *   - bool 字段未勾选 = value="false"（保留已知键）
  *   - 全 false → 4 个 section 全 entries 全 known
  *   - 全填值 → entries 值正确回填
+ *
+ * Bug B-1：所有 key 改用 SDK 英文（PlayConfigData.cs C# 字段名）——U3DS 反射 FieldInfo.Name 精确匹配。
+ * section 名改用 SDK 英文（Browser / Server / Items / Gameplay）。
  */
 import { describe, it, expect } from "vitest";
 import type { ConfigSection } from "@unturned-manager/shared";
@@ -29,7 +32,7 @@ describe("readStringEntry — section → string UI 字段", () => {
 
   it("entries 中找不到 key → 返回 ''", () => {
     const section: ConfigSection = {
-      name: "浏览器",
+      name: "Browser",
       entries: [{ key: "Other", value: "x", comment: null, known: true }],
     };
     expect(readStringEntry(section, "Login_Token")).toBe("");
@@ -37,7 +40,7 @@ describe("readStringEntry — section → string UI 字段", () => {
 
   it("value 非 null → 返回原字符串", () => {
     const section: ConfigSection = {
-      name: "浏览器",
+      name: "Browser",
       entries: [
         { key: "Login_Token", value: "abc123", comment: null, known: true },
       ],
@@ -47,7 +50,7 @@ describe("readStringEntry — section → string UI 字段", () => {
 
   it("value = null → 返回 ''（未设置视作空）", () => {
     const section: ConfigSection = {
-      name: "浏览器",
+      name: "Browser",
       entries: [
         { key: "Login_Token", value: null, comment: null, known: true },
       ],
@@ -60,45 +63,45 @@ describe("readStringEntry — section → string UI 字段", () => {
 
 describe("readBoolEntry — section → bool UI 字段", () => {
   it("section = undefined → 返回 false", () => {
-    expect(readBoolEntry(undefined, "VAC反作弊")).toBe(false);
+    expect(readBoolEntry(undefined, "VAC_Secure")).toBe(false);
   });
 
   it("entries 中找不到 key → 返回 false", () => {
     const section: ConfigSection = {
-      name: "服务器",
+      name: "Server",
       entries: [{ key: "Other", value: null, comment: null, known: true }],
     };
-    expect(readBoolEntry(section, "VAC反作弊")).toBe(false);
+    expect(readBoolEntry(section, "VAC_Secure")).toBe(false);
   });
 
   it("value = null + type=bool → 返回 true（裸 key 行 = 开关启用）", () => {
     const section: ConfigSection = {
-      name: "服务器",
+      name: "Server",
       entries: [
-        { key: "VAC反作弊", value: null, comment: null, known: true, type: "bool" },
+        { key: "VAC_Secure", value: null, comment: null, known: true, type: "bool" },
       ],
     };
-    expect(readBoolEntry(section, "VAC反作弊")).toBe(true);
+    expect(readBoolEntry(section, "VAC_Secure")).toBe(true);
   });
 
   it("value = 'true' → 返回 true（显式 true 字符串）", () => {
     const section: ConfigSection = {
-      name: "服务器",
+      name: "Server",
       entries: [
-        { key: "VAC反作弊", value: "true", comment: null, known: true, type: "bool" },
+        { key: "VAC_Secure", value: "true", comment: null, known: true, type: "bool" },
       ],
     };
-    expect(readBoolEntry(section, "VAC反作弊")).toBe(true);
+    expect(readBoolEntry(section, "VAC_Secure")).toBe(true);
   });
 
   it("value = 'false' → 返回 false（显式 false 字符串——保留已知键场景）", () => {
     const section: ConfigSection = {
-      name: "服务器",
+      name: "Server",
       entries: [
-        { key: "VAC反作弊", value: "false", comment: null, known: true, type: "bool" },
+        { key: "VAC_Secure", value: "false", comment: null, known: true, type: "bool" },
       ],
     };
-    expect(readBoolEntry(section, "VAC反作弊")).toBe(false);
+    expect(readBoolEntry(section, "VAC_Secure")).toBe(false);
   });
 });
 
@@ -106,8 +109,8 @@ describe("readBoolEntry — section → bool UI 字段", () => {
 
 describe("boolEntry — 已知键保留语义", () => {
   it("enabled=true → value=null + type=bool（裸 key 行 = 开关）", () => {
-    expect(boolEntry("VAC反作弊", true)).toEqual({
-      key: "VAC反作弊",
+    expect(boolEntry("VAC_Secure", true)).toEqual({
+      key: "VAC_Secure",
       value: null,
       comment: null,
       known: true,
@@ -116,8 +119,8 @@ describe("boolEntry — 已知键保留语义", () => {
   });
 
   it("enabled=false → value='false' + type=bool（保留已知键，显式 false）", () => {
-    expect(boolEntry("VAC反作弊", false)).toEqual({
-      key: "VAC反作弊",
+    expect(boolEntry("VAC_Secure", false)).toEqual({
+      key: "VAC_Secure",
       value: "false",
       comment: null,
       known: true,
@@ -155,10 +158,10 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     const sections = buildTxtSections(EMPTY_TXT_FIELDS);
     expect(sections).toHaveLength(4);
     expect(sections.map((s) => s.name)).toEqual([
-      "浏览器",
-      "服务器",
-      "物品",
-      "玩法开关",
+      "Browser",
+      "Server",
+      "Items",
+      "Gameplay",
     ]);
     const allEntries = sections.flatMap((s) => s.entries);
     // 5 + 5 + 4 + 4 = 18 entries
@@ -180,40 +183,40 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     const filled: ConfigTxtFields = {
       ...EMPTY_TXT_FIELDS,
       Login_Token: "tok-123",
-      完整描述: "全服描述",
-      最大Ping: "500",
-      生成倍率: "2",
-      掉落消失: "30",
-      重生时间: "60",
-      VAC反作弊: true,
-      BattlEye: true,
-      定时关机: true,
-      物品耐久: true,
-      肩后视角: true,
-      自由建造: true,
-      玩家伤害: true,
-      允许自杀: true,
-      更新自动关机: false,
+      Desc_Full: "全服描述",
+      Max_Ping_Milliseconds: "500",
+      Spawn_Chance: "0.35",
+      Despawn_Dropped_Time: "600",
+      Respawn_Time: "100",
+      VAC_Secure: true,
+      BattlEye_Secure: true,
+      Enable_Scheduled_Shutdown: true,
+      Has_Durability: true,
+      Allow_Shoulder_Camera: true,
+      Allow_Freeform_Buildables: true,
+      Friendly_Fire: true,
+      Can_Suicide: true,
+      Enable_Update_Shutdown: false,
     };
     const sections = buildTxtSections(filled);
     const get = (name: string, key: string) =>
       sections.find((s) => s.name === name)?.entries.find((e) => e.key === key);
 
     // string 字段：直传
-    expect(get("浏览器", "Login_Token")?.value).toBe("tok-123");
-    expect(get("浏览器", "完整描述")?.value).toBe("全服描述");
-    expect(get("服务器", "最大Ping(ms)")?.value).toBe("500");
-    expect(get("物品", "生成倍率")?.value).toBe("2");
+    expect(get("Browser", "Login_Token")?.value).toBe("tok-123");
+    expect(get("Browser", "Desc_Full")?.value).toBe("全服描述");
+    expect(get("Server", "Max_Ping_Milliseconds")?.value).toBe("500");
+    expect(get("Items", "Spawn_Chance")?.value).toBe("0.35");
 
     // bool 字段：enabled=true → value=null
-    expect(get("服务器", "VAC反作弊")?.value).toBeNull();
-    expect(get("服务器", "BattlEye")?.value).toBeNull();
-    expect(get("服务器", "定时关机")?.value).toBeNull();
-    expect(get("物品", "物品耐久")?.value).toBeNull();
-    expect(get("玩法开关", "肩后视角")?.value).toBeNull();
+    expect(get("Server", "VAC_Secure")?.value).toBeNull();
+    expect(get("Server", "BattlEye_Secure")?.value).toBeNull();
+    expect(get("Server", "Enable_Scheduled_Shutdown")?.value).toBeNull();
+    expect(get("Items", "Has_Durability")?.value).toBeNull();
+    expect(get("Gameplay", "Allow_Shoulder_Camera")?.value).toBeNull();
 
     // bool 字段：enabled=false → value="false"（保留）
-    expect(get("服务器", "更新自动关机")?.value).toBe("false");
+    expect(get("Server", "Enable_Update_Shutdown")?.value).toBe("false");
   });
 
   it("空串 string 字段 → value=null（不被存为空 key= 行）", () => {
@@ -223,7 +226,7 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     };
     const sections = buildTxtSections(filled);
     const entry = sections
-      .find((s) => s.name === "浏览器")
+      .find((s) => s.name === "Browser")
       ?.entries.find((e) => e.key === "Login_Token");
     expect(entry?.value).toBeNull();
   });

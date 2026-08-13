@@ -1,8 +1,12 @@
 /**
- * Config.txt schema adapter（BUG-2 闭环，2026-08-13）。
+ * Config.txt schema adapter（BUG-2 闭环，2026-08-13；Bug B-1 英文 key 重构 2026-08-13）。
  *
  * 后端 shared/schemas/config.schema.ts ConfigSectionSchema = { name, entries: ConfigEntry[] }
  * UI 用扁平 ConfigTxtFields；本文件负责 UI ↔ schema 互转。
+ *
+ * Bug B-1 修复：字段名 + entry key + section name 全部对齐 SDK 英文真源（PlayConfigData.cs 各 ConfigData 类的 C# 字段名）。
+ * 写入文件后 U3DS `PlayConfigUtils.ParseCategory`（PlayConfigData.cs:2613-2678）按 C# 反射 FieldInfo.Name 匹配，
+ * 中文 key 会被 TryGetNode 返回 false 静默丢弃——本文件确保所有写入 key 都用 SDK 英文。
  *
  * 颗粒度最小：只 ConfigPage 一处消费，但 helper 必须可独立单测（owner 网），
  * 故放在页面同级独立文件而不是内联。CLAUDE.md §lib/utils 触发条件 = ≥2 模块共用，
@@ -22,7 +26,7 @@ import type {
  * isBool 参数歧义导致返回类型错配的坑（BUG-2 修复时单测抓住过）。
  *
  * @param section - 后端返回的 ConfigSection（可能 undefined=section 不存在）
- * @param key - 字段 key
+ * @param key - 字段 key（SDK 英文名，与 `PlayConfigData.cs` 对应 C# 字段名一致）
  * @returns string 字段值；section/key 缺失统一返回 ""
  */
 export function readStringEntry(
@@ -42,7 +46,7 @@ export function readStringEntry(
  * value 非 null（"true"/"false"/其他）：按字面字符串真值判断——保守走 Boolean()。
  *
  * @param section - 后端返回的 ConfigSection
- * @param key - 字段 key
+ * @param key - 字段 key（SDK 英文名）
  * @returns bool 字段值；section/key 缺失统一返回 false
  */
 export function readBoolEntry(
@@ -81,95 +85,120 @@ export function stringEntry(key: string, value: string): ConfigEntry {
 /**
  * UI 字段全集 → 4 个 section 的 ConfigSection[]。
  *
+ * Bug B-1 修复后：section 名 + entry key 都用 SDK 英文真源——
+ * [Browser] / [Server] / [Items] / [Gameplay] 对应 PlayConfigData.cs 的 BrowserConfigData / ServerConfigData / ItemsConfigData / GameplayConfigData。
+ *
  * UI 字段清单（与 ConfigTxtFields 同步）——新增 UI 字段必须同步加到这里。
- * 已知键列表参考 shared/schemas/config.schema.ts ConfigEntrySchema。
  */
 export function buildTxtSections(fields: ConfigTxtFields): ApiConfigSection[] {
   return [
     {
-      name: "浏览器",
+      name: "Browser",
       entries: [
         stringEntry("Login_Token", fields.Login_Token),
-        stringEntry("完整描述", fields.完整描述),
-        stringEntry("列表描述", fields.列表描述),
-        stringEntry("图标URL", fields.图标URL),
-        stringEntry("缩略图URL", fields.缩略图URL),
+        stringEntry("Desc_Full", fields.Desc_Full),
+        stringEntry("Desc_Server_List", fields.Desc_Server_List),
+        stringEntry("Icon", fields.Icon),
+        stringEntry("Thumbnail", fields.Thumbnail),
       ],
     },
     {
-      name: "服务器",
+      name: "Server",
       entries: [
-        boolEntry("VAC反作弊", fields.VAC反作弊),
-        boolEntry("BattlEye", fields.BattlEye),
-        stringEntry("最大Ping(ms)", fields.最大Ping),
-        boolEntry("定时关机", fields.定时关机),
-        boolEntry("更新自动关机", fields.更新自动关机),
+        boolEntry("VAC_Secure", fields.VAC_Secure),
+        boolEntry("BattlEye_Secure", fields.BattlEye_Secure),
+        stringEntry("Max_Ping_Milliseconds", fields.Max_Ping_Milliseconds),
+        boolEntry("Enable_Scheduled_Shutdown", fields.Enable_Scheduled_Shutdown),
+        boolEntry("Enable_Update_Shutdown", fields.Enable_Update_Shutdown),
       ],
     },
     {
-      name: "物品",
+      name: "Items",
       entries: [
-        stringEntry("生成倍率", fields.生成倍率),
-        boolEntry("物品耐久", fields.物品耐久),
-        stringEntry("掉落消失(s)", fields.掉落消失),
-        stringEntry("重生时间(s)", fields.重生时间),
+        stringEntry("Spawn_Chance", fields.Spawn_Chance),
+        boolEntry("Has_Durability", fields.Has_Durability),
+        stringEntry("Despawn_Dropped_Time", fields.Despawn_Dropped_Time),
+        stringEntry("Respawn_Time", fields.Respawn_Time),
       ],
     },
     {
-      name: "玩法开关",
+      name: "Gameplay",
       entries: [
-        boolEntry("肩后视角", fields.肩后视角),
-        boolEntry("自由建造", fields.自由建造),
-        boolEntry("玩家伤害", fields.玩家伤害),
-        boolEntry("允许自杀", fields.允许自杀),
+        boolEntry("Allow_Shoulder_Camera", fields.Allow_Shoulder_Camera),
+        boolEntry("Allow_Freeform_Buildables", fields.Allow_Freeform_Buildables),
+        boolEntry("Friendly_Fire", fields.Friendly_Fire),
+        boolEntry("Can_Suicide", fields.Can_Suicide),
       ],
     },
   ];
 }
 
 /**
- * ConfigTxtFields 形态（与 ConfigPage.tsx 内部 interface 同步——本文件独立测试需要它）——
- * 颗粒度最小：本地定义而非 import ConfigPage，避免循环依赖与"helper 反向依赖 UI"反模式。
+ * ConfigTxtFields 形态——Bug B-1 修复后所有字段名与 SDK C# 字段名一致。
+ *
+ * 中文 label 仅在前端 ConfigPage.tsx 的 TxtSection field 数组里出现（display-only），
+ * 本 interface 与 buildTxtSections 全部用英文 key——保证写入 Config.txt 的字段名
+ * 等于 SDK `PlayConfigData.cs` 反射匹配的 FieldInfo.Name。
+ *
+ * 字段名 → SDK 真源：
+ *   Login_Token             :124 BrowserConfigData.Login_Token
+ *   Desc_Full               :113 BrowserConfigData.Desc_Full
+ *   Desc_Server_List        :118 BrowserConfigData.Desc_Server_List
+ *   Icon                     :98 BrowserConfigData.Icon
+ *   Thumbnail               :103 BrowserConfigData.Thumbnail
+ *   VAC_Secure              :402 ServerConfigData.VAC_Secure
+ *   BattlEye_Secure         未在 SDK 本地副本找到（需实机验证）
+ *   Max_Ping_Milliseconds   :404 ServerConfigData.Max_Ping_Milliseconds
+ *   Enable_Scheduled_Shutdown :318 ServerConfigData.Enable_Scheduled_Shutdown
+ *   Enable_Update_Shutdown  :350 ServerConfigData.Enable_Update_Shutdown
+ *   Spawn_Chance            :487 ItemsConfigData.Spawn_Chance
+ *   Has_Durability          :554 ItemsConfigData.Has_Durability
+ *   Despawn_Dropped_Time    :492 ItemsConfigData.Despawn_Dropped_Time
+ *   Respawn_Time            :504 ItemsConfigData.Respawn_Time
+ *   Allow_Shoulder_Camera   :2215 GameplayConfigData.Allow_Shoulder_Camera
+ *   Allow_Freeform_Buildables :2250 GameplayConfigData.Allow_Freeform_Buildables
+ *   Friendly_Fire           :2225 GameplayConfigData.Friendly_Fire（UI label「玩家伤害」取反）
+ *   Can_Suicide             :2220 GameplayConfigData.Can_Suicide
  */
 export interface ConfigTxtFields {
   Login_Token: string;
-  完整描述: string;
-  列表描述: string;
-  图标URL: string;
-  缩略图URL: string;
-  VAC反作弊: boolean;
-  BattlEye: boolean;
-  最大Ping: string;
-  定时关机: boolean;
-  更新自动关机: boolean;
-  生成倍率: string;
-  物品耐久: boolean;
-  掉落消失: string;
-  重生时间: string;
-  肩后视角: boolean;
-  自由建造: boolean;
-  玩家伤害: boolean;
-  允许自杀: boolean;
+  Desc_Full: string;
+  Desc_Server_List: string;
+  Icon: string;
+  Thumbnail: string;
+  VAC_Secure: boolean;
+  BattlEye_Secure: boolean;
+  Max_Ping_Milliseconds: string;
+  Enable_Scheduled_Shutdown: boolean;
+  Enable_Update_Shutdown: boolean;
+  Spawn_Chance: string;
+  Has_Durability: boolean;
+  Despawn_Dropped_Time: string;
+  Respawn_Time: string;
+  Allow_Shoulder_Camera: boolean;
+  Allow_Freeform_Buildables: boolean;
+  Friendly_Fire: boolean;
+  Can_Suicide: boolean;
 }
 
-/** 空 ConfigTxtFields——helper 单测起点 */
+/** 空 ConfigTxtFields——helper 单测起点（Bug B-1 修复后全部英文 key） */
 export const EMPTY_TXT_FIELDS: ConfigTxtFields = {
   Login_Token: "",
-  完整描述: "",
-  列表描述: "",
-  图标URL: "",
-  缩略图URL: "",
-  VAC反作弊: false,
-  BattlEye: false,
-  最大Ping: "",
-  定时关机: false,
-  更新自动关机: false,
-  生成倍率: "",
-  物品耐久: false,
-  掉落消失: "",
-  重生时间: "",
-  肩后视角: false,
-  自由建造: false,
-  玩家伤害: false,
-  允许自杀: false,
+  Desc_Full: "",
+  Desc_Server_List: "",
+  Icon: "",
+  Thumbnail: "",
+  VAC_Secure: false,
+  BattlEye_Secure: false,
+  Max_Ping_Milliseconds: "",
+  Enable_Scheduled_Shutdown: false,
+  Enable_Update_Shutdown: false,
+  Spawn_Chance: "",
+  Has_Durability: false,
+  Despawn_Dropped_Time: "",
+  Respawn_Time: "",
+  Allow_Shoulder_Camera: false,
+  Allow_Freeform_Buildables: false,
+  Friendly_Fire: false,
+  Can_Suicide: false,
 };
