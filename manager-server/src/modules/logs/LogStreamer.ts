@@ -7,7 +7,7 @@ import type {
   IProcessSupervisor,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
-import { resolveServerPath } from '../server/pathResolver.js';
+import { resolveInstallDir } from '../server/pathResolver.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -92,19 +92,18 @@ export class LogStreamer implements ILogStreamer {
   // ── 文件 tail ─────────────────────────────────────────
 
   private startFileTail(state: StreamState): void {
-    const logsDir = this.resolveLogsDir(state.serverId);
-    if (!logsDir) return;
+    // ★ 2026-08-14 实机根因：U3-SDK `Logs.cs:311` 把日志写到
+    // `<installDir>/Logs/Server_<serverId>.log`（全局，非 `Servers/<id>/Logs`）。
+    // 旧实现 tail `Servers/<id>/Logs` 目录——实机不存在 → 控制台首次进入空白无历史。
+    const logFile = this.resolveU3dsLogFile(state.serverId);
+    if (!logFile) return;
 
     state.fileTailTimer = setInterval(() => {
       if (!state.active) return;
-
       try {
-        const files = fs.readdirSync(logsDir).filter((f) => f.endsWith('.log'));
-        for (const file of files) {
-          this.tailFile(state, path.join(logsDir, file));
-        }
+        this.tailFile(state, logFile);
       } catch {
-        // 日志目录可能还不存在
+        // 日志文件可能还不存在（服务器未启动）
       }
     }, TAIL_POLL_MS);
   }
@@ -112,8 +111,14 @@ export class LogStreamer implements ILogStreamer {
   private tailFile(state: StreamState, filePath: string): void {
     try {
       const stat = fs.statSync(filePath);
-      const offset = state.fileOffsets.get(filePath) ?? 0;
+      let offset = state.fileOffsets.get(filePath) ?? 0;
 
+      if (stat.size < offset) {
+        // ★ 2026-08-14 修复：日志轮转（U3DS 滚动 Server_<id>_Prev.log）后新文件变小，
+        // offset 归零从新文件头重读，否则永远 return 读不到新内容。
+        state.fileOffsets.set(filePath, 0);
+        offset = 0;
+      }
       if (stat.size <= offset) return;
 
       const fd = fs.openSync(filePath, 'r');
@@ -166,7 +171,11 @@ export class LogStreamer implements ILogStreamer {
 
   // ── 路径 ──────────────────────────────────────────────
 
-  private resolveLogsDir(serverId: ServerId): string | null {
-    return resolveServerPath(serverId, 'Logs');
+  /**
+   * U3DS 日志文件绝对路径（U3-SDK `Logs.cs:311`：`<installDir>/Logs/Server_<serverId>.log`）。
+   * 全局 installDir 下，不在 Servers/<id>/ 内——与 resolveServerPath 无关。
+   */
+  private resolveU3dsLogFile(serverId: ServerId): string | null {
+    return path.join(resolveInstallDir(), 'Logs', `Server_${serverId}.log`);
   }
 }

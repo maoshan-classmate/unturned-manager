@@ -38,7 +38,7 @@ interface TerminalProps {
 /** xterm 主题——对齐全局色值常量（component-abstraction.md） */
 const THEME = {
   background: "#0F172A", // 页面/输入框背景
-  foreground: "#94A3B8", // 次级文本
+  foreground: "#F1F5FB", // ★ 2026-08-14：从 #94A3B8（次级文本）提亮为主文本——命令响应（如 "Successfully set time to day!"）更易读
   cursor: "#22C55E", // 强调色
   cursorAccent: "#0F172A",
   selectionBackground: "#334059", // 边框/选中
@@ -129,8 +129,8 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
     for (let i = writtenRef.current; i < lines.length; i++) {
       const line = lines[i];
       if (!line) continue;
-      // input source（本地命令回显）跳过——PTY 自回显已由 console_line 覆盖，避免重复
-      if (line.source === "input") continue;
+      // ★ 2026-08-14 修复：不再跳过 input 行——用户发送的命令必须在终端可见，
+      // 否则命令无响应时用户连自己敲了什么都不知道（原跳过导致「输入无反馈」视觉缺失）。
       term.writeln(line.text);
     }
     writtenRef.current = lines.length;
