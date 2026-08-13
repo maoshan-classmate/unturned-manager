@@ -52,11 +52,14 @@ const DEFAULT_SHUTDOWN_DELAY_S = 10;
  * 经 WS terminal_input 写入 PTY 终端（ADR-0004 Phase 6：RCON 通道已删，owner-trust
  * 模型），危险指令由前端 ConfirmDialog 拦截（owner-trust 下无服务端 428 门控）。
  */
+/**
+ * 守卫壳组件——只做实例守卫 + 跳转副作用，业务 hooks 全在 ConsoleContent 内。
+ * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
+ * 本组件（不调业务 hooks），业务 hooks 在 ConsoleContent 内稳定执行。
+ */
 export function ConsolePage() {
   const navigate = useNavigate();
   const guard = useRequireServer();
-  const { servers } = useServer();
-  const { setCurrentServerId } = useCurrentServer();
   // 守卫副作用去重：empty / missing 同一状态只触发一次跳转 + 提示
   const handledRef = useRef<string | null>(null);
 
@@ -79,11 +82,22 @@ export function ConsolePage() {
   }, [guard.status, navigate]);
 
   if (guard.status !== "ready") {
-    // 守卫跳转极短暂——渲染占位避免 useConsole 等钩子触发副作用
+    // 守卫跳转极短暂——渲染占位避免 ConsoleContent 触发业务 hooks 副作用
     return null;
   }
 
-  const currentServer = servers.find((s) => s.id === guard.serverId);
+  return <ConsoleContent serverId={guard.serverId} />;
+}
+
+/**
+ * 控制台内容组件——持有全部业务 hooks 与 JSX。
+ * serverId 由守卫壳校验后传入，此处恒有效；hooks 无条件执行（修复 React #310）。
+ */
+function ConsoleContent({ serverId }: { serverId: string }) {
+  const { servers } = useServer();
+  const { setCurrentServerId } = useCurrentServer();
+
+  const currentServer = servers.find((s) => s.id === serverId);
   const isServerRunning = currentServer?.state === "RUNNING";
   // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
   const { saved: savedSessions } = useSessionManager();
@@ -96,7 +110,7 @@ export function ConsolePage() {
     save,
     shutdown,
     closeTerminal,
-  } = useConsole(guard.serverId);
+  } = useConsole(serverId);
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -290,9 +304,9 @@ export function ConsolePage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs transition-colors"
               style={{
                 backgroundColor:
-                  s.id === guard.serverId ? "#22C55E20" : "transparent",
-                color: s.id === guard.serverId ? "#22C55E" : "#94A3B8",
-                border: `1px solid ${s.id === guard.serverId ? "#22C55E40" : "#334155"}`,
+                  s.id === serverId ? "#22C55E20" : "transparent",
+                color: s.id === serverId ? "#22C55E" : "#94A3B8",
+                border: `1px solid ${s.id === serverId ? "#22C55E40" : "#334155"}`,
               }}
             >
               {s.name || s.id}
@@ -308,7 +322,7 @@ export function ConsolePage() {
             历史控制台:
           </span>
           {savedSessions
-            .filter((s) => s.id !== guard.serverId)
+            .filter((s) => s.id !== serverId)
             .map((s) => (
               <button
                 key={s.id}

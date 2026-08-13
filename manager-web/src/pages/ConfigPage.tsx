@@ -180,9 +180,12 @@ interface DownloadedMod {
 
 const PAGE_SIZE = 10;
 
-/** Config 页面——Figma 2:6 */
+/**
+ * 守卫壳组件——只做实例守卫 + 跳转副作用，业务 hooks 全在 ConfigContent 内。
+ * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
+ * 本组件（不调业务 hooks），业务 hooks 在 ConfigContent 内稳定执行（修复 React #310）。
+ */
 export function ConfigPage() {
-  // 取值来源切到共享层（sc:design 第 4 阶段）：守卫钩子统一处理无实例场景
   const navigate = useNavigate();
   const guard = useRequireServer();
   const handledRef = useRef<string | null>(null);
@@ -206,8 +209,13 @@ export function ConfigPage() {
 
   if (guard.status !== "ready") return null;
 
+  return <ConfigContent serverId={guard.serverId} />;
+}
+
+/** 配置内容组件——持有全部业务 hooks 与 JSX；serverId 由守卫壳校验后传入，此处恒有效 */
+function ConfigContent({ serverId }: { serverId: string }) {
   const { servers, loading: serverLoading, error: serverError } = useServer();
-  const server = servers.find((s) => s.id === guard.serverId);
+  const server = servers.find((s) => s.id === serverId);
 
   const [tab, setTab] = useState<ConfigTab>("commands");
   const [fields, setFields] = useState<CommandsFields>(EMPTY_FIELDS);
