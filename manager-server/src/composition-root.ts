@@ -201,7 +201,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     // reason 进 PTY 命令行：剥引号/换行防命令拼接断裂（owner-trust 但也防手滑）
     const reason =
       (msg.reason ?? "").replace(/["\r\n]+/g, " ").trim() || "面板请求关服";
-    // SOP 重启流水线：先 Save 刷盘再 Shutdown（与 REST stop / applyModChanges 同序）
+    // SOP 重启流水线：先 Save 刷盘再 Shutdown（与 REST stop 同序）
     ptyManager.write(msg.serverId, "Save\r");
     ptyManager.write(msg.serverId, `Shutdown ${delaySeconds} "${reason}"\r`);
     // 等控制台进程退出（倒计时 + 30s 冗余）；超时由用户在终端里人工处置

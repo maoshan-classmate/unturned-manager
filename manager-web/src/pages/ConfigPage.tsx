@@ -8,7 +8,6 @@ import {
   FileText,
   Wrench,
   Cpu,
-  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { TabBar } from "../components/shared/TabBar.js";
@@ -218,8 +217,6 @@ function ConfigContent({ serverId }: { serverId: string }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  // v2.2：Workshop 应用变更（重启服务器）二次确认
-  const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   // ★ BUG-4：保存 Commands.dat 时保留原始未知键/注释（面板不认识但 U3DS 需要的行不能清掉）。
   // useRef 不触发渲染——只在加载时记录、保存时原样回传。
@@ -376,11 +373,6 @@ function ConfigContent({ serverId }: { serverId: string }) {
 
   const handleSave = async () => {
     if (!server) return;
-    // v2.2：Workshop 分支先弹二次确认（apply 会重启服务器），确认后才执行
-    if (tab === "workshop") {
-      setApplyConfirmOpen(true);
-      return;
-    }
     setSaving(true);
     setConfigError(null);
     try {
@@ -433,33 +425,23 @@ function ConfigContent({ serverId }: { serverId: string }) {
         await apiClient.put(`/servers/${server.id}/config/txt`, {
           sections: Object.fromEntries(sections.map((s) => [s.name, s])),
         });
+      } else if (tab === "workshop") {
+        // v2.6：保存与重启解耦——只写 File_IDs（运行时安全，U3DS 只在启动时读）。
+        // staging → content 移动在 ServerManager.startInternal 自动执行（U3DS STOPPED 时）。
+        // 用户在控制台/首页手动「重启」后即生效。
+        const fileIds = workshopRows
+          .filter((r) => r.status !== "disabled")
+          .map((r) => r.fileId);
+        await apiClient.put(`/servers/${server.id}/config/workshop`, {
+          fileIds,
+        });
+        toast.success("Mod 列表已保存，重启服务器后生效");
       }
       setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setConfigError(err instanceof Error ? err.message : "保存配置失败");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /** v2.2：确认后执行 Workshop apply（触发重启流水线） */
-  const handleApplyConfirm = async () => {
-    if (!server) return;
-    setApplyConfirmOpen(false);
-    setSaving(true);
-    setConfigError(null);
-    try {
-      const fileIds = workshopRows
-        .filter((r) => r.status !== "disabled")
-        .map((r) => r.fileId);
-      await apiClient.post(`/servers/${server.id}/mods/apply`, { fileIds });
-      toast.success("Mod 变更已提交，服务器正在重启应用...");
-      setDirty(false);
-    } catch (err) {
-      setConfigError(err instanceof Error ? err.message : "应用变更失败");
-      toast.error(err instanceof Error ? err.message : "应用变更失败");
     } finally {
       setSaving(false);
     }
@@ -653,19 +635,6 @@ function ConfigContent({ serverId }: { serverId: string }) {
           </div>
         </div>
       </div>
-
-      {/* v2.2：Workshop 应用变更确认（会重启服务器） */}
-      <ConfirmDialog
-        open={applyConfirmOpen}
-        title="应用 Mod 变更"
-        message="将保存 Mod 列表并重启服务器（存档 → 优雅关服 → 应用 Mod → 重启）。确认继续？"
-        confirmLabel="确认重启"
-        variant="default"
-        icon={RefreshCw}
-        loading={saving}
-        onConfirm={handleApplyConfirm}
-        onCancel={() => setApplyConfirmOpen(false)}
-      />
 
       {/* v2.2：删除 Mod 确认（acf + content + File_IDs 同步删） */}
       <ConfirmDialog

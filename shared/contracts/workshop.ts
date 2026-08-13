@@ -119,7 +119,9 @@ export interface IWorkshopAcfService {
 
 /**
  * apply 流水线服务——staging → content 移动 + acf 合并
- * v2.2 决策：在 ServerManager.applyModChanges 流水线内、U3DS STOPPED 后调用
+ * v2.6 决策：挪到 ServerManager.startInternal 顶部，U3DS STOPPED 时调用。
+ * 保存与重启解耦后，本服务不再写 File_IDs（由 ConfigService.writeWorkshopFileIds 在
+ *  「保存 Mod」单独负责）。
  */
 export interface IWorkshopApplyService {
   /** 移动 staging 内容 + acf 合并 + File_IDs 同步；任一失败全回滚 */

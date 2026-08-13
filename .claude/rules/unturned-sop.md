@@ -147,17 +147,34 @@ mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownload
 
 ## 重启 / 改 Mod 流水线（唯一模式——没有热重载）
 
+> **v2.6 关键变更**：保存与重启解耦。原 `applyModChanges` 一站式流水线（备份 + 写 File_IDs + PTY Save + Shutdown + 移动 staging + 再拉起）已删除。现分为两步：
+> 1. **保存** = 仅写 File_IDs（运行时安全，U3DS 只在启动时读）
+> 2. **生效** = 用户手动「重启」触发 ServerManager.startInternal，在 U3DS STOPPED 时自动 applyStaged
+
 ```
-用户确认修改 Mod 列表（staging 下载已在不停服阶段完成）
-  → 备份 WorkshopDownloadConfig.json → 原子写新文件
-  → 经 PTY 终端写入 "Save"（强制刷玩家数据到磁盘）
-  → 经 PTY 终端写入 "Shutdown 10 <重启原因>"（10 秒优雅关服，对齐 applyModChanges 代码）
-  → 等进程退出
-  → 移动 staging 内容 → Workshop/Steam/steamapps/workshop/content/304930/（进程已停，零冲突）
-  → 再拉起新的
-  → PTY 终端输出含 'Server is ready' / 'World saved' 类 ready 信号 + content 目录落盘 + acf 更新 = 成功。无 A2S 轮询（ADR-0004 §3.3）
-  → 通过 WebSocket 广播"已恢复"事件给前端
+【第一步：保存 Mod 列表（仅写 File_IDs）】
+用户在 ConfigPage > WorkshopTab 勾选启用 → 点 [保存配置]
+  → PUT /api/servers/:id/config/workshop { fileIds: [...] }
+  → ConfigService.writeWorkshopFileIds 原子写 WorkshopDownloadConfig.json
+  → U3DS 只在启动时读 File_IDs，运行中不重扫——运行时安全，写入零冲突
+  → toast.success「Mod 列表已保存，重启服务器后生效」
+  → 不触发状态机变化、不动 PTY、不动 staging
+
+【第二步：手动重启生效】
+用户在控制台/首页手动点 [重启]（POST /api/servers/:id/{start, restart}）
+  → ServerManager.startInternal(serverId)
+  ├─ ① state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
+  ├─ ② WorkshopApplyService.applyStaged(serverId)  ← 自动在启动前执行
+  │     ├─ 解析 staging/appworkshop_304930.acf
+  │     ├─ WorkshopAcfService.addItem（内部自带备份 + 回滚）
+  │     ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
+  │     ├─ 失败 → 上抛，阻止 spawn（不拿残缺 content 启动）
+  │     └─ WS 推 mod_apply_progress { stage: 'ready' | 'failed' }
+  ├─ ③ transition(STARTING) + PtyManager.startPty spawn bash + 塞 startCommand
+  └─ ④ U3DS 启动，读到 content 新内容 → 新 Mod 生效
 ```
+
+**关键不变量**：U3DS 启动时必然 STOPPED（startInternal 守卫天然保证），staging → content 移动零冲突。
 
 ## 服务端状态机
 

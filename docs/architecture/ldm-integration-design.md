@@ -1,6 +1,6 @@
 # LDM Mod 框架接入设计规格
 
-> **状态**：v0.1 设计稿 · **日期**：2026-08-12
+> **状态**：v0.1 设计稿（**v2.6 部分过期**——本文中所有引用 `ServerManager.applyModChanges` 的位置已随 v2.6 改动而失效：`applyModChanges` 已删除，LDM 配置应用计划改为从零抽取 `applyChangesCore`；详见 ADR-0006 §2「决策摘要」v2.6 修订栏。LDM Phase 2 实施时须重新对齐 v2.6 的 startInternal + applyStaged + writeWorkshopFileIds 三件套。） · **日期**：2026-08-12
 > **承接**：CLAUDE.md §1（钉死 LDM）+ ADR-0003 B2 目录扫描真源 + ADR-0004 PTY 终端 owner-trust
 > **驱动源**：用户 2026-08-12 诉求「LDM Mod 框架暂未实现，需要接入」
 > **关系**：`mod-management-design.md` v2.5（Steam Workshop 资源包）— 本文档**平行但独立**，不修改资源包链路

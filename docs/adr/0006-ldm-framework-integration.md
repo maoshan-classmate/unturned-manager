@@ -31,7 +31,7 @@
 | **唯一命令通道 = PTY 终端 owner-trust**（JWT 有效即视为 owner 写任意命令） | ADR-0004 Phase 6 |
 | **状态机 = 4 态 STOPPED/STARTING/RUNNING/STOPPING** | ADR-0004 §3.3 |
 | **重启流水线 = Save + Shutdown 10 + forceKill** | `unturned-sop.md` §重启 |
-| **Mod 变更应用 = `applyModChanges` 已有 9 步流水线** | `ServerManager.ts:714-854` |
+| **Mod 变更应用 = `applyModChanges` 已有 9 步流水线** | `ServerManager.ts:714-854`（v2.6 已删除；改走 `WorkshopApplyService.applyStaged` + `ConfigService.writeWorkshopFileIds` 解耦方案） |
 | **配置原子写 = `ConfigService.atomicWrite`（temp + rename + 备份）** | `ConfigService.ts:60` |
 | **路径解析 = `resolveInstallDir` + `resolveServerPath`** | `pathResolver.ts` |
 | **禁止自动跑 `rocket reload` 任何形式**（LDM 无官方热重载） | `prohibitions.md` 钉死 |
@@ -46,7 +46,7 @@
 | **接入范围** | 仅配置 + 启停 + 插件来源 | 全接管（编译/分发/热重载/兼容性矩阵） | 编译/分发超出面板职责；LDM 无官方热重载（钉死）；兼容性矩阵维护成本无限 |
 | **LDM 安装** | ❌ 不做（引导式：用户复制 U3DS 装包自带的 Extras 到 Modules 激活） | 面板自动 cp | 遵循「不自动装」决策 |
 | **插件 .dll 分发** | ⚠️ 仅用户主动上传（Files API）；**不自动下载/同步** | 自动从 GitHub/Workshop 同步 | 二进制风险 + 编译分发不是面板职责 |
-| **改 LDM 配置生效方式** | 抽 `LdmApplyService` 薄业务层 + `ServerManager.applyChangesCore` 9 步流水线共用 | 在 `ServerManager.applyModChanges` 加 ldmApply 分支 | backend-development.md 「重复 ≥3 模块共用→新建共享」原则（现在是 2 个：mod_apply + ldm_apply；预留 modpack_apply 第三处）；模块意识 = 三层结构 + 依赖注入 + destroy() |
+| **改 LDM 配置生效方式** | 抽 `LdmApplyService` 薄业务层 + `ServerManager.applyChangesCore` 9 步流水线共用 | 在 `ServerManager.applyChangesCore` 加 ldmApply 分支 | backend-development.md 「重复 ≥3 模块共用→新建共享」原则（现在是 2 个：mod_apply（v2.6 仅移动部分）+ ldm_apply；预留 modpack_apply 第三处）；模块意识 = 三层结构 + 依赖注入 + destroy()。<br>**ADR-0006 v2.6 修订**：原计划「在 `applyModChanges` 加 ldmApply 分支」因 v2.6 删除 `applyModChanges` 而作废；`applyChangesCore` 改为从零抽取，母体不复用已删除的 `applyModChanges`。Mod 移动（`WorkshopApplyService.applyStaged`）与 LDM 配置写入本来就是两个不同 hook，本来就不该共用一个带移动逻辑的流水线。 |
 | **配置文件读权限** | ✅ Rocket.config.xml 结构化读 | 仅原文 | 字段表有限（10–15 字段），结构化对用户友好 |
 | **Configuration.xml 读权限** | ✅ 原文读 + XML 通用编辑器写 | 强解插件 schema | 插件 schema 由插件开发者决定，面板不强解（维护成本无限） |
 | **.dll 版本号读取** | ✅ PE 元数据解析（**自写流式解析**，零依赖；`pe-library` 已 archived 否决） | mono CLI 反射 | 开发期本机无 mono 拖 CI；PE 元数据纯 Node 解析（ECMA-335 Partition II §22 真源） |
@@ -136,12 +136,12 @@ WS     ldm_apply_progress                     → 重启进度事件
 
 ### 3.4 状态机扩展
 
-**不改 4 态**——LDM 配置写入在 `ServerManager.applyChangesCore` 内自动判 state=STOPPED 后写，与现有 `applyModChanges` 同款。
+**不改 4 态**——LDM 配置写入在 `ServerManager.applyChangesCore` 内自动判 state=STOPPED 后写（v2.6 后与原 `applyModChanges` 类似的 SOP 流水线，但本 ADR 修订后从零抽取不复用）。
 
 ### 3.5 与 ADR-0003/0004 的对齐
 
 - **ADR-0003 B2 目录扫描真源**：LDM 状态真源 = `Rocket/` + `Plugins/` 文件系统，无新增 SQLite 表。
-- **ADR-0004 PTY 终端 owner-trust**：所有改 LDM 配置生效走 PTY 流水线（Say + Save + Shutdown 10 + forceKill + spawn），与 `applyModChanges` 同链路。
+- **ADR-0004 PTY 终端 owner-trust**：所有改 LDM 配置生效走 PTY 流水线（Say + Save + Shutdown 10 + forceKill + spawn），与 REST stop 同链路（v2.6 后与原 `applyModChanges` 类似但不复用）。
 - **ADR-0005 Phase 7**：LDM 操作日志走现有 WS 事件总线（`ldm_apply_progress` 与 `mod_apply_progress` 同形 schema）。
 
 ---
@@ -187,7 +187,7 @@ WS     ldm_apply_progress                     → 重启进度事件
 | Configuration.xml 字段含义未知（插件开发者文档化 vs 面板不强解） | 通用 XML 编辑器（原文编辑） + 文档链接 | 设计决策已定 |
 | LDM Steam Workshop tag 命名（`legally-distinct-missile` 是否官方） | LDM 仓库 README 实读后定 | 待 LDM 调研回填 |
 | 启动 LDM 后 stdout 哪些 prefix 是 LDM 输出（前端日志过滤） | LDM 源码实读后定 | 待 LDM 调研回填 |
-| `ServerManager.applyChangesCore` 抽象边界（与 `applyModChanges` 共用多少） | Phase B3 实施时定 | 编码阶段验证 |
+| `ServerManager.applyChangesCore` 抽象边界（与 `applyModChanges` 共用多少） | Phase B3 实施时定（v2.6：`applyModChanges` 已删除，改从零抽取 `applyChangesCore`） | 编码阶段验证 |
 
 ---
 

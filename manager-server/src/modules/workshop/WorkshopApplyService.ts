@@ -45,62 +45,47 @@ const CONTENT_SUBDIR = path.join(
   STEAM_APP_IDS.UNTURNED_GAME,
 );
 
-/**
- * WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径。
- * ★ BUG-2 修复：U3-SDK `WorkshopDownloadConfig.cs:99` 读 `Servers/<id>/WorkshopDownloadConfig.json`
- * （无 Server/ 子目录）。旧实现写成 Server/ 下导致 U3DS 读不到，客户端显示「创意工坊：禁用」。
- */
-const WORKSHOP_CONFIG_REL = (serverId: ServerId) =>
-  "WorkshopDownloadConfig.json";
+// v2.6：WORKSHOP_CONFIG_REL 已废弃——本服务不再触碰 WorkshopDownloadConfig.json。
+// 保留注释以便回溯（写入已迁至 PUT /api/servers/:id/config/workshop）。
 
 /**
- * apply 流水线服务——在 ServerManager.applyModChanges 流水线内、U3DS 已 STOPPED 时调用
+ * staging → content 移动服务——在 ServerManager.startInternal 顶部、U3DS STOPPED 时调用。
  *
- * 9 步流程：
- *  1. 备份 WorkshopDownloadConfig.json（SOP 铁律）
- *  2. 备份 acf
- *  3. 解析 staging acf → 拿 mod 元数据
- *  4. acf.addItem（addItem 内部自带备份 + 回滚）
- *  5. 原子写 content/acf（addItem 已完成）
- *  6. mv staging/content/<id>/ → content/<id>/
- *  7. 解析 content/acf → 拿最新 File_IDs
- *  8. writeWorkshopFileIds
- *  9. 任一失败 → 全部回滚（acf 备份 + Config 备份）
+ * v2.6 设计：保存与重启解耦——「写 File_IDs」走 PUT /config/workshop；本服务只负责
+ * 把已下载到 staging 的 Mod 文件移进 content/304930/，让 U3DS 下次启动读到。任一失败
+ * 上抛阻止 spawn 老进程。
+ *
+ * 4 步流程：
+ *  1. 解析 staging acf → 拿 mod 元数据
+ *  2. acf.addItem（每个新 mod，addItem 内部自带备份 + 回滚）
+ *  3. mv staging/content/<id>/ → content/<id>/
+ *  4. 失败 → 回滚 acf（addItem 内部），不碰 WorkshopDownloadConfig.json
+ *
+ * 不再负责：
+ *  - 写 File_IDs（改由 ConfigService.writeWorkshopFileIds 在「保存 Mod」调用）
+ *  - 备份 WorkshopDownloadConfig.json（本服务不再触碰 config）
  */
 export class WorkshopApplyService implements IWorkshopApplyService {
   constructor(
     private acfService: IWorkshopAcfService,
-    private configService: IConfigService,
+    // v2.6：构造签名保留 configService 以备未来扩展，但 applyStaged 不再调用其任何方法
+    _configService: IConfigService,
     private broadcaster: IBroadcaster,
   ) {}
 
   async applyStaged(serverId: ServerId): Promise<void> {
-    // ── ① 备份 WorkshopDownloadConfig.json ──
-    const configBackupPath = await this.configService.backup(
-      serverId,
-      WORKSHOP_CONFIG_REL(serverId),
-    );
-
-    // ── ② 备份 acf（仅当 acf 存在时；新装时 acf 可能还不存在）──
-    let acfBackupPath: string | null = null;
+    // 启动前先读已有 content acf——决定哪些 fileId 是「新增」的（避免重复 addItem）
     const acfItems = await this.acfService.listItems(serverId);
-    try {
-      acfBackupPath = await this.acfService.backup(serverId);
-    } catch (err) {
-      // acf 不存在不算错（首次 apply）
-      logger.info({ serverId }, "acf 不存在，跳过备份");
+
+    // 解析 staging acf → 拿所有 mod 元数据；空则整步跳过（无需移动、无需广播）
+    const { acf: stagingAcf } = await this.parseStagingAcf(serverId);
+    if (stagingAcf.items.size === 0) {
+      logger.info({ serverId }, "staging acf 为空，跳过移动");
+      return;
     }
 
     try {
-      // ── ③ 解析 staging acf → 拿所有 mod 元数据 ──
-      const { acf: stagingAcf } = await this.parseStagingAcf(serverId);
-      if (stagingAcf.items.size === 0) {
-        logger.warn({ serverId }, "staging acf 为空，无可应用的 mod");
-        return;
-      }
-
-      // ── ④-⑤ acf.addItem（每个新 mod）──
-      // 先 addItem 全部，再 mv，最后同步 File_IDs
+      // ① acf.addItem（每个新 mod）——先 addItem 全部，再 mv
       for (const [fileId, item] of stagingAcf.items) {
         if (!acfItems.some((existing) => existing.fileId === fileId)) {
           await this.acfService.addItem(
@@ -115,9 +100,8 @@ export class WorkshopApplyService implements IWorkshopApplyService {
         }
       }
 
-      // ── ⑥ mv staging/content/<id>/ → content/<id>/ ──
-      const { installDir, stagingDir, contentDir } =
-        await this.resolvePaths(serverId);
+      // ② mv staging/content/<id>/ → content/<id>/
+      const { stagingDir, contentDir } = await this.resolvePaths(serverId);
       for (const fileId of stagingAcf.items.keys()) {
         const src = path.join(stagingDir, fileId);
         const dst = path.join(contentDir, fileId);
@@ -125,46 +109,20 @@ export class WorkshopApplyService implements IWorkshopApplyService {
         logger.info({ serverId, fileId }, "staging content → content");
       }
 
-      // ── ⑦ 重新读 acf 拿最新 items ──
-      const finalAcf = await this.acfService.parse(serverId);
-
-      // ── ⑧ writeWorkshopFileIds ──
-      const fileIds = Array.from(finalAcf.items.keys()) as WorkshopFileId[];
-      await this.configService.writeWorkshopFileIds(serverId, fileIds);
-
       this.broadcaster.broadcast({
         type: "mod_apply_progress",
         serverId,
         stage: "ready",
-        message: `${fileIds.length} 个 mod 已应用`,
+        message: `${stagingAcf.items.size} 个 mod 已移动到 content`,
       } as never);
 
-      logger.info({ serverId, count: fileIds.length }, "apply 流水线完成");
-
-      // installDir 保留供未来扩展使用（无操作仅消 unused）
-      void installDir;
+      logger.info(
+        { serverId, count: stagingAcf.items.size },
+        "staging → content 移动完成",
+      );
     } catch (err) {
-      // ── ⑨ 失败回滚 ──
-      logger.error({ err, serverId }, "apply 流水线失败，开始回滚");
-      if (acfBackupPath) {
-        try {
-          await this.acfService.rollback(serverId, acfBackupPath);
-        } catch (rollbackErr) {
-          logger.error({ rollbackErr, serverId }, "acf 回滚失败");
-        }
-      }
-      try {
-        await this.configService.rollback(
-          serverId,
-          WORKSHOP_CONFIG_REL(serverId),
-          configBackupPath,
-        );
-      } catch (rollbackErr) {
-        logger.error(
-          { rollbackErr, serverId },
-          "WorkshopDownloadConfig.json 回滚失败",
-        );
-      }
+      // ③ 失败：acf 备份由 addItem 内部已处理；本服务不再回滚 WorkshopDownloadConfig.json
+      logger.error({ err, serverId }, "staging → content 移动失败");
       this.broadcaster.broadcast({
         type: "mod_apply_progress",
         serverId,

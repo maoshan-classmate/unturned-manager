@@ -1,7 +1,6 @@
 import { Router } from "express";
 import {
   ModDownloadRequestSchema,
-  ModApplyRequestSchema,
   type IServerManager,
   type IWorkshopMetadataService,
   type IWorkshopAcfService,
@@ -18,14 +17,17 @@ import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
 /**
- * 模组服务器操作路由（v2.3 — 浏览端点已拆到 mod-browse.ts）
+ * 模组服务器操作路由（v2.6 — 删除 /apply；写 File_IDs 改走 config.ts）
  *
  * 路径：/api/servers/:id/mods
  * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全 + applied 合并）
  * - POST   /download        下载到 staging（异步启动：202 + jobId，进度走 WS steamcmd_progress）
- * - POST   /apply           应用 Mod 变更 + 重启流水线
  * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
  * - GET    /acf             读 acf 列表（真源）
+ *
+ * v2.6 设计：保存 Mod 与重启解耦——PUT /api/servers/:id/config/workshop 单独负责
+ * 写 File_IDs（可运行时运行中）；staging → content 移动由 ServerManager.startInternal
+ * 在 U3DS STOPPED 时自动执行。流程详见 docs/architecture/mod-management-design.md §3。
  *
  * BUG-6 修复：GET /downloaded 增 `applied` 字段（是否在 File_IDs 中）
  * BUG-5 修复：前端可用 `applied` 区分「已下载」vs「已应用」
@@ -161,23 +163,7 @@ export function createModsRouter(
     }),
   );
 
-  // ── 6. POST /apply ───────────────────────────────────
-  router.post(
-    "/mods/apply",
-    validate(ModApplyRequestSchema),
-    asyncHandler(async (req, res) => {
-      const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
-      const serverId = req.params.id as ServerId;
-      // 委托 ServerManager.applyModChanges 走完整 SOP 流水线
-      const promise = serverManager.applyModChanges(serverId, fileIds);
-      const operationId = `apply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      res.status(202).json({ data: { operationId, status: "running" } });
-      // 异步执行（错误通过 audit + WS 广播）
-      void promise.catch(() => undefined);
-    }),
-  );
-
-  // ── 7. DELETE /:fileId ───────────────────────────────
+  // ── 6. DELETE /:fileId ───────────────────────────────
   router.delete(
     "/mods/:fileId",
     asyncHandler(async (req, res) => {

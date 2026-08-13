@@ -52,7 +52,7 @@
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| POST | `/:id/mods/apply` | `ServerManager.applyModChanges` | ❌ 仅 Array.isArray | `ConfigPage`「应用变更」（:182） | ✅ apply 流水线已接线（Sprint 2） |
+| ~~POST~~ | ~~`/:id/mods/apply`~~ | ~~`ServerManager.applyModChanges`~~ | — | — | **v2.6 移除**——保存 Mod 改走 `PUT /:id/config/workshop`（写 File_IDs）+ 用户手动「重启」（触发 `ServerManager.startInternal` → `WorkshopApplyService.applyStaged` 移动）。 |
 
 ### 2.4 配置文件 `/api/servers`
 
@@ -115,7 +115,8 @@
 |---|---|---|
 | `state_change` | Dashboard StatCard | ✅ 后端已发，但前端订阅空收不到 |
 | `console_line` | ConsolePage `useConsole` | ✅ 后端 LogStreamer 有，但 startStreaming 未接线 + 订阅空 |
-| `rcon_status` / `player_join` / `player_leave` / `mod_apply_progress` / `steamcmd_progress` / `file_changed` | — | 契约已定义，后端未广播 |
+| `rcon_status` / `player_join` / `player_leave` / `steamcmd_progress` / `file_changed` | — | 契约已定义，后端未广播 |
+| `mod_apply_progress` | ConsolePage（启动前移动进度提示） | ✅ 后端在 `WorkshopApplyService.applyStaged` 广播 stage `'ready'`/`'failed'` |
 
 ---
 
@@ -130,7 +131,7 @@
 | **Console** | 实时输出 | WS `console_line` | ❌ 订阅空 + LogStreamer 未启动 |
 | **Mods** | 添加 Mod | `GET /workshop/mods/:fileId` | ❌ 恒 404（Steam HTML） |
 | **Mods** | 应用变更 | `PUT /servers/:id/config/workshop` | ⚠️ 只写文件，**不触发重启流水线** |
-| **Mods** | 应用变更后重启 | `POST /servers/:id/apply` | ❌ 前端根本没调 |
+| **Mods** | 应用变更后重启 | 无此端点——保存走 `PUT /servers/:id/config/workshop`（写 File_IDs），重启走通用 `POST /servers/:id/restart`（`ServerManager.startInternal` 在 U3DS STOPPED 时自动 `applyStaged`） | ✅ 用户手动触发即生效 |
 | **Players** | 玩家列表 | `POST /servers/:id/rcon/execute` | ❌ 404（路由名不符） |
 | **Players** | 踢 / 封禁 | 同上 | ❌ 404 |
 | **Config·Commands** | 读取 | `GET /servers/:id/config/commands` | ⚠️ 读到 `{}` |
@@ -168,7 +169,7 @@
 | C2 | Config.txt 契约：后端 `sections: ConfigSection[]`（数组），前端当 map（`sections['浏览器']`）用 | `ConfigPage.tsx:106` vs `domain.ts:21-36` | 前端永远读默认值 | 统一为 map：`Record<sectionName, Record<key, value>>` 或前端改数组遍历 |
 | C3 | Commands.dat 写：前端传普通对象，后端 `serializeCommandsDat` 对 `record.known` 做 `for...of` | `ConfigPage.tsx:141` vs `ConfigService.ts:198` | 保存必 500 | `domain.ts` 改 `Record<string,string>` |
 | C4 | Commands.dat 读：后端返回 Map → `JSON.stringify` 成 `{}` | `routes/config.ts:12` vs `ConfigPage.tsx:93-96` | 前端读空 | 同 C3，路由层 `Object.fromEntries` |
-| C5 | 前端"应用变更"从不调 `POST /:id/apply` | `ModsPage.tsx:96` | apply 流水线永不触发 | ModsPage 改调 `POST /servers/:id/apply`，进度走 WS |
+| C5 | ~~前端"应用变更"从不调 `POST /:id/apply`~~ | `ModsPage.tsx:96` | ~~apply 流水线永不触发~~ | ✅ **v2.6 修复**——`POST /api/servers/:id/mods/apply` 端点已删除，`IServerManager.applyModChanges` 契约已删除；保存改走 `PUT /servers/:id/config/workshop`，staging → content 移动改由 `ServerManager.startInternal` 在 U3DS STOPPED 时自动 `WorkshopApplyService.applyStaged` |
 | C6 | Steam `?xml=1` 返回 HTML 非 XML | 实测 3 个 Mod ID 全部 HTML | `GET /workshop/mods/:fileId` 恒 404 | ✅ 已落地：IPublishedFileService/GetDetails + QueryFiles（需 WebAPI Key） |
 | C7 | 上传二进制经 `TextEncoder` 破坏 | `FilesPage.tsx:186`(base64) → `files.ts:44` | `.unity3d` 无法上传 | `createUploadStream` 分块 + Buffer |
 | C8 | WS 无订阅协议 | `gateway.ts:40,60` + 前端从不发消息 | 实时功能全哑 | 补 subscribe 协议 + 前端发消息 |

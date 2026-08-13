@@ -403,14 +403,38 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(mgr.getState("T12" as ServerId)).toBe(ServerState.RUNNING);
   });
 
-  it("applyModChanges：state 非 RUNNING → 409（ADR-0004 Phase 6 去 DEGRADED）", async () => {
+  it("v2.6：startInternal 先调 applyStaged 再 spawn PTY（移动在 STOPPED 态执行）", async () => {
+    vi.useFakeTimers();
+    const { pty, mgr } = setup();
+    // ★ v2.6 测试：startInternal 必须先 move（applyStaged）再 transition STARTING
+    // 验证：依赖图谱顺序 = applyStaged.moveDir → 启动 bash（spawn）
     await createServer(mgr, "S1");
-    // STOPPED 状态下调用 mod_apply 应抛 409
-    await expect(
-      mgr.applyModChanges("S1" as ServerId, ["id1"]),
-    ).rejects.toMatchObject({
-      status: 409,
-    });
+    await mgr.start("S1" as ServerId);
+    // 让 fake timers 推进，使 startCommand 注入完成
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mgr.getState("S1" as ServerId)).toBe(ServerState.RUNNING);
+    expect(pty.spawn).toHaveBeenCalled(); // bash 已 spawn
+    // 注意：移动由 workshopApply 完成（本测试没注入 workshopApply，故为空跳过）。
+    // 这里只断言「start 没崩、移动空跳过也算成功」。具体移动断言见 workshopApplyService.test.ts
+  });
+
+  it("v2.6：startInternal 中 applyStaged 失败 → 上抛、不 spawn（不拿残缺 content 启动）", async () => {
+    vi.useFakeTimers();
+    const { pty, mgr } = setup();
+    // 注入会抛错的 workshopApply
+    const failingApply = {
+      applyStaged: vi.fn(async () => {
+        throw new Error("staging 移动失败");
+      }),
+    };
+    // 注：workshopApply 是 TS private，运行时是普通字段——用 as any 强写
+    (mgr as any).workshopApply = failingApply;
+    await createServer(mgr, "S2");
+    await expect(mgr.start("S2" as ServerId)).rejects.toThrow(
+      /staging 移动失败/,
+    );
+    expect(failingApply.applyStaged).toHaveBeenCalledTimes(1);
+    expect(pty.spawn).not.toHaveBeenCalled(); // ★ spawn 没发生——不拿残缺 content 启动
   });
 
   it("listServersSync 同步返 in-memory serverId 列表", () => {

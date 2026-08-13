@@ -305,7 +305,7 @@ type ActiveOperation =
 
 - **转换**：`STOPPED → STARTING → RUNNING → STOPPING → STOPPED`。
 - **决定性状态由 PTY 进程存活驱动**：bash 活 = STARTING / RUNNING / STOPPING；bash 死 = STOPPED。无中间模糊态。
-- **`activeOperation` 竞态门控**：非 `none` 时，start/stop/restart/applyModChanges 返回 409，防「自动重启 + 手动重启」并发。
+- **`activeOperation` 竞态门控**：非 `none` 时，start/stop/restart 返回 409，防「自动重启 + 手动重启」并发。（v2.6：原 applyModChanges 已删除，mod 变更不再持有 activeOperation 锁。）
 - `steamcmd_update` / `initial_setup` 变体为保留分支（当前无写入点）。
 
 ### 5.3 IServerManager（`shared/contracts/server.ts`）
@@ -332,7 +332,7 @@ interface IServerManager {
   restart(serverId: ServerId, reason: string): Promise<void>;
   forceStop(serverId: ServerId): Promise<void>;
 
-  applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void>;
+  applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void>;  // v2.6 已删除
   updateServerBinaries(installDir: string): Promise<void>;
 }
 ```
@@ -383,8 +383,9 @@ type ServerEvent =
   | {
       type: "mod_apply_progress";
       serverId;
-      stage: string;
-      remainingSeconds?: number;
+      // v2.6：stage 收敛为 'ready' | 'failed'（仅表示 staging → content 移动进度）
+      stage: "ready" | "failed";
+      message?: string;
     }
   | { type: "file_changed"; serverId; path: string }
   | {
@@ -522,52 +523,42 @@ ServerManager.start(id)
 
 **崩溃重启守卫**：bash 退出（exitCode ≠ 0）且非主动停止类操作（manual_stop / manual_restart / mod_apply）期间 → 5 秒后自动 `startInternal` 拉起；`exitCode === 0` 或实例已删除 → 不重启。
 
-### 6.2 Mod 变更 + 重启流水线
+### 6.2 Mod 变更（v2.6：保存与重启解耦）
+
+> **v2.6 决策**：写 File_IDs 与 staging → content 移动分离。前端「保存」只写 File_IDs（运行时安全，U3DS 只在启动时读）；移动由 `ServerManager.startInternal` 在 U3DS STOPPED 时自动执行；用户在控制台/首页手动「重启」即生效。
+>
+> 修复了 v2.5 双写 File_IDs bug（保存 + applyStaged 各写一次，后者用 acf 全量覆盖前者，导致「禁用 Mod」失效）。
 
 ```
-POST /api/servers/:id/mods/apply   { fileIds: [...] }
+─── 「保存 Mod」阶段（运行时安全，不动服务器）───
+
+PUT /api/servers/:id/config/workshop   { fileIds: [...] }
         │
         ▼
-ServerManager.applyModChanges(id, fileIds)
-  （前置：activeOperation === 'none' 且 state === RUNNING，否则 409）
+ConfigService.writeWorkshopFileIds(serverId, fileIds)
+  · 权威来源 = 用户勾选列表（前端禁用子集已被剔除）
+  · File_IDs 写入**仅此一处**——WorkshopApplyService.applyStaged 不再写
+  · 无备份、无回滚（写入幂等 + 持久化的浏览器状态已是权威）
+
+─── 「重启服务器」阶段（用户手动触发）───
+
+ServerManager.startInternal(serverId)
         │
-        ├─ activeOperation = {type:'mod_apply', modIds}
+        ├─ ① state === RUNNING → return（保证 U3DS 已停，「移动时无进程在读 content」）
         │
-        ├─ ① 备份 WorkshopDownloadConfig.json（backup，失败降级 warn）
-        │    广播 mod_apply_progress {stage:'backing_up'}
-        │
-        ├─ ② 写新 File_IDs（writeWorkshopFileIds）
-        │
-        ├─ ③ PTY 写 'Say "服务器将在 60 秒后重启以应用 Mod 变更"\r'
-        │    广播 {stage:'broadcasting', remainingSeconds:60}
-        │
-        ├─ ④ 依次广播倒计时 {stage:'countdown', remainingSeconds:50/40/30/20/10}
-        │
-        ├─ ⑤ PTY 写 'Save\r'（强制刷玩家数据到磁盘）
-        │
-        ├─ ⑥ PTY 写 'Shutdown 10 "Mod 变更重启"\r'
-        │    广播 {stage:'shutting_down', remainingSeconds:10}
-        │
-        ├─ ⑦ 等 PTY 退出（waitExit 30s；超时 forceKill + stopRequested 置位防误判）
-        │    state → STOPPED
-        │
-        ├─ ⑦.5 WorkshopApplyService.applyStaged（进程已停，零冲突）：
-        │    ├─ 备份 acf（可选）
-        │    ├─ 解析 staging acf → 拿 staging mod 元数据
-        │    ├─ acf.addItem（每个新 mod，自带备份+回滚）
+        ├─ ② WorkshopApplyService.applyStaged（v2.6：挪到 start 顶部）：
+        │    ├─ 解析 staging acf → staging mod 元数据（空则直接 return）
+        │    ├─ acf.addItem（每个新 mod，内部自带备份+回滚）
         │    ├─ mv staging/content/<id>/ → content/<id>/（跨设备降级 cp -r + rm）
-        │    ├─ 重新读 acf → 最新 File_IDs
-        │    ├─ writeWorkshopFileIds
-        │    └─ 任一失败 → 全回滚（acf + Config 备份）
+        │    ├─ 失败 → 上抛，阻止 spawn（不拿残缺 content 启动）
+        │    └─ WS 广播 mod_apply_progress { stage: 'ready' | 'failed', ... }
         │
-        ├─ ⑧ startInternal（spawn 新 bash → 1s 塞 startCommand → RUNNING）
+        ├─ ③ transition(STARTING) + startPty（spawn bash → 塞 startCommand → RUNNING）
         │
-        └─ ⑨ PTY 写 'Say "Mod 变更已应用"\r'
-              activeOperation = {type:'none'}
-              广播 {stage:'completed'}
+        └─ ④ U3DS 启动读到 content 新内容 → 新 Mod 生效
 ```
 
-**下载 ≠ 生效**：新 Mod 的下载（`POST /mods/download`）走 SteamCMD 落到 staging，可不停服；只有 apply 流水线（以上 9 步）才让 Mod 生效，且必须重启。
+**下载 ≠ 生效**：新 Mod 的下载（`POST /mods/download`）走 SteamCMD 落到 staging，可不停服；只有「保存」+「手动重启」两步合起来才让 Mod 生效。
 
 ### 6.3 控制台日志流（双路合并 + 凭证脱敏）
 

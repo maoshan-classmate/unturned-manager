@@ -25,7 +25,6 @@ const OPERATION_TYPE_LABELS: Record<string, string> = {
   manual_start: "启动",
   manual_stop: "停止",
   manual_restart: "重启",
-  mod_apply: "应用 Mod 变更",
 };
 
 /**

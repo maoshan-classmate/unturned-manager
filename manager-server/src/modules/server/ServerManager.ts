@@ -446,6 +446,13 @@ export class ServerManager implements IServerManager {
     const entry = this.ensureServer(serverId);
     if (entry.state === ServerState.RUNNING) return;
 
+    // ★ v2.6：启动前先把 staging 里已下载的 Mod 移入 content/304930/。
+    // U3DS 只在启动时读 content 目录，此处必然 STOPPED（RUNNING 已在上方 return），
+    // 移动零冲突（SOP：写入 content 必须停服）。失败则上抛，阻止用缺 Mod 的旧内容启动。
+    if (this.workshopApply) {
+      await this.workshopApply.applyStaged(serverId);
+    }
+
     this.transition(serverId, ServerState.STARTING);
     await this.startPty(serverId);
   }
@@ -673,7 +680,7 @@ export class ServerManager implements IServerManager {
    * 不走此路径，由 RCON 心跳失败 → DEGRADED 承接（用户看状态手动处理，不做自动拉起）。
    *
    * 守卫：
-   *   - 主动停止类操作（manual_stop/manual_restart/mod_apply）期间退出 → 不重启。
+   *   - 主动停止类操作（manual_stop/manual_restart）期间退出 → 不重启。
    *     stopRequested 已在 onExit 层拦截主动路径，这里是双保险；stopPty 对 STARTING 中的
    *     bash 写 exit 也会触发 onExit，若此时 activeOperation=manual_stop 会误吞——守卫防之。
    *   - manual_start 期间退出 → **放行重启**（启动期崩溃恰恰最需要自动拉起；start 失败
@@ -689,7 +696,7 @@ export class ServerManager implements IServerManager {
     if (!entry) return;
     if (exitCode === 0) return;
     const op = entry.activeOperation.type;
-    if (op === "manual_stop" || op === "manual_restart" || op === "mod_apply") {
+    if (op === "manual_stop" || op === "manual_restart") {
       return; // 主动停止类操作期间退出，不重启
     }
     logger.info({ serverId, exitCode }, "5s 后自动重启");
@@ -719,163 +726,7 @@ export class ServerManager implements IServerManager {
     entry.activeOperation = { type: "none" };
   }
 
-  // ── Mod / Update (Phase 2: Mod apply 流水线) ─────────
-
-  /**
-   * 9 步 Mod 应用流水线（详见 ADR-0002 §6.2）：
-   * ① 备份 WorkshopDownloadConfig.json
-   * ② writeWorkshopFileIds 写新 ID
-   * ③ RCON `Say` 公告即将重启
-   * ④ 每 10s 广播一次倒计时（共 5 次：50→10 剩余）
-   * ⑤ PTY 写 `Save`（owner-trust，Phase 6 替代原 RCON.execute）
-   * ⑥ PTY 写 `Shutdown 10 "<原因>"`
-   * ⑦ PTY waitExit 等 bash 退出（30s 超时则 forceKill 关 bash）
-   * ⑧ spawn PTY bash + 1s 塞 startCommand（走 startInternal + RUNNING transition）
-   * ⑨ PTY 写 `Say "Mod 变更已应用"` + activeOperation 释放 + final broadcast
-   *
-   * 全程在 `mod_apply` activeOperation 覆盖下，外部 stop/start 不会 409（仅 cancel 走 9）
-   */
-  async applyModChanges(
-    serverId: ServerId,
-    modIds: WorkshopFileId[],
-  ): Promise<void> {
-    const entry = this.ensureServer(serverId);
-
-    if (entry.activeOperation.type !== "none") {
-      throw new AppError(
-        "operation-conflict",
-        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
-        409,
-      );
-    }
-    entry.activeOperation = {
-      type: "mod_apply",
-      startedAt: new Date().toISOString(),
-      modIds: modIds as string[],
-    };
-
-    // 当前必须是 RUNNING 才能 mod_apply
-    if (entry.state !== ServerState.RUNNING) {
-      entry.activeOperation = { type: "none" };
-      throw new AppError(
-        "server-not-running",
-        `Mod 应用要求服务器处于运行中状态（当前：${formatServerState(entry.state)}）`,
-        409,
-      );
-    }
-
-    // 进度 helper
-    const announce = (stage: string, remainingSeconds?: number) => {
-      try {
-        this.broadcaster.broadcast({
-          type: "mod_apply_progress",
-          serverId,
-          stage,
-          remainingSeconds,
-        } as never);
-      } catch {
-        /* 广播失败不阻塞主流程 */
-      }
-    };
-
-    try {
-      // ① 备份
-      announce("backing_up");
-      try {
-        await this.configService.backup(
-          serverId,
-          "WorkshopDownloadConfig.json",
-        );
-      } catch (err) {
-        // 备份失败：文件可能还不存在（首次启动），降级为 warn，不阻塞
-        logger.warn(
-          { serverId, err },
-          "WorkshopDownloadConfig.json 备份失败（文件可能不存在）",
-        );
-      }
-
-      // ② 写新 File_IDs
-      announce("writing_config");
-      await this.configService.writeWorkshopFileIds(serverId, modIds);
-
-      // ③ PTY 写 Say 公告（owner-trust 模式——Phase 6 替代原 RCON.execute）
-      announce("broadcasting", 60);
-      try {
-        this.ptyManager.write(
-          serverId,
-          'Say "服务器将在 60 秒后重启以应用 Mod 变更"\r',
-        );
-      } catch {
-        /* ignore */
-      }
-
-      // ④ 5 次倒计时广播（10s 间隔）——不真正等，只是发事件
-      for (const remaining of [50, 40, 30, 20, 10]) {
-        announce("countdown", remaining);
-      }
-
-      // ⑤ Save（PTY 写命令，owner-trust 模式——等效原 RCON.execute）
-      announce("saving");
-      try {
-        this.ptyManager.write(serverId, "Save\r");
-      } catch {
-        /* PTY 可能已死 */
-      }
-
-      // ⑥ Shutdown
-      announce("shutting_down", 10);
-      try {
-        this.ptyManager.write(serverId, 'Shutdown 10 "Mod 变更重启"\r');
-      } catch {
-        /* PTY 可能受限 */
-      }
-
-      // ⑦ 等进程退出（★ Phase 2：bash 永驻不自己退——Shutdown 10 让 U3DS 优雅退出后
-      // bash 回提示符仍在。等 bash 退出必然超时 → forceKill 关 bash。stopRequested 置位防
-      // onExit 误判崩溃重启）
-      announce("waiting_exit");
-      const exited = await this.ptyManager.waitExit(serverId, SHUTDOWN_TIMEOUT);
-      if (!exited) {
-        // 30s 未退出 → 强杀
-        logger.warn({ serverId }, "Shutdown 超时，SIGKILL");
-        entry.stopRequested = true;
-        this.ptyManager.forceKill(serverId);
-        // 给 PTY exit 事件一点时间触发（onExit 清 terminalSessionId）
-        await this.ptyManager.waitExit(serverId, 2_000);
-      }
-      this.transition(serverId, ServerState.STOPPED);
-
-      // ⑦.5 staging → content 移动（acf 合并 + File_IDs 同步 + 回滚）
-      if (this.workshopApply) {
-        announce("moving");
-        await this.workshopApply.applyStaged(serverId);
-      }
-
-      // ⑧ 重新拉起
-      await this.startInternal(serverId);
-
-      // ⑨ 收尾
-      try {
-        this.ptyManager.write(serverId, 'Say "Mod 变更已应用"\r');
-      } catch {
-        /* ignore */
-      }
-      announce("completed");
-      logger.info({ serverId, modCount: modIds.length }, "Mod 变更流水线完成");
-    } catch (err) {
-      logger.error({ serverId, err }, "Mod 变更流水线失败");
-      announce("failed");
-      // try 兜底：把进程拉回 STOPPED
-      try {
-        this.transition(serverId, ServerState.STOPPED);
-      } catch {
-        /* noop */
-      }
-      throw err;
-    } finally {
-      entry.activeOperation = { type: "none" };
-    }
-  }
+  // ── Update（Phase 3 待实现）─────────
 
   /** 更新 U3DS 二进制——Phase 3 卡 C 待实现（SteamCmdManager 已承担） */
   async updateServerBinaries(_installDir: string): Promise<void> {

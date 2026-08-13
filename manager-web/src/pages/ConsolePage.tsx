@@ -38,7 +38,7 @@ const PRESET_COMMANDS: PresetCommand[] = [
   { label: "帮助", command: "Help" },
 ];
 
-/** ACK 关服默认倒计时（秒）——对齐 SOP 重启流水线 / applyModChanges 的 Shutdown 10 */
+/** ACK 关服默认倒计时（秒）——对齐 SOP 重启流水线 Shutdown 10 */
 const DEFAULT_SHUTDOWN_DELAY_S = 10;
 
 // ─── Console 页面 ──────────────────────────────────────

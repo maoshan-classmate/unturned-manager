@@ -525,7 +525,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   /**
    * 卡 C #6：下载 Workshop Mod 到 staging 目录（不停服）。
    * 命令：steamcmd +force_install_dir <staging> +login anonymous +workshop_download_item 304930 <id> +quit
-   * 应用由 ServerManager.applyModChanges 流水线负责（卡 B 已实装）。
+   * 应用由 ServerManager.startInternal 顶部自动 applyStaged 完成（v2.6）。
    *
    * BUG-5/6 修复：**异步启动**——spawn 后立即返回 jobId，不等待 SteamCMD 退出。
    * 下载进程在后台跑，进度/完成/失败经 WS `steamcmd_progress`（带 jobId）广播，

@@ -18,7 +18,7 @@
 
 **不交付**（Phase 2-4 范围）：
 - 配置 XML 编辑（A1–A4 / C1–C4）
-- 重启流水线（LdmApplyService + applyChangesCore 抽出）
+- 重启流水线（LdmApplyService + applyChangesCore 抽出）—— **v2.6 影响**：原计划 `applyChangesCore` 与已删除的 `mod_apply`（`ServerManager.applyModChanges`）共用，已无「≥3 模块共用」理由；改为从零抽取，仅服务 ldm_apply（参见 ADR-0006 §2 v2.6 修订栏）
 - 引导 SOP 卡片
 - 全局 reload / 高级 UX
 
@@ -268,6 +268,8 @@ export interface ILdmAssemblyVersionReader {
 
 **Phase 1 暂不动**：`LdmConfigWriter` / `LdmApplyService` / `RocketConfigXmlParser` / `applyChangesCore` 重构——这些是 Phase 2 范围。
 
+> **v2.6 影响**：`applyChangesCore` 原本打算与 `mod_apply`（`ServerManager.applyModChanges`，v2.6 已删除）共用抽公共骨架；v2.6 后 `mod_apply` 不复存在，仅 `ldm_apply` 单方使用该抽象，原「≥3 模块共用」前提已失去。Phase 2 落地时改为从零抽取、不复用已删除的 `applyModChanges`（与 ADR-0006 §2 v2.6 修订栏对齐）。
+
 ---
 
 ## 3. PE 元数据解析范式（关键 A1 决策）
@@ -481,7 +483,7 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
     verb: 'load' | 'unload',
     pluginName: string,
   ): Promise<{ outcome: 'success' | 'failure'; ldmOutput: string }> {
-    // ...实现见 PtyManager 的 stdout 监听模式（与现有 applyModChanges 同款）...
+    // ...实现见 PtyManager 的 stdout 监听模式（与 REST stop 的 waitExit 同款——v2.6 后 applyModChanges 已删除）...
     const t = await this.readLdmTranslations(serverId); // 翻译文件存在 → 读键值；缺失 → U.cs 默认值
     // 锚值（默认英文，U.cs:93-118；文件覆盖后替换）：
     //   load 锚   = t['command_rocket_load_plugin']   // "Loading {0}" —— 命令已接受，非加载成功
@@ -1121,7 +1123,7 @@ THEN  列表含 25 插件种子 + 最新版本真实填充 + 限流显示 5000/h
 | `ILdmPluginCommandsService` | `loadPlugin` / `unloadPlugin` | + `reloadPlugin`（Phase 4） |
 | `ILdmPluginSourceService` | `listCommunityPlugins` | + `getCommunityPlugin(slug)` |
 | `ILdmAssemblyVersionReader` | `readVersion` | 不变 |
-| `LdmPluginCommandsService` 互斥锁 | per-server 单锁 | 升级为 `activeOperation` 互斥（与 mod_apply/ldm_apply 共享） |
+| `LdmPluginCommandsService` 互斥锁 | per-server 单锁 | 升级为 `activeOperation` 互斥（v2.6 后仅与 `ldm_apply` 共享——`mod_apply` 已删除） |
 | `LdmDiscoveryService` runtimeStatus | 列表加载同步解析一次（非实时） | 改 WS 推送事件驱动 |
 
 ---

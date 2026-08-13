@@ -78,10 +78,8 @@ export const ModBatchDetailsRequestSchema = z.object({
   fileIds: z.array(z.string().regex(/^\d{1,19}$/)).min(1).max(100),
 });
 
-/** Apply 请求 body */
-export const ModApplyRequestSchema = z.object({
-  fileIds: z.array(z.string().regex(/^\d{1,19}$/)).min(0),
-});
+// v2.6：ModApplyRequestSchema 已删除——写 File_IDs 走 WriteWorkshopFileIdsSchema
+// （config.ts），见 schema/config.schema.ts。
 
 // ─── API 响应 schema ──────────────────────────────────────
 
@@ -100,12 +98,6 @@ export const ModDownloadResultSchema = z.object({
   modTitle: z.string().optional(),
   acfItem: WorkshopAcfItemSchema.optional(),
   error: z.string().optional(),
-});
-
-/** 操作响应（异步） */
-export const ModOperationResponseSchema = z.object({
-  operationId: z.string(),
-  status: z.enum(['queued', 'running', 'completed', 'failed']),
 });
 
 /** 删除响应 */
@@ -141,10 +133,13 @@ export const ModDownloadCompletedEventSchema = z.object({
   error: z.string().optional(),
 });
 
+// v2.6：ModApplyProgressEventSchema 保留但语义收敛——现在仅表示
+// 「staging → content 移动进度」，stage 由枚举重新精化为：'ready' / 'failed'。
+// 旧的 6 个 stage（broadcasting/saving/stopping/moving/starting 等）已随 applyModChanges
+// 删除。详见 docs/architecture/mod-management-design.md §3。
 export const ModApplyProgressEventSchema = z.object({
   type: z.literal('mod_apply_progress'),
   serverId: z.string(),
-  stage: z.enum(['broadcasting', 'saving', 'stopping', 'moving', 'starting', 'ready', 'failed']),
-  remainingSeconds: z.number().int().optional(),
+  stage: z.enum(['ready', 'failed']),
   message: z.string().optional(),
 });

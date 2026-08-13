@@ -1,4 +1,4 @@
-import type { ServerId, WorkshopFileId } from "../types/branded.js";
+import type { ServerId } from "../types/branded.js";
 import type { ServerState, ActiveOperation } from "../types/state.js";
 import type { ServerConfig } from "../types/domain.js";
 
@@ -30,6 +30,5 @@ export interface IServerManager {
   restart(serverId: ServerId, reason: string): Promise<void>;
   forceStop(serverId: ServerId): Promise<void>;
 
-  applyModChanges(serverId: ServerId, modIds: WorkshopFileId[]): Promise<void>;
   updateServerBinaries(installDir: string): Promise<void>;
 }

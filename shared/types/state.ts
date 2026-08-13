@@ -12,6 +12,5 @@ export type ActiveOperation =
   | { type: "manual_start"; startedAt: string }
   | { type: "manual_restart"; startedAt: string }
   | { type: "manual_stop"; startedAt: string }
-  | { type: "mod_apply"; startedAt: string; modIds: string[] }
   | { type: "steamcmd_update"; startedAt: string }
   | { type: "initial_setup"; startedAt: string };

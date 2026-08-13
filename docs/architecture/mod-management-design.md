@@ -85,9 +85,9 @@
 │  │ routes/mods.ts（服务器操作）                          │  │
 │  │  GET    /:id/mods/downloaded                         │  │
 │  │  POST   /:id/mods/download                           │  │
-│  │  POST   /:id/mods/apply                              │  │
 │  │  DELETE /:id/mods/:fileId                            │  │
 │  │  GET    /:id/mods/acf                                │  │
+│  │  PUT    /:id/config/workshop (写 File_IDs)           │  │
 │  │  WS     steamcmd_progress / download_completed       │  │
 │  └────────────────────┬────────────────────────────────┘  │
 │                       │ 依赖 ↓                            │
@@ -163,15 +163,24 @@ ModsPage（单 Tab：Steam 创意工坊浏览）
     ├── 操作区：[下载] [在 Steam 中打开]
     └── 关闭按钮
 
-ConfigPage > WorkshopTab（已有，不改组件结构；只接新端点）
+ConfigPage > WorkshopTab（已有，不改组件结构；只接新端点）—— **v2.6 保存与重启解耦**
 ├── 状态：File_IDs ∩ acf → UnifiedMod[]
 ├── 行内操作：[启用/禁用] [更新] [删除]（DELETE 端点新增）
-└── 底部 [保存配置] 按钮 → 调 /api/servers/:id/mods/apply 触发完整流水线
-    ├── ConfigService 写 File_IDs
-    ├── RCON Save + Shutdown 30
-    ├── WorkshopApplyService.applyStaged（staging → content + acf 合并 + 回滚）
-    ├── ProcessSupervisor.spawn
-    └── A2S 轮询直到就绪
+└── 底部 [保存配置] 按钮 → 调 PUT /api/servers/:id/config/workshop（**仅写 File_IDs，不重启**）
+    ├── ConfigService.writeWorkshopFileIds 原子写 WorkshopDownloadConfig.json
+    ├── U3DS 只在启动时读 File_IDs，运行中不重扫——运行时安全
+    ├── 无备份、无回滚（写入幂等，前端状态是权威）
+    └── toast.success 引导用户「手动重启后生效」
+    → 用户在控制台/首页手动 [重启]
+    → ServerManager.startInternal(serverId)
+      ├─ state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
+      ├─ WorkshopApplyService.applyStaged(serverId)  ← 自动在启动前执行
+      │   ├─ 解析 staging/appworkshop_304930.acf
+      │   ├─ WorkshopAcfService.addItem 合并到 content/acf
+      │   ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
+      │   └─ WS 推 mod_apply_progress { stage: 'ready' | 'failed' }
+      ├─ PtyManager.startPty spawn bash + startCommand
+      └─ U3DS 启动读到新 content → 新 Mod 生效
 ```
 
 ### 2.3 数据流：用户点"下载"按钮
@@ -207,38 +216,35 @@ routes/mods.ts → SteamCmdManager.downloadWorkshopItem(installDir, [fileId])
   │   · 用户点 [保存配置]（或 [应用]）按钮
   │
   ▼
-POST /api/servers/:id/mods/apply
-  │  body: { fileIds: ["1753134636", ...] }  ← ConfigPage 把当前所有 fileId 提交
+PUT /api/servers/:id/config/workshop   ← v2.6：保存与重启解耦
+  │  body: { fileIds: ["1753134636", ...] }  ← ConfigPage 把当前启用子集提交
   │
   ▼
-ServerManager.applyModChanges(serverId, fileIds)  ← 走 architecture-spec §6.2
+ConfigService.writeWorkshopFileIds(newIds)
+  │   · U3DS 只在启动时读 File_IDs，运行中不重扫目录——运行时安全
+  │   · 这是写 File_IDs 的**唯一**时机
+  │   · 无备份、无回滚（写入幂等，前端状态已是权威）
   │
   ▼
-POST /api/servers/:id/mods/apply
+toast.success("Mod 列表已保存，重启服务器后生效")  ← 引导用户去手动重启
   │
   ▼
-ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec §6.2
+用户在控制台/首页手动点 [重启]
   │
-  ├─ ① ConfigService.backup(WorkshopDownloadConfig.json)
-  ├─ ② ConfigService.writeWorkshopFileIds(newIds)
-  ├─ ③ RCON "Say 服务器将在 60 秒后重启"
-  ├─ ④ RCON "Save"
-  ├─ ⑤ RCON "Shutdown 30 Mod 变更重启"
-  ├─ ⑥ waitForExit(30s)
+  ▼
+ServerManager.startInternal(serverId)
   │
-  ├─ ⑦ **WorkshopApplyService.applyStaged(serverId)**   ← 新增
-  │     ├─ 备份 acf → .bak.<UTC-ISO>
+  ├─ ① state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
+  │
+  ├─ ② **WorkshopApplyService.applyStaged(serverId)**   ← 自动在启动前执行
   │     ├─ 解析 staging/appworkshop_304930.acf
-  │     ├─ WorkshopAcfService.addItem(serverId, fileId, meta)
-  │     ├─ 原子写 content/.../appworkshop_304930.acf
+  │     ├─ WorkshopAcfService.addItem(serverId, fileId, meta)（内部自带备份+回滚）
   │     ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
-  │     ├─ 失败任一步 → 全部回滚（acf 备份 + Config 备份）
-  │     └─ WS 推 mod_apply_progress { stage: 'moving' }
+  │     ├─ 失败 → 上抛，阻止 spawn（不拿残缺 content 启动）
+  │     └─ WS 推 mod_apply_progress { stage: 'ready' | 'failed' }
   │
-  ├─ ⑧ ProcessSupervisor.spawn（启动新进程）
-  ├─ ⑨ A2S 轮询直到就绪
-  └─ ⑩ RCON "Say Mod 变更已应用"
-        WS 推 mod_apply_progress { stage: 'completed' }
+  ├─ ③ transition(STARTING) + startPty spawn bash + 塞 startCommand
+  └─ ④ U3DS 启动，读到 content 新内容 → 新 Mod 生效
 ```
 
 ---
@@ -265,10 +271,11 @@ ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec 
 |---|---|---|---|---|---|
 | 4 | GET | `/api/servers/:id/mods/downloaded` | 已下载 Mod 列表（acf 扫描） | — | `z.array(DownloadedModSchema)` |
 | 5 | POST | `/api/servers/:id/mods/download` | 下载到 staging（同步） | `ModDownloadRequestSchema` | `ModDownloadResultSchema` |
-| 6 | POST | `/api/servers/:id/mods/apply` | 应用 Mod 变更 + 重启流水线 | `ModApplyRequestSchema` | `ModOperationResponseSchema` |
+| 6 | ~~POST~~ | ~~`/api/servers/:id/mods/apply`~~ | **v2.6 移除**——见下方说明 | — | — |
 | 7 | DELETE | `/api/servers/:id/mods/:fileId` | 删除 Mod（acf + content + File_IDs） | path: `fileId` | `ModDeleteResponseSchema` |
 | 8 | GET | `/api/servers/:id/mods/acf` | 读 acf 列表（acf 真源） | — | `z.array(WorkshopAcfItemSchema)` |
 | 9 | WS | `mod_download_progress` / `mod_download_completed` / `mod_apply_progress` | 实时事件推送 | — | 见 §3.4 |
+| 10 | PUT | `/api/servers/:id/config/workshop` | 写 WorkshopDownloadConfig.json (File_IDs)（v2.6：保存与重启解耦） | `WriteWorkshopFileIdsSchema` | `{ message }` |
 
 ### 3.2 路径规范
 
@@ -279,6 +286,8 @@ ServerManager.applyModChanges(serverId, newFileIds)   ← 走 architecture-spec 
 **废弃**：
 - `GET /workshop/mods/:fileId`（v1 端点，在 `routes/workshop.ts`）—— 由 `GET /api/mods/:fileId` 替代
 - `POST /:id/apply`（stub）—— 由 `POST /api/servers/:id/mods/apply` 替代
+- **`POST /api/servers/:id/mods/apply`（v2.6）**——保存与重启解耦后删除。保存 Mod 列表改走 `PUT /api/servers/:id/config/workshop`（运行时安全，只写 File_IDs）；staging → content 移动改由 `ServerManager.startInternal` 在 U3DS STOPPED 时自动执行；用户在控制台/首页手动「重启」即生效。
+- `IServerManager.applyModChanges`（v2.6 契约层移除）——由 `WorkshopApplyService.applyStaged`（仅移动）+ `ConfigService.writeWorkshopFileIds`（仅写）接管。
 
 ### 3.3 Zod Schema（`shared/schemas/mod.schema.ts`）
 
@@ -376,16 +385,8 @@ export const ModBatchDetailsRequestSchema = z.object({
   fileIds: z.array(z.string().regex(/^\d{1,19}$/)).min(1).max(100),
 });
 
-/** Apply 请求 */
-export const ModApplyRequestSchema = z.object({
-  fileIds: z.array(z.string().regex(/^\d{1,19}$/)).min(0),
-});
-
-/** 操作响应（异步） */
-export const ModOperationResponseSchema = z.object({
-  operationId: z.string(),
-  status: z.enum(['queued', 'running', 'completed', 'failed']),
-});
+// v2.6：ModApplyRequestSchema / ModOperationResponseSchema 已删除。
+// 写 File_IDs 改走 shared/schemas/config.schema.ts 的 WriteWorkshopFileIdsSchema。
 
 /** 删除响应 */
 export const ModDeleteResponseSchema = z.object({
@@ -415,8 +416,8 @@ export const ModDownloadCompletedEventSchema = z.object({
 export const ModApplyProgressEventSchema = z.object({
   type: z.literal('mod_apply_progress'),
   serverId: z.string(),
-  stage: z.enum(['broadcasting', 'saving', 'stopping', 'moving', 'starting', 'ready', 'failed']),
-  remainingSeconds: z.number().int().optional(),
+  // v2.6：stage 由 7 枚举收敛为 'ready' | 'failed'（仅表示 staging → content 移动进度）
+  stage: z.enum(['ready', 'failed']),
   message: z.string().optional(),
 });
 ```
@@ -522,10 +523,11 @@ POST   /api/mods/batch-details                 → IWorkshopMetadataService.batc
 GET    /api/servers/:id/mods/downloaded        → IWorkshopAcfService.listItems + batchGetDetails 合并
 POST   /api/servers/:id/mods/download          → SteamCmdManager.downloadWorkshopItem
                                                     + getModDetails（拿 modTitle）
-POST   /api/servers/:id/mods/apply             → ServerManager.applyModChanges
-                                                    + IWorkshopApplyService.applyStaged
 DELETE /api/servers/:id/mods/:fileId           → IWorkshopDeleteService.deleteMod
 GET    /api/servers/:id/mods/acf               → IWorkshopAcfService.listItems
+PUT    /api/servers/:id/config/workshop         → ConfigService.writeWorkshopFileIds
+                                                    （v2.6：保存与重启解耦；staging → content 移动
+                                                     由 ServerManager.startInternal 自动 applyStaged）
 ```
 
 ---
@@ -597,9 +599,9 @@ interface VdfObject {
 
 ### 4.2 `WorkshopApplyService` — staging → content 流水线（核心新增）
 
-**调用上下文**：在 `ServerManager.applyModChanges` 流水线内、U3DS 已 STOPPED 时调用。
+**调用上下文**：在 `ServerManager.startInternal` 顶部、U3DS 已 STOPPED 时调用（v2.6：保存与重启解耦后移入启动流水线）。
 
-**9 步流程**（其中 1-3 已在 SteamCmdManager，4-9 在新模块）：
+**4 步流程**（其中 1-3 在 SteamCmdManager，4 在新模块）：
 
 ```typescript
 class WorkshopApplyService implements IWorkshopApplyService {
@@ -632,21 +634,20 @@ class WorkshopApplyService implements IWorkshopApplyService {
         await fs.promises.rename(src, dst);  // rename 原子, 跨设备用 cp + rm
       }
 
-      // ⑦ 更新 File_IDs
-      const newFileIds = Array.from(currentAcf.items.keys());
-      await this.configService.writeWorkshopFileIds(serverId, newFileIds);
+      // ★ v2.6：不再写 File_IDs——由 ConfigService.writeWorkshopFileIds 在「保存 Mod」单独负责
+      // （File_IDs 的权威来源 = 用户勾选列表，不是 content acf 全量推导）。
+      // 此处只移动文件，applyStaged 的输入/输出与「启用清单」正交。
 
-      // ⑧ WS 推 mod_apply_progress { stage: 'moving' → 'completed' }
+      // ⑥ WS 推 mod_apply_progress { stage: 'ready' }
       this.broadcaster.broadcast({
         type: 'mod_apply_progress',
         serverId,
-        stage: 'completed',
+        stage: 'ready',
+        message: `${count} 个 mod 已移动到 content`,
       });
 
     } catch (err) {
-      // ⑨ 失败 → 全部回滚
-      await this.acfService.rollback(serverId, acfBackupPath);
-      await this.configService.rollbackWorkshopConfig(serverId, configBackupPath);
+      // ⑦ 失败：acf 回滚由 addItem 内部已处理；本服务不再回滚 WorkshopDownloadConfig.json
       this.broadcaster.broadcast({
         type: 'mod_apply_progress',
         serverId,
