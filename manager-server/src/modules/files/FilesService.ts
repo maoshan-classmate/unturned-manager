@@ -7,6 +7,7 @@ import type {
   FileEntry,
   FilePermissions,
   WritableFileStream,
+  PanelDirectoryResult,
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
 import { resolveInstallDir } from '../server/pathResolver.js';
@@ -79,6 +80,90 @@ export class FilesService implements IFilesService {
   }
 
   // ── 文件/目录操作 ─────────────────────────────────────
+
+  /**
+   * 面板级目录浏览（sc:design §7.6）——不依赖具体实例，浏览 installDir 根目录。
+   *
+   * 安全边界与实例级一致：realpath + 白名单前缀 + 防穿越，但 baseDir 是 installDir。
+   * 返回 entries + parentPath（上级目录相对 installDir 的路径，顶层为 null）。
+   *
+   * @param relativePath - 相对 installDir 的目录路径（如 'Servers/S1'）；空 = installDir 根
+   * @returns entries + 上级目录
+   */
+  async listPanelDirectory(relativePath: string): Promise<PanelDirectoryResult> {
+    const installDir = resolveInstallDir();
+    const absPath = await this.validatePanelPath(relativePath || '.');
+
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await fs.readdir(absPath, { withFileTypes: true });
+    } catch {
+      logger.warn({ relativePath }, '面板目录不存在');
+      return { entries: [], parentPath: this.panelParentPath(relativePath) };
+    }
+
+    const results: FileEntry[] = [];
+    for (const entry of entries) {
+      const entryPath = path.join(relativePath, entry.name);
+      let stat: { size: number; mtime: Date };
+      try {
+        stat = await fs.stat(path.join(absPath, entry.name));
+      } catch {
+        stat = { size: 0, mtime: new Date(0) };
+      }
+
+      results.push({
+        name: entry.name,
+        path: entryPath.replace(/\\/g, '/'),
+        isDirectory: entry.isDirectory(),
+        size: stat.size,
+        modifiedAt: stat.mtime.toISOString(),
+      });
+    }
+
+    results.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return { entries: results, parentPath: this.panelParentPath(relativePath) };
+  }
+
+  /** 面板级路径校验——baseDir = installDir（区别于实例级的 installDir/Servers/<sid>） */
+  private async validatePanelPath(relativePath: string): Promise<string> {
+    if (relativePath.includes('\x00') || relativePath.includes('..')) {
+      throw new AppError('path_invalid', '路径包含非法字符', 403);
+    }
+
+    const installDir = resolveInstallDir();
+    const absPath = path.resolve(installDir, relativePath);
+
+    if (!absPath.startsWith(path.resolve(installDir))) {
+      throw new AppError('path_forbidden', '路径越界', 403);
+    }
+
+    try {
+      const real = await fs.realpath(absPath);
+      if (!real.startsWith(path.resolve(installDir))) {
+        throw new AppError('path_forbidden', '符号链接越界', 403);
+      }
+      return real;
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return absPath;
+      }
+      throw err;
+    }
+  }
+
+  /** 计算上级目录（相对 installDir）；顶层返回 null */
+  private panelParentPath(relativePath: string): string | null {
+    const cleaned = (relativePath || '').replace(/^[./\\]+/, '').replace(/[\\/]+$/, '');
+    if (!cleaned) return null;
+    const segments = cleaned.split(/[\\/]/);
+    segments.pop();
+    return segments.length === 0 ? null : segments.join('/');
+  }
 
   async listDirectory(serverId: ServerId, relativePath: string): Promise<FileEntry[]> {
     const absPath = await this.validatePath(serverId, relativePath || '.');

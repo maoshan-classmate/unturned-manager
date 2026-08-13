@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FolderOpen, File, Folder, Plus, Trash2, RefreshCw, Upload,
   AlertCircle, Loader2, Key, Copy, Scissors, Download, Pencil, ExternalLink,
 } from 'lucide-react';
-import { useServer } from '../hooks/useServer.js';
+import { useCurrentServer } from '../contexts/CurrentServerContext.js';
 import { apiClient } from '../api/client.js';
 import { Button } from '../components/ui/button.js';
 import { Dialog } from '../components/shared/Dialog.js';
@@ -94,10 +95,16 @@ function FileCardComp({
  * 1:1 复刻：TopBar + Toolbar + PathBar + FileGrid + StatusBar
  */
 export function FilesPage() {
-  const { servers } = useServer();
-  const server = servers[0];
+  // sc:design §7.6：文件菜单面板级——浏览 installDir 根目录，path 用 URL 查询参数同步
+  const { currentServerId } = useCurrentServer();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentPath = searchParams.get('path') ?? '';
 
-  const [currentPath, setCurrentPath] = useState('');
+  const setCurrentPath = useCallback((target: string) => {
+    // 空路径 = installDir 根；参数仅保留 path（其余参数丢弃）
+    setSearchParams(target ? { path: target } : {});
+  }, [setSearchParams]);
+
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,20 +135,20 @@ export function FilesPage() {
   // ── Data ─────────────────────────────────────────────
 
   const fetchFiles = useCallback(async () => {
-    if (!server) return;
     setLoading(true);
     setRefreshing(true);
     setError(null);
     try {
-      const res = await apiClient.get(`/servers/${server.id}`, { params: { path: currentPath || '.' } });
-      setEntries(res.data.data ?? []);
+      // sc:design §7.6 面板级浏览——不依赖具体实例
+      const res = await apiClient.get('/files', { params: { path: currentPath || '' } });
+      setEntries(res.data.data?.entries ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载文件失败');
     } finally {
       setLoading(false);
       setTimeout(() => setRefreshing(false), 600); // 保持旋转一小段时间让用户感知
     }
-  }, [server?.id, currentPath]);
+  }, [currentPath]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
@@ -154,21 +161,25 @@ export function FilesPage() {
   const goToPath = (targetPath: string) => setCurrentPath(targetPath);
   const goUp = () => { const parts = currentPath.split('/').filter(Boolean); parts.pop(); setCurrentPath(parts.join('/')); };
 
+  // 面板级浏览下，写操作（新建/上传/删除/重命名/读）仍走实例级接口——
+  // 需要当前选中实例；未选实例时这些操作被禁用并在 UI 提示。
+  const hasActiveInstance = currentServerId !== null;
+
   const handleCreateNew = async () => {
-    if (!newName.trim() || !server) return;
+    if (!newName.trim() || !hasActiveInstance) return;
     try {
       const entryPath = currentPath ? `${currentPath}/${newName.trim()}` : newName.trim();
       if (newType === 'folder') {
-        await apiClient.post(`/servers/${server.id}/mkdir`, { path: entryPath });
+        await apiClient.post(`/servers/${currentServerId}/mkdir`, { path: entryPath });
       } else {
-        await apiClient.post(`/servers/${server.id}/upload`, { path: entryPath, content: '' });
+        await apiClient.post(`/servers/${currentServerId}/upload`, { path: entryPath, content: '' });
       }
       setNewName(''); setShowNewDialog(false); fetchFiles();
     } catch (err) { setError(err instanceof Error ? err.message : '创建失败'); }
   };
 
   const handleUpload = async () => {
-    if (!uploadFile || !server) return;
+    if (!uploadFile || !hasActiveInstance) return;
     try {
       const name = uploadFileName.trim() || uploadFile.name;
       const entryPath = currentPath ? `${currentPath}/${name}` : name;
@@ -176,7 +187,7 @@ export function FilesPage() {
       // 使用 /files/raw 端点直接上传原始二进制，不再经过 base64（修复 C7 二进制破坏）
       const { getAccessToken } = await import('../api/client.js');
       const token = getAccessToken() ?? '';
-      await fetch(`/api/servers/${server.id}/files/raw?path=${encodeURIComponent(entryPath)}`, {
+      await fetch(`/api/servers/${currentServerId}/files/raw?path=${encodeURIComponent(entryPath)}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -194,31 +205,31 @@ export function FilesPage() {
 
   const confirmDelete = async () => {
     const entry = showDeleteConfirm;
-    if (!entry || !server) return;
+    if (!entry || !hasActiveInstance) return;
     try {
-      await apiClient.delete(`/servers/${server.id}`, { params: { path: entry.path } });
+      await apiClient.delete(`/servers/${currentServerId}`, { params: { path: entry.path } });
       setShowDeleteConfirm(null); setContextMenu(null); setSelectedEntry(null); fetchFiles();
     } catch (err) { setError(err instanceof Error ? err.message : '删除失败'); setShowDeleteConfirm(null); }
   };
 
   const handleRename = async () => {
-    if (!newName.trim() || !selectedEntry || !server) return;
+    if (!newName.trim() || !selectedEntry || !hasActiveInstance) return;
     try {
-      await apiClient.put(`/servers/${server.id}/rename`, { path: selectedEntry.path, newName: newName.trim() });
+      await apiClient.put(`/servers/${currentServerId}/rename`, { path: selectedEntry.path, newName: newName.trim() });
       setShowRename(false); setNewName(''); setSelectedEntry(null); fetchFiles();
     } catch (err) { setError(err instanceof Error ? err.message : '重命名失败'); }
   };
 
   const handleReadFile = async (entry: FileEntry) => {
-    if (!server || entry.isDirectory) return;
+    if (!hasActiveInstance || entry.isDirectory) return;
     try {
-      const res = await apiClient.get(`/servers/${server.id}/content`, { params: { path: entry.path } });
+      const res = await apiClient.get(`/servers/${currentServerId}/content`, { params: { path: entry.path } });
       const content = typeof res.data.data === 'string' ? res.data.data : JSON.stringify(res.data.data);
       alert(content.slice(0, 2000));
     } catch (err) { setError(err instanceof Error ? err.message : '读取文件失败'); }
   };
 
-  // ── Breadcrumbs ──────────────────────────────────────
+  // ── Breadcrumbs（sc:design §7.6：动态面包屑，可回退到更上级）──────────────
   const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
   // ── Filtered ─────────────────────────────────────────
@@ -260,16 +271,7 @@ export function FilesPage() {
     );
   }
 
-  if (!server) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <FolderOpen size={32} style={{ color: '#64748B' }} />
-          <span className="text-sm text-slate-500">还没有服务器</span>
-        </div>
-      </div>
-    );
-  }
+  // 面板级浏览不依赖实例，去掉原「还没有服务器」空态——浏览始终可用；仅写操作需实例。
 
   return (
     <div className="flex flex-col h-full" onClick={() => { setContextMenu(null); setSelectedEntry(null); }}>
@@ -295,17 +297,23 @@ export function FilesPage() {
           <span style={{ fontSize: 11, color: '#64748B' }}>递归</span>
         </label>
 
-        {/* + 新建 — 弹窗选择文件/文件夹 */}
-        <button onClick={() => { setNewType('folder'); setNewName(''); setShowNewDialog(true); }}
-          className="flex items-center gap-1 rounded text-white transition-colors hover:bg-emerald-600"
-          style={{ height: 32, padding: '0 12px', fontSize: 13, backgroundColor: '#22C55E', border: 'none', cursor: 'pointer' }}>
+        {/* + 新建 — 弹窗选择文件/文件夹（需选中实例；面板级浏览可只读） */}
+        <button
+          onClick={() => { if (hasActiveInstance) { setNewType('folder'); setNewName(''); setShowNewDialog(true); } }}
+          disabled={!hasActiveInstance}
+          title={hasActiveInstance ? '新建文件/文件夹' : '请先在侧栏选择一个实例，才能写入文件'}
+          className="flex items-center gap-1 rounded text-white transition-colors hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ height: 32, padding: '0 12px', fontSize: 13, backgroundColor: '#22C55E', border: 'none', cursor: hasActiveInstance ? 'pointer' : 'not-allowed' }}>
           <Plus size={14} /> 新建
         </button>
 
-        {/* 上传 — 弹窗输入文件名+内容 */}
-        <button onClick={() => { setUploadFileName(''); setUploadFile(null); setShowUploadDialog(true); }}
-          className="flex items-center gap-1 rounded text-slate-400 transition-colors hover:bg-slate-700"
-          style={{ height: 32, padding: '0 12px', fontSize: 13, backgroundColor: '#1E293B', border: '1px solid #334059', cursor: 'pointer' }}>
+        {/* 上传 — 弹窗输入文件名+内容（需选中实例） */}
+        <button
+          onClick={() => { if (hasActiveInstance) { setUploadFileName(''); setUploadFile(null); setShowUploadDialog(true); } }}
+          disabled={!hasActiveInstance}
+          title={hasActiveInstance ? '上传文件' : '请先在侧栏选择一个实例，才能写入文件'}
+          className="flex items-center gap-1 rounded text-slate-400 transition-colors hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ height: 32, padding: '0 12px', fontSize: 13, backgroundColor: '#1E293B', border: '1px solid #334059', cursor: hasActiveInstance ? 'pointer' : 'not-allowed' }}>
           <Upload size={14} /> 上传
         </button>
 
@@ -333,16 +341,10 @@ export function FilesPage() {
       {/* ── Path Bar (Figma: h=36, bottom stroke=#334059) ── */}
       <div className="flex items-center px-3 shrink-0" style={{ height: 36, borderBottom: '1px solid #334059' }}>
         <span style={{ fontSize: 13, color: '#94A3B8' }}>
-          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">/</button>
-          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">opt</button>
-          {' / '}
-          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">unturned</button>
-          {' / '}
-          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">Servers</button>
-          {' / '}
-          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">MyServer</button>
+          {/* 根 = installDir（面板级浏览起点）——可回退到更上级 */}
+          <button onClick={() => goToPath('')} className="hover:text-emerald-400 transition-colors">根目录</button>
           {breadcrumbs.map((crumb, i) => (
-            <span key={i}>
+            <span key={`${crumb}-${i}`}>
               {' / '}
               <button onClick={() => goToPath(breadcrumbs.slice(0, i + 1).join('/'))} className="hover:text-emerald-400 transition-colors">
                 {crumb}

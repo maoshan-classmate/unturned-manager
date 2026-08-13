@@ -135,4 +135,38 @@ describe("FilesService", () => {
     expect(text).toContain("Password [REDACTED]");
     expect(text).not.toContain("mySecretToken123456");
   });
+
+  // ── 面板级浏览（sc:design §7.6）────────────────────────
+
+  it("listPanelDirectory: 浏览 installDir 根目录", async () => {
+    const result = await svc.listPanelDirectory("");
+    // installDir 下至少有 Servers/ 目录
+    expect(result.entries.some((e) => e.isDirectory && e.name === "Servers")).toBe(
+      true,
+    );
+    // 顶层 parentPath = null
+    expect(result.parentPath).toBeNull();
+  });
+
+  it("listPanelDirectory: 子目录浏览 + parentPath 计算", async () => {
+    // 在 FilesServer 实例目录里放一个文件，验证能浏览到
+    await svc.writeFile(
+      "FilesServer" as ServerId,
+      "panel-probe.txt",
+      new TextEncoder().encode("probe"),
+    );
+    const result = await svc.listPanelDirectory("Servers/FilesServer");
+    expect(result.entries.some((e) => e.name === "panel-probe.txt")).toBe(true);
+    // 上级 = Servers
+    expect(result.parentPath).toBe("Servers");
+  });
+
+  it("listPanelDirectory: 越界路径被拒绝", async () => {
+    await expect(svc.listPanelDirectory("../../etc")).rejects.toMatchObject({});
+  });
+
+  it("listPanelDirectory: 不存在的目录返回空 entries 而非抛错", async () => {
+    const result = await svc.listPanelDirectory("Servers/NoSuchServerXYZ");
+    expect(result.entries).toEqual([]);
+  });
 });

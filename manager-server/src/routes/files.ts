@@ -31,6 +31,27 @@ async function resolveValidatedPath(serverId: string, relativePath: string): Pro
   return absPath;
 }
 
+/**
+ * 面板级文件浏览路由（sc:design §7.6）——GET /api/files?path=...
+ * 不依赖具体实例，浏览 installDir 根目录；路径经 FilesService.validatePanelPath 限定在 installDir 内。
+ */
+export function createPanelFilesRouter(filesService: IFilesService): Router {
+  const router = Router();
+  router.use(authenticateToken);
+
+  router.get(
+    '/',
+    validate(PathQuerySchema, 'query'),
+    asyncHandler(async (req, res) => {
+      const { path: relativePath } = req.query as unknown as { path: string };
+      const result = await filesService.listPanelDirectory(relativePath);
+      res.json({ data: result });
+    }),
+  );
+
+  return router;
+}
+
 export function createFilesRouter(filesService: IFilesService): Router {
   const router = Router();
   router.use(authenticateToken);

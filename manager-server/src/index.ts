@@ -42,7 +42,7 @@ import { createModsRouter } from "./routes/mods.js";
 import { createModBrowseRouter } from "./routes/mod-browse.js";
 import { createLdmServerRouter, createLdmCommunityRouter } from "./routes/ldm.js";
 import { createConfigRouter } from "./routes/config.js";
-import { createFilesRouter } from "./routes/files.js";
+import { createFilesRouter, createPanelFilesRouter } from "./routes/files.js";
 import { createSteamCmdRouter } from "./routes/steamcmd.js";
 import { createWorkshopRouter } from "./routes/workshop.js";
 import { createSettingsRouter } from "./routes/settings.js";
@@ -137,6 +137,8 @@ app.use(
 );
 app.use("/api/servers", createConfigRouter(container.configService));
 app.use("/api/servers", createFilesRouter(container.filesService));
+// 面板级文件浏览（sc:design §7.6）——不依赖具体实例，浏览 installDir 根目录
+app.use("/api/files", createPanelFilesRouter(container.filesService));
 // LDM Mod 框架（Phase 1）——useServers 维度 + 全局 LDM-Community
 app.use("/api/servers/:id/ldm", createLdmServerRouter({
   discovery: container.ldmDiscovery,

@@ -31,7 +31,11 @@ export type {
   WsRequestHandler,
 } from "./contracts/broadcast.js";
 export type { ClientWsMessage, ClientWsRequestMessage } from "./contracts/ws.js";
-export type { IFilesService, WritableFileStream } from "./contracts/files.js";
+export type {
+  IFilesService,
+  WritableFileStream,
+  PanelDirectoryResult,
+} from "./contracts/files.js";
 export type { IAuthService, JwtPayload } from "./contracts/auth.js";
 export type { IFileLockProvider } from "./contracts/filelock.js";
 export type { ISteamCmdManager } from "./contracts/steamcmd.js";
