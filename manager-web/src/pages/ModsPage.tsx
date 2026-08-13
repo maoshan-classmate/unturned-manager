@@ -88,10 +88,12 @@ export function ModsPage() {
   // 仅「下载」需要 serverId（下载到哪个服务器），从 useServer 拿第一个真实服务器。
   const { serverId: routeServerId } = useParams<{ serverId: string }>();
   const { servers } = useServer();
+  // URL 上的 serverId 在真实列表里 → 用它；否则用列表第一个
+  const validIds = new Set(servers.map((s) => s.id));
   const serverId =
-    (routeServerId && routeServerId !== "_default"
+    routeServerId && validIds.has(routeServerId)
       ? routeServerId
-      : servers[0]?.id) ?? "";
+      : servers[0]?.id ?? "";
 
   // 搜索 & 筛选
   const [searchInput, setSearchInput] = useState("");

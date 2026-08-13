@@ -12,6 +12,7 @@ import {
   User,
   Puzzle,
 } from "lucide-react";
+import { useServer } from "../../hooks/useServer.js";
 
 /**
  * Figma 5:29 Sidebar — 1:1 复刻
@@ -45,7 +46,14 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar() {
   const { serverId } = useParams();
-  const prefix = serverId ? `/${serverId}` : "/_default";
+  const { servers } = useServer();
+
+  // 选真实服务端：URL 上的 serverId 在列表里 → 用它；否则回退到列表第一个；
+  // 都没有 → prefix=null（依赖服务端标识的菜单全部禁用）
+  const validIds = new Set(servers.map((s) => s.id));
+  const activeId =
+    serverId && validIds.has(serverId) ? serverId : servers[0]?.id;
+  const prefix = activeId ? `/${activeId}` : null;
 
   return (
     <aside
@@ -84,16 +92,31 @@ export function Sidebar() {
       {/* ── Navigation (Figma: 9 items, y=80→420, 40px rhythm, 14px Regular) ── */}
       <nav className="mt-2">
         {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-          // Dashboard 始终指向根路由
-          const fullTo = to === "/" ? "/" : `${prefix}${to}`;
+          // Dashboard 始终指向根路由；其他菜单需要 prefix（无服务端时禁用）
+          const needsServer = to !== "/";
+          const disabled = needsServer && prefix === null;
+          const fullTo = !needsServer
+            ? "/"
+            : prefix
+              ? `${prefix}${to}`
+              : "#";
           return (
             <NavLink
               key={to}
               to={fullTo}
               end={to === "/"}
+              onClick={(e) => {
+                if (disabled) e.preventDefault();
+              }}
+              aria-disabled={disabled}
+              tabIndex={disabled ? -1 : undefined}
               className={({ isActive }) =>
                 `relative flex items-center h-[40px] px-6 text-sm font-normal transition-colors ${
                   isActive ? "" : "hover:text-slate-200"
+                }${
+                  disabled
+                    ? " opacity-40 pointer-events-none cursor-not-allowed"
+                    : ""
                 }`
               }
               style={({ isActive }) => ({

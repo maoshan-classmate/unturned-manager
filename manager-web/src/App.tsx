@@ -41,7 +41,6 @@ function AppLayout() {
         <main className="flex-1 overflow-auto p-6">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/_default" element={<Navigate to="/" replace />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/:serverId/console" element={<ConsolePage />} />
             <Route path="/:serverId/mods" element={<ModsPage />} />

@@ -49,8 +49,9 @@ export function ServerSetupPage() {
     useServer();
 
   // 路由 serverId 优先;否则选第一个真实服务器
+  const validIds = new Set(servers.map((s) => s.id));
   const currentId =
-    routeServerId && routeServerId !== "_default"
+    routeServerId && validIds.has(routeServerId)
       ? routeServerId
       : (servers[0]?.id ?? "");
   const currentServer = servers.find((s) => s.id === currentId);
@@ -85,10 +86,10 @@ export function ServerSetupPage() {
       // 真实删除:DELETE /servers/:id + 内部 refresh(ADR-0003 B2 目录扫描真源)
       await removeServer(deleteTarget);
       toast.success(`实例「${deleteTarget}」已删除`);
-      // 若删除当前选中实例,跳转到首个剩余实例
+      // 若删除当前选中实例,跳转到首个剩余实例;无剩余则回首页
       if (deleteTarget === currentId) {
         const next = servers.filter((s) => s.id !== deleteTarget)[0];
-        navigate(next ? `/${next.id}/server-setup` : "/_default/server-setup");
+        navigate(next ? `/${next.id}/server-setup` : "/");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "删除实例失败");

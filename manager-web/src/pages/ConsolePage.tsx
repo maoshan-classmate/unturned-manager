@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Terminal as TerminalIcon,
   Send,
@@ -52,12 +52,23 @@ const DEFAULT_SHUTDOWN_DELAY_S = 10;
  */
 export function ConsolePage() {
   const { serverId } = useParams<{ serverId: string }>();
-  const activeServerId = serverId ?? "_default";
-  const { servers } = useServer();
-  // ★ S4 修复：找到当前 serverId 对应的运行态——STOPPED 时给用户明确提示
-  // 否则 PTY 没跑时敲命令静默丢失，用户不知道发生了什么
+  const navigate = useNavigate();
+  const { servers, loading } = useServer();
+  // serverId 不在真实服务端列表里 → 跳回首页。
   const currentServer = servers.find((s) => s.id === serverId);
-  const isServerRunning = currentServer?.state === "RUNNING";
+  useEffect(() => {
+    if (loading) return;
+    if (!currentServer) {
+      navigate("/", { replace: true });
+    }
+  }, [loading, currentServer, navigate]);
+
+  if (!currentServer || !serverId) {
+    // 守卫跳转极短暂——渲染占位避免 useConsole 等钩子触发副作用
+    return null;
+  }
+
+  const isServerRunning = currentServer.state === "RUNNING";
   // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
   const { saved: savedSessions } = useSessionManager();
   const {
@@ -69,7 +80,7 @@ export function ConsolePage() {
     save,
     shutdown,
     closeTerminal,
-  } = useConsole(activeServerId);
+  } = useConsole(serverId);
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
