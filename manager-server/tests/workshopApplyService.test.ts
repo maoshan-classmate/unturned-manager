@@ -21,6 +21,8 @@ const installDir = resolveInstallDir();
 const serverDir = path.join(installDir, "Servers", SERVER_ID);
 
 // staging 与 content 路径——真源对齐 WorkshopApplyService.ts 内的常量
+// ★ 2026-08-14 实机根因：staging 路径仍带 steamapps/workshop（SteamCMD 标准结构），
+// content 路径去 steamapps/workshop（U3DS `DedicatedUGC.cs:560` 真实只到 Workshop/Steam/）。
 const STAGING_CONTENT = path.join(
   serverDir,
   "Workshop",
@@ -34,8 +36,6 @@ const CONTENT_DIR = path.join(
   serverDir,
   "Workshop",
   "Steam",
-  "steamapps",
-  "workshop",
   "content",
   "304930",
 );

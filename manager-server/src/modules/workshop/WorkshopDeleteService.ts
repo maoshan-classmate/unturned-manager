@@ -16,14 +16,13 @@ import { resolveServerPath } from "../server/pathResolver.js";
 
 /**
  * content 目录（U3DS 实际加载的 mod 位置）。
- * ★ BUG-3 修复：U3-SDK `DedicatedUGC.cs:560-567` 用 `Workshop/Steam/steamapps/workshop/content/304930/`。
- * 旧实现缺 `Steam/` 层，删除删不到 U3DS 实际读取的位置。
+ * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 落在
+ * `Workshop/Steam/content/304930/<id>/`（**无 steamapps/workshop 子层**）。
+ * 旧实现臆造 `Workshop/Steam/steamapps/workshop/content/304930/`，删除删不到 U3DS 实际读取位置。
  */
 const CONTENT_SUBDIR = path.join(
   "Workshop",
   "Steam",
-  "steamapps",
-  "workshop",
   "content",
   STEAM_APP_IDS.UNTURNED_GAME,
 );

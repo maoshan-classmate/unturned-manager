@@ -32,15 +32,16 @@ const STAGING_CONTENT_SUBDIR = path.join(
 );
 
 /**
- * content acf 内容目录（U3DS 启动读取）。
- * ★ BUG-3 修复：U3-SDK `DedicatedUGC.cs:560-567` 用 `Workshop/Steam/steamapps/workshop/content/304930/`。
- * 旧实现缺 `Steam/` 层，U3DS 扫不到 → 客户端显示「创意工坊：禁用」。
+ * content 目录（U3DS 启动读取 mod 实际加载位置）。
+ * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 直接落在
+ * `Workshop/Steam/content/304930/<id>/`（**无 steamapps/workshop 子层**）。
+ * 旧实现臆造 `Workshop/Steam/steamapps/workshop/content/304930/` 5 段路径，
+ * applyStaged mv 把 staging 推到臆造位置 → U3DS 看不到 → 客户端显示「创意工坊：禁用」。
+ * staging 路径仍带 steamapps/workshop（SteamCMD 标准结构，区分勿混）。
  */
 const CONTENT_SUBDIR = path.join(
   "Workshop",
   "Steam",
-  "steamapps",
-  "workshop",
   "content",
   STEAM_APP_IDS.UNTURNED_GAME,
 );
@@ -215,6 +216,9 @@ export class WorkshopApplyService implements IWorkshopApplyService {
    * 跨设备的目录移动：先尝试 rename，失败降级 cp -r + rm
    */
   private async moveDir(src: string, dst: string): Promise<void> {
+    // ★ 2026-08-14 实机根因：U3DS 第一次启动时才建 `Workshop/Steam/content/304930/` 父目录，
+    // 首 apply 时父目录不存在 → fs.rename 抛 ENOENT。先 mkdir -p dst 父目录。
+    await fs.mkdir(path.dirname(dst), { recursive: true });
     // 如果 dst 已存在，先删（U3DS 内容目录是 mod 的数据目录，不存在冲突）
     if (await this.fileExists(dst)) {
       await fs.rm(dst, { recursive: true, force: true });

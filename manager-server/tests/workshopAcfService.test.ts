@@ -23,14 +23,8 @@ const SERVER_ID = "AcfServer" as ServerId;
 /** fixture 根 = config.installDir（ADR-0003 / T2：真源全局，与 pathResolver 读取一致） */
 const installDir = resolveInstallDir();
 const serverDir = path.join(installDir, "Servers", SERVER_ID);
-// ★ BUG-3：U3DS 实际读取路径带 Steam/ 层（DedicatedUGC.cs:560-567）
-const workshopDir = path.join(
-  serverDir,
-  "Workshop",
-  "Steam",
-  "steamapps",
-  "workshop",
-);
+// ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`（**无 steamapps/workshop 子层**）
+const workshopDir = path.join(serverDir, "Workshop", "Steam");
 const acfPath = path.join(workshopDir, "appworkshop_304930.acf");
 
 let acfService: WorkshopAcfService;

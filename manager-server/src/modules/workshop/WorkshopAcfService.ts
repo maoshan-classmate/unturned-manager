@@ -24,15 +24,15 @@ import { resolveServerPath } from "../server/pathResolver.js";
 
 /**
  * acf 文件相对 Servers/<ID>/ 目录的路径。
- * ★ BUG-3 修复：U3-SDK `DedicatedUGC.cs:560-567` 把 `Servers/<id>/Workshop/Steam` 注册为
- * Steamworks workshop 安装根，content 与 acf 实际落在 `Workshop/Steam/steamapps/workshop/` 下。
- * 旧实现缺 `Steam/` 层，U3DS 扫不到面板 apply 的 mod → 客户端显示「创意工坊：禁用」。
+ * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 把 `Servers/<id>/Workshop/Steam` 注册为
+ * Steamworks workshop 安装根（**仅 Steam 一层，无 steamapps/workshop 子层**）。
+ * 旧实现臆造 `Workshop/Steam/steamapps/workshop/` 4 段路径，U3DS 实际写到 `Workshop/Steam/`，
+ * 面板 listItems 永远 ENOENT → mainItems=[] → /mods/downloaded 走 staging item
+ * → File_IDs 字符串/数字类型错位 → applied 永远 false → UI「未应用」。
  */
 const WORKSHOP_ACF_REL_PATH = path.join(
   "Workshop",
   "Steam",
-  "steamapps",
-  "workshop",
   `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`,
 );
 

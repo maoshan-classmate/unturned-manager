@@ -60,8 +60,20 @@ export const ConfigTxtRecordSchema = z.object({
 
 // ─── WorkshopDownloadConfig.json ───────────────────────
 
+/**
+ * 单个 File_ID 的 schema 元素。
+ *
+ * ★ 2026-08-14 实机根因：U3-SDK `WorkshopDownloadConfig.cs:30` 用 `List<ulong>`，
+ * Unity JsonUtility 把 ulong 序列化为 JSON number（非字符串）。
+ * 面板 acf 解析走 VDF 文本 `Object.entries` 永远返回 string keys。
+ * 跨语言类型不对齐是必然，必须在 schema 层归一。
+ */
+const FileIdSchema = z.union([z.string(), z.number()]).transform((v) =>
+  String(v),
+);
+
 export const WorkshopConfigSchema = z.object({
-  File_IDs: z.array(z.string()),
+  File_IDs: z.array(FileIdSchema),
   Should_Monitor_Updates: z.boolean(),
   Query_Cache_Max_Age_Seconds: z.number().int().positive(),
   Max_Query_Retries: z.number().int().nonnegative(),

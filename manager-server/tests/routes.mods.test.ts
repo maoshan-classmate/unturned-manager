@@ -332,30 +332,16 @@ describe("routes/mods · 8 端点", () => {
       .expect(400);
   });
 
-  it("POST /mods/apply → 202 + operationId（异步执行）", async () => {
-    // 模拟运行时：先让服务端进入 RUNNING 状态，再 apply
-    // 但 RUNNING 状态需要 RCON 全 mock；这里仅测 202 响应，apply 内部会失败但前端只看 operationId
-    const res = await request(app)
-      .post("/api/servers/MyServer/mods/apply")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({ fileIds: ["111", "222"] })
-      .expect(202);
-    expect(res.body.data.operationId).toMatch(/^apply_/);
-    expect(res.body.data.status).toBe("running");
-  });
+  // v2.6：/mods/apply 端点已删除——「保存」走 PUT /config/workshop（写 File_IDs），
+  // 「移动 staging→content」由 ServerManager.startInternal 顶部自动执行。
+  // 此处删除对应测试用例，保留 v2.6 后的端点集：GET /downloaded / POST /download / DELETE /:fileId / GET /acf。
 
   it("DELETE /mods/:fileId → 200（STOPPED + activeOperation=none 应成功）", async () => {
     // 实际：STOPPED + activeOperation=none → delete 应成功
     // 写一个假的 acf 让它有东西可删（路径根 = resolveInstallDir()，与 WorkshopDeleteService 读取一致）
     const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
-    // ★ BUG-3：U3DS 实际读取路径带 Steam/ 层（DedicatedUGC.cs:560-567）
-    const workshopDir = path.join(
-      serverDir,
-      "Workshop",
-      "Steam",
-      "steamapps",
-      "workshop",
-    );
+    // ★ 2026-08-14：U3DS 实际路径 `Workshop/Steam/`（无 steamapps/workshop 子层）
+    const workshopDir = path.join(serverDir, "Workshop", "Steam");
     const contentDir = path.join(workshopDir, "content", "304930", "444");
     await fs.mkdir(contentDir, { recursive: true });
     await fs.writeFile(path.join(contentDir, "dummy.txt"), "x", "utf-8");
@@ -400,14 +386,8 @@ describe("routes/mods · 8 端点", () => {
   it("GET /mods/downloaded → 200 + 已下载列表", async () => {
     // 复用 delete 测试的 fixture — 但已被删除，单独再写一个
     const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
-    // ★ BUG-3：U3DS 实际读取路径带 Steam/ 层（DedicatedUGC.cs:560-567）
-    const workshopDir = path.join(
-      serverDir,
-      "Workshop",
-      "Steam",
-      "steamapps",
-      "workshop",
-    );
+    // ★ 2026-08-14：U3DS 实际路径 `Workshop/Steam/`
+    const workshopDir = path.join(serverDir, "Workshop", "Steam");
     await fs.mkdir(workshopDir, { recursive: true });
     await fs.writeFile(
       path.join(workshopDir, "appworkshop_304930.acf"),
@@ -442,6 +422,7 @@ describe("routes/mods · 8 端点", () => {
     // 但 /mods/downloaded 必须能看到该 mod（applied=false，前端显示「待应用/已下载」）
     const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
     // 只写 staging acf，不写主 acf —— 模拟「下载完还没 apply」
+    // staging 路径仍带 steamapps/workshop（SteamCMD 标准结构，区分勿混）
     const stagingDir = path.join(
       serverDir,
       "Workshop",
@@ -476,6 +457,61 @@ describe("routes/mods · 8 端点", () => {
     expect(res.body.data[0].fileId).toBe("666");
     expect(res.body.data[0].applied).toBe(false);
     expect(res.body.data[0].title).toBe("Mod 666"); // GetDetails mock 动态返回
+
+    await fs.rm(serverDir, { recursive: true, force: true });
+  });
+
+  // ★ 2026-08-14 实机根因回归：U3DS 启动时把 File_IDs 规范化为 number（ulong）写回，
+  // 端点必须把 number 归一为 string 再 Set.has，否则 applied 永远 false。
+  it("GET /mods/downloaded → File_IDs 是 number 时仍能正确判定 applied=true", async () => {
+    const serverDir = path.join(resolveInstallDir(), "Servers", "MyServer");
+    const workshopDir = path.join(serverDir, "Workshop", "Steam");
+    await fs.mkdir(workshopDir, { recursive: true });
+    // 写主 acf 包含 mod 777
+    await fs.writeFile(
+      path.join(workshopDir, "appworkshop_304930.acf"),
+      `"AppWorkshop"
+{
+	"appid"		"304930"
+	"WorkshopItemsInstalled"
+	{
+		"777"
+		{
+			"timeupdated"		"1722612345"
+			"size"				"100"
+		}
+	}
+}`,
+      "utf-8",
+    );
+    // 写 WorkshopDownloadConfig.json：File_IDs 是 number（模拟 U3DS 写回）
+    await fs.writeFile(
+      path.join(serverDir, "WorkshopDownloadConfig.json"),
+      JSON.stringify(
+        {
+          File_IDs: [777],  // ← number（U3DS ulong 序列化为 JSON number）
+          Should_Monitor_Updates: true,
+          Query_Cache_Max_Age_Seconds: 600,
+          Max_Query_Retries: 2,
+          Use_Cached_Downloads: true,
+          Shutdown_Update_Detected_Timer: 600,
+          Shutdown_Update_Detected_Message: "msg",
+          Shutdown_Kick_Message: "msg2",
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+
+    const res = await request(app)
+      .get("/api/servers/MyServer/mods/downloaded")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].fileId).toBe("777");
+    // ★ 关键断言：即使 File_IDs 写的是 number 777，applied 仍必须 true
+    expect(res.body.data[0].applied).toBe(true);
 
     await fs.rm(serverDir, { recursive: true, force: true });
   });

@@ -116,6 +116,47 @@ describe("ConfigService — 5 种格式往返", () => {
     expect(parsed.Shutdown_Update_Detected_Message).toBe("msg1"); // 未被改写
   });
 
+  // ★ 2026-08-14 实机根因回归：U3DS 启动时把 File_IDs 规范化为 number（ulong）写回，
+  // 面板 zod schema 必须接受 number 并归一为 string，
+  // 避免 /mods/downloaded 的 `fileIdsSet.has(stringFileId)` 永远 false → UI 全显示「未应用」。
+  it("Workshop.json: File_IDs 兼容 U3DS 写的 number，read 归一为 string", async () => {
+    // 模拟 U3DS 启动后写回的格式（List<ulong> 序列化为 JSON number）
+    const input = JSON.stringify({
+      File_IDs: [3775651116, 1234567890],
+      Should_Monitor_Updates: true,
+      Query_Cache_Max_Age_Seconds: 600,
+      Max_Query_Retries: 2,
+      Use_Cached_Downloads: true,
+      Shutdown_Update_Detected_Timer: 600,
+      Shutdown_Update_Detected_Message: "msg",
+      Shutdown_Kick_Message: "msg2",
+    });
+    await fs.writeFile(
+      path.join(serverDir, "WorkshopDownloadConfig.json"),
+      input,
+    );
+
+    const read = await svc.readWorkshopConfig(serverId);
+    // 归一后必须全是 string（与 acf VDF 解析的 string fileId 一致，Set.has 才匹配）
+    expect(read.File_IDs).toEqual(["3775651116", "1234567890"]);
+    for (const id of read.File_IDs) {
+      expect(typeof id).toBe("string");
+    }
+  });
+
+  it("Workshop.json: 写时归一为 string（不被 U3DS 改回 number）", async () => {
+    // 写 string 数组（前端约定）
+    await svc.writeWorkshopFileIds(serverId, ["3775651116", "1234567890"]);
+    const content = await fs.readFile(
+      path.join(serverDir, "WorkshopDownloadConfig.json"),
+      "utf-8",
+    );
+    // 写盘必须是 string（带引号），不能是 number
+    expect(content).toContain('"3775651116"');
+    expect(content).toContain('"1234567890"');
+    expect(content).not.toMatch(/\[(?:\d+,?\s*)+\]/); // 不能是纯数字数组
+  });
+
   // ─── Loadout 重复行（CommandLoadout.cs:13-49 + PlayerSkills.cs:43-97）────────
 
   it("Loadout: 解析多行 Loadout 为结构化 loadouts 数组", async () => {

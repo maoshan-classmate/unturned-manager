@@ -12,6 +12,7 @@ import type {
   ConfigEntry,
   LoadoutEntry,
 } from "@unturned-manager/shared";
+import { WorkshopConfigSchema } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
 import { resolveServerPath } from "../server/pathResolver.js";
 import { AppError } from "../../utils/AppError.js";
@@ -364,14 +365,18 @@ export class ConfigService implements IConfigService {
     // 旧面板在 Server/ 子目录的残留文件 U3DS 不读——不做迁移，由 U3DS 在根自动生成。
     try {
       const raw = await fs.readFile(absPath, "utf-8");
-      return JSON.parse(raw) as WorkshopConfig;
+      // ★ 2026-08-14 实机根因：U3DS `WorkshopDownloadConfig.cs:30` 用 `List<ulong>` 写 number，
+      // Zod schema 通过 union + transform 归一为 string——避免 /mods/downloaded 的
+      // `fileIdsSet.has(stringFileId)` 因类型错位永远 false。
+      // 解析后 cast 为 WorkshopConfig（zod 输出 string，brand 由调用层保证）。
+      return WorkshopConfigSchema.parse(JSON.parse(raw)) as WorkshopConfig;
     } catch {
       logger.warn(
         { serverId, path: absPath },
         "WorkshopDownloadConfig.json 不存在",
       );
       return {
-        File_IDs: [],
+        File_IDs: [] as WorkshopFileId[],
         Should_Monitor_Updates: true,
         Query_Cache_Max_Age_Seconds: 600,
         Max_Query_Retries: 2,
@@ -391,7 +396,10 @@ export class ConfigService implements IConfigService {
   ): Promise<void> {
     // 读取现有配置，只替换 File_IDs
     const current = await this.readWorkshopConfig(serverId);
-    current.File_IDs = fileIds as string[] as WorkshopFileId[];
+    // ★ 2026-08-14 修复：归一为 string 写盘——避免 U3DS 启动时把数字
+    // 改回 number（U3DS `WorkshopDownloadConfig.cs:30` 字段为 `List<ulong>`，JSON 序列化为 number），
+    // 后续面板 re-read 时 Zod transform 仍能正确转回 string，但写盘统一 string 减少歧义。
+    current.File_IDs = fileIds.map(String) as WorkshopFileId[];
 
     await this.atomicWrite(
       serverId,

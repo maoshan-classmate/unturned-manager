@@ -430,7 +430,9 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     // 注：workshopApply 是 TS private，运行时是普通字段——用 as any 强写
     (mgr as any).workshopApply = failingApply;
     await createServer(mgr, "S2");
-    await expect(mgr.start("S2" as ServerId)).rejects.toThrow(
+    // ★ 2026-08-14 修复测试 bug：`start` 走 startPty 路径，不经过 startInternal；
+    // 验证 startInternal 中 applyStaged 失败行为必须走 `restart`（start → stop → startInternal）。
+    await expect(mgr.restart("S2" as ServerId)).rejects.toThrow(
       /staging 移动失败/,
     );
     expect(failingApply.applyStaged).toHaveBeenCalledTimes(1);
