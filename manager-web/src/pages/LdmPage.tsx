@@ -2,8 +2,7 @@
  * LDM Mod 框架页面——2 Tab：已装插件 / 插件来源。
  * 设计见 docs/architecture/ldm-integration-design.md §12.2 Phase 1。
  */
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -27,6 +26,7 @@ import { TabBar } from "../components/shared/TabBar.js";
 import { PageState } from "../components/shared/PageState.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { Input } from "../components/ui/input.js";
+import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
 import { formatSize, formatDate, errorMessage } from "../lib/utils.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 
@@ -82,26 +82,7 @@ type PatFormValues = z.infer<typeof patSchema>;
 
 export function LdmPage() {
   // 取值来源切到共享层（sc:design 第 4 阶段）
-  const navigate = useNavigate();
   const guard = useRequireServer();
-  const handledRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (guard.status === "ready" || guard.status === "loading") {
-      handledRef.current = null;
-      return;
-    }
-    if (handledRef.current === guard.status) return;
-    handledRef.current = guard.status;
-
-    if (guard.status === "empty") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("请先选择一个实例");
-    } else if (guard.status === "missing") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("该服务器实例不存在");
-    }
-  }, [guard.status, navigate]);
 
   const [activeTab, setActiveTab] = useState<"installed" | "source">("installed");
   const [pat, setPat] = useState<string | null>(null);
@@ -112,7 +93,14 @@ export function LdmPage() {
     if (saved) setPat(saved);
   }, []);
 
-  if (guard.status !== "ready") return null;
+  // 无实例时内容区渲染占位卡引导（不再自动跳转 + toast）
+  if (guard.status !== "ready") {
+    return (
+      <NoInstanceGuide
+        reason={guard.status === "missing" ? "missing" : "empty"}
+      />
+    );
+  }
   const serverId = guard.serverId;
 
   return (

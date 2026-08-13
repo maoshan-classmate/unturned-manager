@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { COMMANDS_DAT_ENUMS } from "@unturned-manager/shared";
 import {
   Save,
@@ -26,6 +25,7 @@ import {
   type DataTableColumn,
 } from "../components/shared/DataTable.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
+import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
@@ -181,33 +181,21 @@ interface DownloadedMod {
 const PAGE_SIZE = 10;
 
 /**
- * 守卫壳组件——只做实例守卫 + 跳转副作用，业务 hooks 全在 ConfigContent 内。
+ * 守卫壳组件——只做实例守卫，业务 hooks 全在 ConfigContent 内。
+ * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建，不再自动跳转 + toast。
  * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
  * 本组件（不调业务 hooks），业务 hooks 在 ConfigContent 内稳定执行（修复 React #310）。
  */
 export function ConfigPage() {
-  const navigate = useNavigate();
   const guard = useRequireServer();
-  const handledRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (guard.status === "ready" || guard.status === "loading") {
-      handledRef.current = null;
-      return;
-    }
-    if (handledRef.current === guard.status) return;
-    handledRef.current = guard.status;
-
-    if (guard.status === "empty") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("请先选择一个实例");
-    } else if (guard.status === "missing") {
-      void navigate("/server-setup", { replace: true });
-      toast.warning("该服务器实例不存在");
-    }
-  }, [guard.status, navigate]);
-
-  if (guard.status !== "ready") return null;
+  if (guard.status !== "ready") {
+    return (
+      <NoInstanceGuide
+        reason={guard.status === "missing" ? "missing" : "empty"}
+      />
+    );
+  }
 
   return <ConfigContent serverId={guard.serverId} />;
 }
