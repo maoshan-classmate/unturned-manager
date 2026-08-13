@@ -22,7 +22,7 @@ Servers/
     ├── Rocket/                    # LDM（官方 Mod 框架）插件配置
     │   ├── Rocket.config.xml
     │   └── Plugins/<Name>/Configuration.xml
-    ├── Workshop/                  # SteamCMD 下载的 Workshop 内容（★ 实际加载在 Workshop/Steam/steamapps/...，DedicatedUGC.cs:560）
+    ├── Workshop/                  # SteamCMD 下载的 Workshop 内容（★ 实际加载在 Workshop/Steam/content/，DedicatedUGC.cs:560）
     ├── Bundles/Workshop/          # 手动放的 .unity3d 包
     └── Logs/                      # 面板 tail 的日志目录
 ```
@@ -129,19 +129,18 @@ Loadout 255/1100/1101
 > **AppID 分工**：`app_update` 安装/更新用 `1110390`（服务端工具）；`workshop_download_item`、content 目录、acf 清单、WebAPI 搜索（`QueryFiles` / `GetDetails`）用 `304930`（游戏本体——workshop 内容归属它，1110390 名下无 workshop，误用只能拿到元数据缓存、拿不到内容）。
 
 - **下载新 Mod（不在 File_IDs 或未加载）**：SteamCMD 下载到 **staging 目录**，U3DS **可继续运行**。
-  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/Steam/steamapps/workshop/content/304930/`，**不扫描 staging**）
+  - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/Steam/content/304930/`，**不扫描 staging**）
   - 命令：`steamcmd +force_install_dir <Servers/<ID>/Workshop/staging> +login anonymous +workshop_download_item 304930 <id1> <id2> ... +quit`
   - 进度经 `steamcmd_progress` 事件推送；下载锁与 `activeOperation` 竞态门控合并。
-- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/Steam/steamapps/workshop/content/304930/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
+- **应用（生效）必须停服**：把 staging 内容移入 `Workshop/Steam/content/304930/` 并改 `File_IDs` 后，**必须走下方重启流水线**。Unturned 无热重载（U3-SDK Issues #1794）。
 - **validate / 更新已启用 Mod / 更新 U3DS 二进制**：**必须停服**（写入运行中服务端直接读取的位置，覆盖已加载文件有风险）。
 - staging 下载完成后，其中的 `appworkshop_304930.acf` 可用于「已下载 Mod 清单」核对（参考 `claudedocs/research_dst_mod_reference_2026-08-08.md`）。
 
-### 旧版面板升级须知
+### 旧版 `WorkshopDownloadConfig.json` 位置纠正
 
-旧版面板内容在缺 `Steam/` 层的位置，升级后纠正命令（停服后执行）：
+旧版面板 `WorkshopDownloadConfig.json` 写在 `Server/` 子目录，U3DS 不读——纠正到 ServerID 根（停服后执行）：
 
 ```bash
-mv Servers/<ID>/Workshop/steamapps Servers/<ID>/Workshop/Steam/steamapps
 mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownloadConfig.json
 ```
 

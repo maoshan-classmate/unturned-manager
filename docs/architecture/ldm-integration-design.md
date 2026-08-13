@@ -21,7 +21,7 @@
 
 | 维度                                                                | 状态          | 真源文件                                                                                                                                           | 模块                                                                                                |
 | ------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Steam Workshop 资源包**（unity3d 数据包：地图/武器/皮肤/UI）      | ✅ 已实现     | `WorkshopDownloadConfig.json` + `appworkshop_304930.acf` + `Workshop/Steam/steamapps/workshop/content/304930/<id>/`                                | `WorkshopMetadataService` / `WorkshopAcfService` / `WorkshopApplyService` / `WorkshopDeleteService` |
+| **Steam Workshop 资源包**（unity3d 数据包：地图/武器/皮肤/UI）      | ✅ 已实现     | `WorkshopDownloadConfig.json` + `appworkshop_304930.acf` + `Workshop/Steam/content/304930/<id>/`                                | `WorkshopMetadataService` / `WorkshopAcfService` / `WorkshopApplyService` / `WorkshopDeleteService` |
 | **LDM 插件框架**（代码级 .dll 插件：经济系统/权限/反作弊/地图机制） | ❌ **未实现** | `Servers/<ID>/Rocket/Rocket.config.xml` + `Servers/<ID>/Rocket/Plugins/<Name>.dll` + `Servers/<ID>/Rocket/Plugins/<Name>/<Name>.configuration.xml` | 无（commit c5f2ac8 删了 OpenMod/RocketMod 残留）                                                    |
 
 **用户拍板**（2026-08-12 Serena 记忆 `session-checkpoint-2026-08-12-ldm-framework.md`）：
