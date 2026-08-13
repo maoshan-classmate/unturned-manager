@@ -1,21 +1,22 @@
-import { NavLink, useParams } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Terminal,
   Settings,
   Package,
   FolderOpen,
-  Key,
   Rocket,
   Zap,
-  ChevronDown,
-  User,
   Puzzle,
+  Plus,
+  User,
 } from "lucide-react";
 import { useServer } from "../../hooks/useServer.js";
+import { useCurrentServer } from "../../contexts/CurrentServerContext.js";
+import { ServerSelector } from "./ServerSelector.js";
 
 /**
- * Figma 5:29 Sidebar — 1:1 复刻
+ * Figma 5:29 Sidebar — 1:1 复刻。
  *
  * Layout (260×900, bg #020617):
  *   [24,20]  UNTURNED MANAGER          12px Regular emerald-500 UPPERCASE
@@ -25,42 +26,46 @@ import { useServer } from "../../hooks/useServer.js";
  *   ...40px vertical rhythm...
  *   [24,460] ─── divider 212×1 #1E293B ───
  *   [24,480] 👤 管理员                  13px Regular text-secondary
+ *
+ * 行为要点（sc:design 第 6 阶段）：
+ *   - 八个菜单标签永远渲染、永远能点
+ *   - 路由表已重排到纯路径，侧栏不再拼接前缀
+ *   - 实例类四个菜单（控制台 / 配置 / 模组 / Mod 框架）在未选实例时右侧显示「去新建」引导按钮
+ *   - 文件菜单归全局级（不依赖具体实例），不带引导
  */
-
 interface NavItem {
   to: string;
   icon: typeof LayoutDashboard;
   label: string;
+  /** 是否依赖具体实例；true 时未选实例显示引导按钮 */
+  requiresServer: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/", icon: LayoutDashboard, label: "仪表盘" },
-  { to: "/console", icon: Terminal, label: "控制台" },
-  { to: "/config/commands", icon: Settings, label: "配置" },
-  { to: "/mods", icon: Package, label: "模组" },
-  { to: "/ldm", icon: Puzzle, label: "Mod 框架" },
-  { to: "/files", icon: FolderOpen, label: "文件" },
-  { to: "/server-setup", icon: Rocket, label: "服务器设置" },
-  { to: "/settings", icon: Zap, label: "系统设置" },
+  { to: "/", icon: LayoutDashboard, label: "仪表盘", requiresServer: false },
+  { to: "/console", icon: Terminal, label: "控制台", requiresServer: true },
+  { to: "/config/commands", icon: Settings, label: "配置", requiresServer: true },
+  { to: "/mods", icon: Package, label: "模组", requiresServer: true },
+  { to: "/ldm", icon: Puzzle, label: "Mod 框架", requiresServer: true },
+  { to: "/files", icon: FolderOpen, label: "文件", requiresServer: false },
+  { to: "/server-setup", icon: Rocket, label: "服务器设置", requiresServer: false },
+  { to: "/settings", icon: Zap, label: "系统设置", requiresServer: false },
 ] as const;
 
 export function Sidebar() {
-  const { serverId } = useParams();
+  const { currentServerId } = useCurrentServer();
   const { servers } = useServer();
 
-  // 选真实服务端：URL 上的 serverId 在列表里 → 用它；否则回退到列表第一个；
-  // 都没有 → prefix=null（依赖服务端标识的菜单全部禁用）
+  // 当前选中实例是否有效（在列表里）
   const validIds = new Set(servers.map((s) => s.id));
-  const activeId =
-    serverId && validIds.has(serverId) ? serverId : servers[0]?.id;
-  const prefix = activeId ? `/${activeId}` : null;
+  const isReady = currentServerId !== null && validIds.has(currentServerId);
 
   return (
     <aside
       className="flex h-screen w-[260px] shrink-0 flex-col select-none"
       style={{ backgroundColor: "#020617" }}
     >
-      {/* ── Logo (Figma: x=24, y=20, 12px Inter Regular emerald-500 UPPERCASE) ── */}
+      {/* ── Logo ── */}
       <div className="px-6 pt-5">
         <span
           className="text-xs font-normal tracking-normal"
@@ -70,53 +75,19 @@ export function Sidebar() {
         </span>
       </div>
 
-      {/* ── Server Selector (Figma: chevron-down 16px + "MyServer ● 在线" 12px, y=48) ── */}
-      <button
-        type="button"
-        className="flex items-center gap-2 px-6 mt-3 text-xs font-normal hover:opacity-80 transition-opacity"
-        style={{ color: "#94A3B8" }}
-        aria-label="切换服务器"
-      >
-        <ChevronDown size={16} />
-        <span className="flex items-center gap-1.5">
-          MyServer
-          <span
-            className="inline-block h-2 w-2 rounded-full shrink-0"
-            style={{ backgroundColor: "#22C55E" }}
-            aria-hidden="true"
-          />
-          <span>在线</span>
-        </span>
-      </button>
+      {/* ── 服务器选择器（取代旧的假按钮）── */}
+      <ServerSelector />
 
-      {/* ── Navigation (Figma: 9 items, y=80→420, 40px rhythm, 14px Regular) ── */}
+      {/* ── 导航 ── */}
       <nav className="mt-2">
-        {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-          // Dashboard 始终指向根路由；其他菜单需要 prefix（无服务端时禁用）
-          const needsServer = to !== "/";
-          const disabled = needsServer && prefix === null;
-          const fullTo = !needsServer
-            ? "/"
-            : prefix
-              ? `${prefix}${to}`
-              : "#";
-          return (
+        {NAV_ITEMS.map(({ to, icon: Icon, label, requiresServer }) => (
+          <div key={to} className="flex items-center">
             <NavLink
-              key={to}
-              to={fullTo}
+              to={to}
               end={to === "/"}
-              onClick={(e) => {
-                if (disabled) e.preventDefault();
-              }}
-              aria-disabled={disabled}
-              tabIndex={disabled ? -1 : undefined}
               className={({ isActive }) =>
-                `relative flex items-center h-[40px] px-6 text-sm font-normal transition-colors ${
+                `relative flex items-center h-[40px] px-6 text-sm font-normal transition-colors flex-1 ${
                   isActive ? "" : "hover:text-slate-200"
-                }${
-                  disabled
-                    ? " opacity-40 pointer-events-none cursor-not-allowed"
-                    : ""
                 }`
               }
               style={({ isActive }) => ({
@@ -125,7 +96,6 @@ export function Sidebar() {
             >
               {({ isActive }) => (
                 <>
-                  {/* Active indicator: 3×22px left bar emerald-500 (Figma 5:25) */}
                   <span
                     className="absolute left-0 top-1/2 -translate-y-1/2 h-[22px] transition-colors"
                     style={{
@@ -139,17 +109,34 @@ export function Sidebar() {
                 </>
               )}
             </NavLink>
-          );
-        })}
+
+            {/* 实例类菜单未选实例时右侧显示引导按钮（sc:design §6 第 6 批） */}
+            {requiresServer && !isReady && (
+              <Link
+                to="/server-setup"
+                aria-label={`引导创建实例——${label}`}
+                className="mr-3 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-normal transition-colors hover:opacity-90"
+                style={{
+                  backgroundColor: "#22C55E20",
+                  color: "#22C55E",
+                  border: "1px solid #22C55E40",
+                }}
+              >
+                <Plus size={10} aria-hidden="true" />
+                去新建
+              </Link>
+            )}
+          </div>
+        ))}
       </nav>
 
-      {/* ── Divider (Figma: x=24, y=460, 212×1, #1E293B) ── */}
+      {/* ── Divider ── */}
       <div
         className="mx-6 h-px shrink-0 mt-[20px] mb-[19px]"
         style={{ backgroundColor: "#1E293B" }}
       />
 
-      {/* ── User (Figma: icon/user 16px + "管理员" 13px Regular, y=480) ── */}
+      {/* ── User ── */}
       <div
         className="flex items-center gap-2 px-6 h-[40px] shrink-0 text-[13px] font-normal"
         style={{ color: "#94A3B8" }}
@@ -158,7 +145,6 @@ export function Sidebar() {
         <span>管理员</span>
       </div>
 
-      {/* Spacer: pushes nav+divider+user to top, empty space below (Figma: y≈500–900空白) */}
       <div className="flex-1" />
     </aside>
   );
