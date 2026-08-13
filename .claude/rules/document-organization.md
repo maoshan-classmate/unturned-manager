@@ -74,3 +74,7 @@
 - ❌ 归档文件保留在非 archive 目录
 - ❌ 在非 `.claude/rules/` 位置创建铁律文件
 - ❌ 在 `claudedocs/` 根目录长期保留已完成使命的调研报告
+
+## 不维护历史信息
+
+适用范围 `.claude/rules/*.md` 与 `claudedocs/reference_*.md`：只写当前事实——打开就懂当前是什么状态、该怎么用。

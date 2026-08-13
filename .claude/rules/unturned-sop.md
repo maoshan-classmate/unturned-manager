@@ -29,7 +29,7 @@ Servers/
 
 ## 安装 + 启动
 
-### 单服模式（Phase 1 — 当前）
+### 单服模式
 
 ```bash
 # SteamCMD 安装（幂等、匿名、AppID 1110390）
@@ -47,7 +47,7 @@ sudo apt-get install -y mono-complete lib32gcc-s1
 
 `ExampleServer.sh` 是 U3DS 自带的默认启动脚本（SteamCMD 安装后自动生成），对应 `Servers/Default/` 这个 ServerID。**参考**：GSM3 单服模式也走同一条路径（`.research/GameServerManager` 配套文档）。
 
-### 多实例模式（Phase 5+ — 后续扩展）
+### 多实例模式
 
 ```bash
 # 启动一个命名的服
@@ -126,7 +126,7 @@ Loadout 255/1100/1101
 
 > 依据：U3-SDK `WorkshopDownloadConfig.Use_Cached_Downloads`——服务端**只在启动时**加载已安装 Mod（`content/304930/`），运行中不重扫目录；`Should_Monitor_Updates` 官方行为 = 检测到更新 → 广播 → **关服应用**。即：**下载≠生效**，下载可不停服，生效必须重启。
 
-> **AppID 分工（2026-08-11 实机教训，钉死）**：`app_update` 安装/更新用 `1110390`（服务端工具）；`workshop_download_item`、content 目录、acf 清单、WebAPI 搜索（`QueryFiles` / `GetDetails`）用 `304930`（游戏本体——workshop 内容归属它，1110390 名下无 workshop，误用只能拿到元数据缓存、拿不到内容）。
+> **AppID 分工**：`app_update` 安装/更新用 `1110390`（服务端工具）；`workshop_download_item`、content 目录、acf 清单、WebAPI 搜索（`QueryFiles` / `GetDetails`）用 `304930`（游戏本体——workshop 内容归属它，1110390 名下无 workshop，误用只能拿到元数据缓存、拿不到内容）。
 
 - **下载新 Mod（不在 File_IDs 或未加载）**：SteamCMD 下载到 **staging 目录**，U3DS **可继续运行**。
   - staging 目录：`Servers/<ID>/Workshop/staging/`（U3DS 只 mount `Workshop/Steam/steamapps/workshop/content/304930/`，**不扫描 staging**）
@@ -136,7 +136,7 @@ Loadout 255/1100/1101
 - **validate / 更新已启用 Mod / 更新 U3DS 二进制**：**必须停服**（写入运行中服务端直接读取的位置，覆盖已加载文件有风险）。
 - staging 下载完成后，其中的 `appworkshop_304930.acf` 可用于「已下载 Mod 清单」核对（参考 `claudedocs/research_dst_mod_reference_2026-08-08.md`）。
 
-### 旧版面板升级须知（2026-08-13）
+### 旧版面板升级须知
 
 旧版面板内容在缺 `Steam/` 层的位置，升级后纠正命令（停服后执行）：
 
@@ -146,10 +146,6 @@ mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownload
 ```
 
 ## 重启 / 改 Mod 流水线（唯一模式——没有热重载）
-
-> **v2.6 关键变更**：保存与重启解耦。原 `applyModChanges` 一站式流水线（备份 + 写 File_IDs + PTY Save + Shutdown + 移动 staging + 再拉起）已删除。现分为两步：
-> 1. **保存** = 仅写 File_IDs（运行时安全，U3DS 只在启动时读）
-> 2. **生效** = 用户手动「重启」触发 ServerManager.startInternal，在 U3DS STOPPED 时自动 applyStaged
 
 ```
 【第一步：保存 Mod 列表（仅写 File_IDs）】
@@ -174,8 +170,6 @@ mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownload
   └─ ④ U3DS 启动，读到 content 新内容 → 新 Mod 生效
 ```
 
-**关键不变量**：U3DS 启动时必然 STOPPED（startInternal 守卫天然保证），staging → content 移动零冲突。
-
 ## 服务端状态机
 
 ```
@@ -185,19 +179,19 @@ STOPPED → STARTING → RUNNING → STOPPING → STOPPED（循环，4 态）
 
 `activeOperation` 字段防止"用户点自动重启同时点手动重启"的竞态。
 
-> 状态机完全由 PTY 进程的 spawn/exit 驱动，无 A2S / RCON / DEGRADED 维度（ADR-0004 §3.3 + Phase 6）。
+> 状态机完全由 PTY 进程的 spawn/exit 驱动，无 A2S / RCON / DEGRADED 维度（ADR-0004 §3.3）。
 
 ## Steam Workshop Mod 元数据获取
 
 - **主路径（推荐）**：Steam WebAPI `IPublishedFileService/GetDetails/v1`（详情/批量）+ `QueryFiles/v1`（搜索），**需要 WebAPI Key**（用户 Steam 账号免费申请，Settings 配置）。
-- **旧路径已废弃**：`?xml=1` 零凭证接口 **2026-08 实测返回 HTML 而非 XML**，不再可用（证据见 `claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1）。
+- **零凭证备选不可用**：`?xml=1` 接口实测返回 HTML 而非 XML（不再可用，证据见 `claudedocs/research_dst_mod_reference_2026-08-08.md` §5.1）。
 - **不做**：GameServerUGC 接口（安全成本太高）。
 
 ## 实时控制台
 
 - 后端 tail 两路：日志文件 `Servers/<ID>/Logs/*.log` + spawn 子进程 stdout
-- 通过 `ws` **双向**：出站 `console_line` 推送输出 + 入站 `terminal_input` 写入 PTY stdin（ADR-0004 Phase 3）
-- 前端命令经 WS `terminal_input` 直达 PTY 终端——owner-trust 模型（登录即可执行任意命令，ADR-0004 Phase 6 删 RCON 后为唯一通道）；危险指令由前端卡片拦截
+- 通过 `ws` **双向**：出站 `console_line` 推送输出 + 入站 `terminal_input` 写入 PTY stdin
+- 前端命令经 WS `terminal_input` 直达 PTY 终端——owner-trust 模型（登录即可执行任意命令）；危险指令由前端卡片拦截
 
 ---
 
@@ -205,7 +199,7 @@ STOPPED → STARTING → RUNNING → STOPPING → STOPPED（循环，4 态）
 
 > 完整设计：`docs/architecture/ldm-integration-design.md` + 决策：`docs/adr/0006-ldm-framework-integration.md`
 > 真源：[github.com/SmartlyDressedGames/Legally-Distinct-Missile](https://github.com/SmartlyDressedGames/Legally-Distinct-Missile)
-> 选型决策：本项目**只采用 LDM**（OpenMod / RocketMod 已删，commit c5f2ac8）
+> 选型决策：本项目**只采用 LDM**
 
 ### 一个 ServerID 的 LDM 目录布局
 
@@ -241,7 +235,7 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 # ⑤ 编辑配置 → 应用变更 → 面板走 PTY 终端 owner-trust 重启流水线
 ```
 
-> **激活检测点**（2026-08-12 游戏 Extras 实文件核对）：`Modules/Rocket.Unturned/Rocket.Unturned.module` 存在 = LDM 已激活（Unity 模块清单，声明 3 个 Server 程序集 + 版本）。面板可用「该文件存在性 + `/modules` 命令输出」双确认；`.module` 里的 `Version` 即 LDM 主框架版本（游戏 Extras 实测 `4.9.3.18`）。
+> **激活检测点**（游戏 Extras 实文件核对）：`Modules/Rocket.Unturned/Rocket.Unturned.module` 存在 = LDM 已激活（Unity 模块清单，声明 3 个 Server 程序集 + 版本）。面板可用「该文件存在性 + `/modules` 命令输出」双确认；`.module` 里的 `Version` 即 LDM 主框架版本。
 
 ### 关键约束
 
@@ -252,7 +246,7 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 | **多实例隔离**                         | `Modules/Rocket.Unturned/` 全 U3DS 共享一份；`Servers/<ID>/Rocket/` 每实例独立（真源：`Rocket/Rocket.Core/Environment.cs` `RocketDirectory = "Servers/{0}/Rocket/"` + `U.Instance.InstanceId = Dedicator.serverID = +InternetServer/<ID>`） |
 | **LDM 插件不上 Steam Workshop**        | 走 GitHub Releases + LDM-Community；Workshop Asset Type 只有 Map/Item/Vehicle/Skin/Object/Localization/Server Curation 7 类                                                                                                                 |
 | **改配置生效 = 重启**                  | LDM 无官方热重载（U3-SDK Issue #1794）；走 ADR-0004 §重启流水线（Save + Shutdown 10 + forceKill + spawn）                                                                                                                                   |
-| **不暴露 `/rocket reload`（全局）**    | LDM 官方已删；prohibitions.md 钉死；提示 "Please reload individual plugins instead"                                                                                                                                                         |
+| **不暴露 `/rocket reload`（全局）**    | prohibitions.md 钉死；提示 "Please reload individual plugins instead"                                                                                                                                                         |
 | **单插件 reload 不保证成功**           | `/rocket reload <plugin>` 暴露但加警告                                                                                                                                                                                                      |
 | **不接管 .dll 编译/分发**              | 二进制风险；编译/分发不是面板职责                                                                                                                                                                                                           |
 | **不接管全局 `rocket reload`**         | 钉死                                                                                                                                                                                                                                        |
