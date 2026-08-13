@@ -605,10 +605,14 @@ interface VdfObject {
 
 ```typescript
 class WorkshopApplyService implements IWorkshopApplyService {
+  // staging = SteamCMD +force_install_dir 输出结构（steamapps/workshop/content/<appid>/）；
+  // content  = U3DS DedicatedUGC.cs:560 mount 位置（Steam/content/<appid>/，无 steamapps/workshop 子层）。
+  // 两路径**故意不对称**——历史踩坑：旧实现臆造 Steam/steamapps/workshop/content/304930/ 5 段路径
+  // 把 staging 推到错误位置，U3DS 读不到 → 客户端「创意工坊：禁用」。
   async applyStaged(serverId: ServerId): Promise<void> {
     const stagingDir = path.join(this.installRoot, 'Servers', serverId, 'Workshop', 'staging');
-    const contentDir = path.join(this.installRoot, 'Servers', serverId, 'Workshop', 'steamapps', 'workshop', 'content', U3DS_APPID);
-    const acfPath = path.join(this.installRoot, 'Servers', serverId, 'Workshop', 'steamapps', 'workshop', `appworkshop_${U3DS_APPID}.acf`);
+    const contentDir = path.join(this.installRoot, 'Servers', serverId, 'Workshop', 'Steam', 'content', U3DS_APPID);
+    const acfPath = path.join(this.installRoot, 'Servers', serverId, 'Workshop', 'Steam', `appworkshop_${U3DS_APPID}.acf`);
 
     // ① 备份 acf
     const acfBackupPath = await this.acfService.backup(serverId);
@@ -718,7 +722,7 @@ async deleteMod(serverId: ServerId, fileId: WorkshopFileId): Promise<void> {
     // ③ 删 content/<id>/ 目录
     const contentDir = path.join(
       this.installRoot, 'Servers', serverId,
-      'Workshop', 'steamapps', 'workshop', 'content',
+      'Workshop', 'Steam', 'content',
       U3DS_APPID, fileId,
     );
     if (fs.existsSync(contentDir)) {

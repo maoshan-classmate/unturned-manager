@@ -123,7 +123,7 @@ steamcmd/steamcmd.sh +force_install_dir <dmp_files>/mods/ugc/<cluster>
 | 元数据搜索 | `QueryFiles/v1` + requiredtags | 替换现有本地 LIKE `searchMods`；Unturned 无官方 mod tag，可先不做 requiredtags 过滤 | ⭐⭐⭐ |
 | 元数据详情 | `GetDetails/v1`（批量） | 替换 `getModDetails` 的 XML 解析；补批量端点供已下载列表补全 | ⭐⭐⭐ |
 | 下载 | SteamCMD `workshop_download_item 322330` 临时区+复制 | 改 AppID **`304930`**（游戏本体，非服务端 `1110390`——2026-08-11 实机修正），**下载到 staging 不停服；应用（移动进 content + 改 File_IDs）必须重启**（见 §5.3 修正，已落盘 `unturned-sop.md`） | ⭐⭐ |
-| 已下载状态 | 目录扫描 + `appworkshop_322330.acf` 解析 | 目录 `Servers/<ID>/Workshop/steamapps/workshop/content/304930/*` + `appworkshop_304930.acf`；acf 解析器可移植（Node 需 VDF 解析库或自写） | ⭐⭐⭐ |
+| 已下载状态 | 目录扫描 + `appworkshop_322330.acf` 解析 | 目录 `Servers/<ID>/Workshop/Steam/content/304930/*` + `Workshop/Steam/appworkshop_304930.acf`；acf 解析器可移植（Node 需 VDF 解析库或自写） | ⭐⭐⭐ |
 | 启用/禁用 | `modoverrides.lua` 键增删 | `WorkshopDownloadConfig.json` 的 `File_IDs` 增删（面板只写 `File_IDs`，其余只读，已有 `writeWorkshopFileIds`） | ⭐⭐（机制对应，文件不同） |
 | mod 配置 | `modinfo.lua` schema → `modoverrides.lua` | **Unturned 无对应物** → 改为「LDM 插件 Configuration.xml」编辑（ConfigService 原子写支持，LDM 接入后前端补 Mod 框架页） | ⚠️ 差异化 |
 | 并发控制 | `atomic` 计数器 + mutex | 复用本项目 `activeOperation` 竞态门控 | ⭐ |
@@ -169,7 +169,7 @@ steamcmd/steamcmd.sh +force_install_dir <dmp_files>/mods/ugc/<cluster>
 | # | 事项 | 影响 | 验证方法 |
 |---|---|---|---|
 | 1 | `appworkshop_304930.acf` 是否由 SteamCMD 下载 Workshop 内容时自动生成、格式是否与 DST 一致 | acf 方案是否成立 | ✅ 已确认：`workshop_download_item 304930 <id>`（非 `1110390`）后自动生成，格式一致 |
-| 2 | U3DS 是否消费 `Workshop/steamapps/workshop/appworkshop_304930.acf`（校验/清理孤儿） | 面板是否需要自己维护 acf | U3-SDK `WorkshopDownloadConfig.cs` 上下文 + 实机观察 |
+| 2 | U3DS 是否消费 `Workshop/Steam/appworkshop_304930.acf`（校验/清理孤儿） | 面板是否需要自己维护 acf | U3-SDK `WorkshopDownloadConfig.cs` 上下文 + 实机观察 |
 | 3 | Unturned Workshop mod 是否有统一元数据字段（如 GameMode）供 `requiredtags` 过滤 | 搜索过滤策略 | WebAPI Key 申请后实测 `QueryFiles` 返回 |
 | 4 | WebAPI Key 方案在国内网络稳定性 | 是否需降级缓存 | 实机多 Mod 拉取测试 |
 
