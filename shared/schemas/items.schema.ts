@@ -23,7 +23,7 @@ export const CreateItemSchema = z.object({
     .min(0, '物品 ID 需在 0–65535 之间')
     .max(65535, '物品 ID 需在 0–65535 之间'),
   name: z.string().min(1, '名称不能为空').max(64, '名称不能超过 64 字'),
-  label: z.string().max(64, '显示名不能超过 64 字').optional(),
+  label: z.string().max(64, '显示名不能超过 64 字').nullable().optional(),
 });
 export type CreateItemInput = z.infer<typeof CreateItemSchema>;
 
@@ -37,7 +37,7 @@ export const UpdateItemSchema = z
       .max(65535, '物品 ID 需在 0–65535 之间')
       .optional(),
     name: z.string().min(1, '名称不能为空').max(64, '名称不能超过 64 字').optional(),
-    label: z.string().max(64, '显示名不能超过 64 字').optional(),
+    label: z.string().max(64, '显示名不能超过 64 字').nullable().optional(),
   })
   .refine(
     (d) => d.id !== undefined || d.name !== undefined || d.label !== undefined,

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import type { IConfigService } from '@unturned-manager/shared';
 import {
   WriteCommandsDatSchema,
@@ -26,10 +27,18 @@ export function createConfigRouter(configService: IConfigService): Router {
     '/:id/config/commands',
     validate(WriteCommandsDatSchema),
     asyncHandler(async (req, res) => {
-      const body = req.body as { known: Record<string, string>; unknown: Record<string, string>; comments: string[]; expectedMtime?: number };
+      // ★ 2026-08-14 修复：body 用 schema 推断类型而非手写 cast——手写 cast 漏掉
+      // loadouts 字段导致「保存配置后 Loadout 未写入 Commands.dat」。schema 有该字段，
+      // 透传后才不会静默丢失。
+      const body = req.body as z.infer<typeof WriteCommandsDatSchema>;
       await configService.writeCommandsDat(
         req.params.id as never,
-        { known: body.known, unknown: body.unknown, comments: body.comments ?? [] },
+        {
+          known: body.known,
+          unknown: body.unknown,
+          comments: body.comments ?? [],
+          loadouts: body.loadouts,
+        },
         body.expectedMtime,
       );
       res.json({ data: { message: 'Commands.dat 已保存' } });
