@@ -503,7 +503,7 @@ export class ServerManager implements IServerManager {
       pid = entry.ptyPid ?? 0;
       logger.info({ serverId, pid }, "PTY bash 已存在，直接塞启动命令");
       this.pipePtyOutput(id); // 保险：onData 幂等（PtyManager exit 后清了 callbacks）
-      this.ptyManager.write(id, `${startCommand}\r`);
+      this.ptyManager.write(id, `${startCommand}\n`);
       this.transition(serverId, ServerState.RUNNING);
     } else {
       // 首次：spawn 永驻 bash（cwd=installDir）
@@ -562,7 +562,7 @@ export class ServerManager implements IServerManager {
         if (entry.sessionEpoch !== epoch) return; // 过期 timer（本会话已结束）
         if (entry.state !== ServerState.STARTING) return; // 已被 stop/forceStop 中断
         if (!this.ptyManager.isRunning(id)) return;
-        this.ptyManager.write(id, `${startCommand}\r`);
+        this.ptyManager.write(id, `${startCommand}\n`);
         this.transition(id, ServerState.RUNNING);
       }, START_COMMAND_DELAY);
     }
@@ -616,8 +616,8 @@ export class ServerManager implements IServerManager {
 
     // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径——Phase 6 替代原 RCON.execute）
     try {
-      this.ptyManager.write(serverId, "Save\r");
-      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\r`);
+      this.ptyManager.write(serverId, "Save\n");
+      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\n`);
     } catch {
       /* PTY 可能已死——fallthrough 到 ctrl+c 强杀 */
     }
@@ -627,7 +627,7 @@ export class ServerManager implements IServerManager {
 
     // ③ 写 exit 尽力关 bash（U3DS 已退、bash 回提示符时命中；否则被 U3DS stdin 吞掉，
     //    由 ④ waitExit 超时 forceKill 兜底）
-    this.ptyManager.write(serverId, "exit\r");
+    this.ptyManager.write(serverId, "exit\n");
 
     // ④ 等 bash 退出（30s 超时 → forceKill）
     const exited = await this.ptyManager.waitExit(serverId, SHUTDOWN_TIMEOUT);

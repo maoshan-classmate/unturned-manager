@@ -105,7 +105,7 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
       try {
         // 4. 写命令
         try {
-          this.pty.write(serverId, `/rocket ${verb} ${pluginName}\r`);
+          this.pty.write(serverId, `/rocket ${verb} ${pluginName}\n`);
         } catch {
           throw new AppError("pty-write-failed", "PTY 写入失败", 500);
         }

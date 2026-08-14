@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Save,
   Power,
-  Unplug,
 } from "lucide-react";
 import { useServer } from "../hooks/useServer.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
@@ -92,16 +91,13 @@ function ConsoleContent({ serverId }: { serverId: string }) {
     sendTerminalInput,
     save,
     shutdown,
-    closeTerminal,
   } = useConsole(serverId);
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [showConfirm, setShowConfirm] = useState("");
   // ★ ws-wrapper-design §6 阶段 4：ACK 操作的确认弹窗 + 进行中状态
-  const [confirmAction, setConfirmAction] = useState<
-    "shutdown" | "closeTerminal" | null
-  >(null);
+  const [confirmAction, setConfirmAction] = useState<"shutdown" | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const commandHistory = useRef<string[]>([]);
@@ -154,9 +150,9 @@ function ConsoleContent({ serverId }: { serverId: string }) {
   );
 
   /** 关闭控制台进程（ACK）——核选项：服务端进程被终止且不自动存档 */
-  const handleCloseTerminal = useCallback(() => {
-    void runAck("closeTerminal", closeTerminal, "控制台已关闭");
-  }, [runAck, closeTerminal]);
+  // ★ 2026-08-14 移除：「关闭控制台」按钮已删除。理由：U3DS 服务进程就是 PTY 终端
+  // owner——终止它等于停服，与「关服」功能重复且更危险（不存档不倒计时）。
+  // 若 PTY 真卡死，运维应去宿主机排查而非面板提供更激进的终止路径。
 
   // 发送命令（ADR-0004 Phase 6：RCON 通道已删——sendCommand 经 WS terminal_input 写入 PTY）
   const handleSend = useCallback(
@@ -382,21 +378,6 @@ function ConsoleContent({ serverId }: { serverId: string }) {
           关服
         </button>
         <button
-          onClick={() => setConfirmAction("closeTerminal")}
-          disabled={pendingAction !== null}
-          className="flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors disabled:opacity-50"
-          style={{
-            backgroundColor: "#EF444420",
-            color: "#EF4444",
-            border: "1px solid #EF444440",
-          }}
-          title="控制台卡死时的核选项：直接终止控制台进程（服务端停止且不自动存档）"
-        >
-          <AlertTriangle size={11} />
-          <Unplug size={12} />
-          关闭控制台
-        </button>
-        <button
           onClick={clearLines}
           className="flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors"
           style={{
@@ -471,19 +452,6 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         onConfirm={() => {
           setConfirmAction(null);
           handleShutdown(DEFAULT_SHUTDOWN_DELAY_S);
-        }}
-        onCancel={() => setConfirmAction(null)}
-      />
-      <ConfirmDialog
-        open={confirmAction === "closeTerminal"}
-        title="关闭控制台确认"
-        message="将直接终止控制台进程，服务端停止且不会自动保存世界数据。仅当控制台卡死时才使用。确认关闭？"
-        confirmLabel="确认关闭"
-        variant="danger"
-        icon={Unplug}
-        onConfirm={() => {
-          setConfirmAction(null);
-          handleCloseTerminal();
         }}
         onCancel={() => setConfirmAction(null)}
       />
