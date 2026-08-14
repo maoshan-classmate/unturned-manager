@@ -122,13 +122,14 @@ export function LoadoutItemDialog({
   }, [activeIndex]);
 
   /**
-   * 提交一个物品 ID 为标签（重复忽略）。
+   * 提交一个物品 ID 为标签——允许重复（U3DS `Loadout 0/1100/1100/1100` 合法；
+   * 后端 schema/序列化天然支持；重复时标签旁显示「×N」徽章）。
    * @param id - 物品 ID
    * @param keepView - true = 点击添加：保持当前过滤/高亮/滚动，不跳回顶部（多选连续点）；
    *   false = 键盘回车提交：清空输入框重新开始
    */
   const addTag = (id: number, keepView = false) => {
-    setTags((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setTags((prev) => [...prev, id]);
     if (!keepView) {
       setInputValue("");
       setActiveIndex(0);
@@ -206,23 +207,48 @@ export function LoadoutItemDialog({
               暂无物品——在下框搜索或输入物品 ID 添加
             </span>
           ) : (
-            tags.map((id, idx) => (
-              <span
-                key={`${id}-${idx}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-200"
-              >
-                <span>{id}</span>
-                <span className="text-slate-400">{resolveName(id)}</span>
-                <button
-                  type="button"
-                  onClick={() => setTags((prev) => prev.filter((_, i) => i !== idx))}
-                  className="text-slate-400 hover:text-red-500"
-                  aria-label={`移除物品 ${id}`}
-                >
-                  <X size={10} />
-                </button>
-              </span>
-            ))
+            (() => {
+              // 按 id 统计出现次数（保持原顺序）——首个出现位置显示完整标签 + 数量徽章
+              const counts = new Map<number, number>();
+              for (const id of tags) {
+                counts.set(id, (counts.get(id) ?? 0) + 1);
+              }
+              const seen = new Set<number>();
+              return tags.map((id, idx) => {
+                if (seen.has(id)) return null;
+                seen.add(id);
+                const count = counts.get(id) ?? 1;
+                return (
+                  <span
+                    key={`${id}-${idx}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-200"
+                  >
+                    <span>{id}</span>
+                    <span className="text-slate-400">{resolveName(id)}</span>
+                    {count > 1 && (
+                      <span
+                        data-testid="loadout-count-badge"
+                        className="px-1 rounded bg-emerald-500/20 text-emerald-400 font-sans"
+                      >
+                        ×{count}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 移除该 id 的所有出现
+                        const removedId = id;
+                        setTags((prev) => prev.filter((x) => x !== removedId));
+                      }}
+                      className="text-slate-400 hover:text-red-500"
+                      aria-label={`移除物品 ${id}`}
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                );
+              });
+            })()
           )}
         </div>
 

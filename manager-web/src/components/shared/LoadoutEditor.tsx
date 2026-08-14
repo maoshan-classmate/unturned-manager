@@ -229,15 +229,32 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
                   ID {entry.skillsetId}
                 </span>
                 <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
-                  {entry.itemIds.map((id, i) => (
-                    <span
-                      key={`${id}-${i}`}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-400"
-                    >
-                      <span>{id}</span>
-                      <span>{resolveName(id)}</span>
-                    </span>
-                  ))}
+                  {(() => {
+                    const counts = new Map<number, number>();
+                    for (const id of entry.itemIds) {
+                      counts.set(id, (counts.get(id) ?? 0) + 1);
+                    }
+                    const seen = new Set<number>();
+                    return entry.itemIds.map((id, i) => {
+                      if (seen.has(id)) return null;
+                      seen.add(id);
+                      const count = counts.get(id) ?? 1;
+                      return (
+                        <span
+                          key={`${id}-${i}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-400"
+                        >
+                          <span>{id}</span>
+                          <span>{resolveName(id)}</span>
+                          {count > 1 && (
+                            <span className="px-1 rounded bg-emerald-500/20 text-emerald-400 font-sans">
+                              ×{count}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    });
+                  })()}
                 </div>
                 {!disabled && (
                   <div className="flex items-center gap-1 shrink-0">

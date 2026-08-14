@@ -36,7 +36,7 @@ function DialogTitle({ children }: { children: React.ReactNode }) {
 }
 
 function DialogFooter({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-center gap-2 justify-end">{children}</div>;
+  return <div className="flex items-center gap-2 justify-end mt-3">{children}</div>;
 }
 
 Dialog.Title = DialogTitle;
