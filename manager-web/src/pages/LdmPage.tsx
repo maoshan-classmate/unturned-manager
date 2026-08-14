@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Upload,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,6 +26,7 @@ import { Button } from "../components/ui/button.js";
 import { TabBar } from "../components/shared/TabBar.js";
 import { PageState } from "../components/shared/PageState.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
+import { InfoCard } from "../components/shared/InfoCard.js";
 import { Input } from "../components/ui/input.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
 import { formatSize, formatDate, errorMessage } from "../lib/utils.js";
@@ -162,6 +164,36 @@ function InstalledTab({ serverId }: { serverId: string }) {
     onError: (err) => toast.error(errorMessage(err, "操作失败")),
   });
 
+  // B1 上传 .dll → Rocket/Plugins/—— 走 Files API（POST /files/raw 原二进制）
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const { getAccessToken } = await import("../api/client.js");
+      const token = getAccessToken() ?? "";
+      const path = `Rocket/Plugins/${file.name}`;
+      const res = await fetch(
+        `/api/servers/${serverId}/files/raw?path=${encodeURIComponent(path)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/octet-stream",
+          },
+          body: file,
+        },
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      return { fileName: file.name };
+    },
+    onSuccess: ({ fileName }) => {
+      toast.success(`${fileName} 已上传，正在刷新列表`);
+      refetch();
+    },
+    onError: (err) => toast.error(`上传失败：${errorMessage(err)}`),
+  });
+
   return (
     <PageState
       loading={isLoading}
@@ -185,15 +217,21 @@ function InstalledTab({ serverId }: { serverId: string }) {
             <p className="text-xs" style={{ color: "#64748B" }}>
               共 {data.plugins.length} 个插件 · 检测于 {formatDate(data.detectedAtIso)}
             </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => refetch()}
-              disabled={isRefetching}
-            >
-              <RefreshCw size={14} className={isRefetching ? "animate-spin" : ""} />
-              刷新
-            </Button>
+            <div className="flex gap-2">
+              <UploadButton
+                disabled={uploadMutation.isPending}
+                onSelect={(file) => uploadMutation.mutate(file)}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => refetch()}
+                disabled={isRefetching}
+              >
+                <RefreshCw size={14} className={isRefetching ? "animate-spin" : ""} />
+                刷新
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {data.plugins.map((p) => (
@@ -265,6 +303,35 @@ function SourceTab({
     toast.success("PAT 已保存到本地");
   };
 
+  // 「上传到此实例」共用 uploadMutation（与 InstalledTab 同一 Files API 路径）
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const { getAccessToken } = await import("../api/client.js");
+      const token = getAccessToken() ?? "";
+      const path = `Rocket/Plugins/${file.name}`;
+      const res = await fetch(
+        `/api/servers/${_serverId}/files/raw?path=${encodeURIComponent(path)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/octet-stream",
+          },
+          body: file,
+        },
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      return { fileName: file.name };
+    },
+    onSuccess: ({ fileName }) => {
+      toast.success(`${fileName} 已上传，可切到「已装插件」Tab 加载`);
+    },
+    onError: (err) => toast.error(`上传失败：${errorMessage(err)}`),
+  });
+
   return (
     <div className="space-y-4">
       {/* PAT 配置卡（页面顶部固定） */}
@@ -299,6 +366,9 @@ function SourceTab({
         )}
       </div>
 
+      {/* 插件安装步骤说明卡（G5 决策 + B1/G3 落地 UX 引导） */}
+      <InstallStepsCard />
+
       <PageState
         loading={isLoading}
         error={error ? errorMessage(error) : null}
@@ -324,7 +394,12 @@ function SourceTab({
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {data.plugins.map((p) => (
-                <CommunityCard key={p.slug} plugin={p} />
+                <CommunityCard
+                  key={p.slug}
+                  plugin={p}
+                  uploading={uploadMutation.isPending}
+                  onUpload={(file) => uploadMutation.mutate(file)}
+                />
               ))}
             </div>
           </div>
@@ -431,9 +506,111 @@ function RuntimeStatusBadge({ status }: { status: InstalledPlugin["runtimeStatus
   );
 }
 
-// ─── 子组件：社区插件卡片 ─────────────────────────────────
+// ─── 子组件：上传 .dll 按钮 ──────────────────────────────
 
-function CommunityCard({ plugin: p }: { plugin: CommunityPlugin }) {
+/**
+ * 上传 .dll 按钮——点击弹出文件选择器，选中后回调 onSelect。
+ * 仅接受 .dll 扩展名（Linux 大小写敏感，B1 约束）。input 隐藏在 label 后面。
+ *
+ * @param props - 组件属性
+ * @param props.onSelect - 用户选中文件回调，传入原生 File 对象
+ * @param props.disabled - 上传中禁用
+ * @returns 上传按钮 + 隐藏 file input
+ */
+export function UploadButton({
+  onSelect,
+  disabled,
+}: {
+  onSelect: (file: File) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={`inline-flex items-center gap-1 rounded text-white transition-colors ${
+        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:opacity-90"
+      }`}
+      style={{
+        height: 32,
+        padding: "0 12px",
+        fontSize: 13,
+        backgroundColor: "#22C55E",
+        border: "none",
+      }}
+    >
+      <Upload size={14} />
+      上传 .dll
+      <input
+        type="file"
+        accept=".dll"
+        className="hidden"
+        disabled={disabled}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onSelect(file);
+          // 重置 input 允许同一文件再选
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
+// ─── 子组件：插件安装步骤说明卡 ─────────────────────────
+
+/**
+ * 插件安装步骤说明卡——告诉用户下载步骤 + 上传入口位置。
+ * 容器复用 components/shared/InfoCard；UX 决策：面板不自动下载 .dll（G5：二进制风险），
+ * 文件来自用户本地选择（B1/G3）。
+ *
+ * @returns 步骤说明卡 React 元素
+ */
+export function InstallStepsCard() {
+  return (
+    <InfoCard title="💡 插件安装步骤">
+      <ol className="space-y-1.5 list-decimal list-inside">
+        <li>在下方列表点「查看仓库」打开 GitHub Releases 页面</li>
+        <li>
+          下载需要的{" "}
+          <code
+            style={{ backgroundColor: "#0F172A", padding: "0 4px", borderRadius: 3 }}
+          >
+            .dll
+          </code>{" "}
+          文件（建议核对哈希值确认来源）
+        </li>
+        <li>回到本页「已装插件」Tab → 点「上传 .dll」按钮</li>
+        <li>选择刚下载的文件 → 面板自动传到 Rocket/Plugins/ 目录</li>
+        <li>列表刷新出现该插件 → 点「加载」生效</li>
+      </ol>
+      <p className="mt-2" style={{ color: "#64748B" }}>
+        注：面板不会自动下载 .dll，以避免引入不受信任的二进制。
+      </p>
+    </InfoCard>
+  );
+}
+
+/**
+ * 社区插件卡片——展示插件名/作者/最新版本，「查看仓库」外链 GitHub Releases，
+ * 「上传到此实例」按钮把用户本地 .dll 传到当前实例 Rocket/Plugins/（B1/G3）。
+ *
+ * @param props - 组件属性
+ * @param props.plugin - 社区插件元数据
+ * @param props.uploading - 是否正在上传（互斥锁，全局同一时间只一个上传动作）
+ * @param props.onUpload - 用户选完 .dll 回调，传入原生 File 对象
+ * @returns 社区插件卡片 React 元素
+ */
+export function CommunityCard({
+  plugin: p,
+  uploading,
+  onUpload,
+}: {
+  plugin: CommunityPlugin;
+  uploading: boolean;
+  onUpload: (file: File) => void;
+}) {
+  // 用户填的「预期文件名」—— GitHub Releases 上常见命名规则：插件名 + 版本号 + .dll
+  // 用户在浏览器下载时看到实际文件名，落在 file.name 里，无需前端猜
+  const suggestedName = `${p.name.replace(/[^A-Za-z0-9._-]/g, "_").replace(/_+$/, "")}.dll`;
   return (
     <div
       className="rounded-lg p-3 space-y-2"
@@ -470,6 +647,33 @@ function CommunityCard({ plugin: p }: { plugin: CommunityPlugin }) {
             <Search size={14} /> 查看仓库
           </Button>
         </a>
+        <label
+          className={`inline-flex items-center gap-1 rounded text-white transition-colors ${
+            uploading ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:opacity-90"
+          }`}
+          style={{
+            height: 32,
+            padding: "0 12px",
+            fontSize: 13,
+            backgroundColor: "#22C55E",
+            border: "none",
+          }}
+          title={`选择本地下载好的 .dll（建议文件名 ${suggestedName}）`}
+        >
+          <Upload size={14} />
+          上传到此实例
+          <input
+            type="file"
+            accept=".dll"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onUpload(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
       </div>
     </div>
   );

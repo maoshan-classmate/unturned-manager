@@ -24,6 +24,7 @@ import {
   type DataTableColumn,
 } from "../components/shared/DataTable.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
+import { InfoCard } from "../components/shared/InfoCard.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useServer } from "../hooks/useServer.js";
@@ -692,30 +693,26 @@ function ConfigContent({ serverId }: { serverId: string }) {
           )}
         </div>
         {/* Tips Panel — 小屏隐藏 */}
-        <div
-          className="hidden lg:block shrink-0 rounded-lg p-5 border border-slate-700 bg-slate-800 self-start"
-          style={{ width: 292 }}
-        >
-          <h3 className="text-sm font-semibold text-slate-100 mb-3">
-            💡 配置提示
-          </h3>
-          <div className="space-y-3 text-xs text-slate-400 leading-relaxed">
-            <p>修改配置后需点击「保存配置」才会生效。</p>
-            <p>部分参数（端口、地图）需重启服务器才能应用。</p>
-            <p>
-              游戏服务器登录令牌在
-              <a
-                href="https://steamcommunity.com/dev/managegameservers"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 underline"
-              >
-                Steam 服务器管理页面
-              </a>
-              申请（Steam 应用 ID 304930）。
-            </p>
-            <p>未知命令行参数会被保留，不会被面板删除。</p>
-          </div>
+        <div className="hidden lg:block shrink-0 self-start" style={{ width: 292 }}>
+          <InfoCard title="💡 配置提示">
+            <div className="space-y-3">
+              <p>修改配置后需点击「保存配置」才会生效。</p>
+              <p>部分参数（端口、地图）需重启服务器才能应用。</p>
+              <p>
+                游戏服务器登录令牌在
+                <a
+                  href="https://steamcommunity.com/dev/managegameservers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 underline"
+                >
+                  Steam 服务器管理页面
+                </a>
+                申请（Steam 应用 ID 304930）。
+              </p>
+              <p>未知命令行参数会被保留，不会被面板删除。</p>
+            </div>
+          </InfoCard>
         </div>
       </div>
 

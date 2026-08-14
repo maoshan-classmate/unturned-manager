@@ -229,10 +229,25 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 /opt/unturned/ServerHelper.sh +InternetServer/<ServerID> -ThreadedConsole
 
 # ④ 从 LDM-Community (https://ldm-community.github.io/pluginlist) 下载插件 .dll
-#    通过面板「Mod 框架 > 已装插件 > 上传插件」拖拽上传
+#    通过面板「Mod 框架 > 已装插件」Tab 点「上传 .dll」按钮上传
 
 # ⑤ 编辑配置 → 应用变更 → 面板走 PTY 终端 owner-trust 重启流水线
 ```
+
+### 面板内安装插件 3 步（2026-08-15 LdmPage B1 闭环）
+
+```
+# ① 浏览器 → GitHub Releases → 下载 .dll（用户自己验哈希 + 信任源）
+#    注意：LDM-Community 列表里 RocketModPlugins 系列老插件（2020 前后）多无 Release，
+#    只有 .sln 源码——选活跃维护项目（如 TH3AL3X/uEssentials）有预编译 .dll。
+
+# ② 面板「Mod 框架」页 → 「已装插件」Tab → 点「上传 .dll」按钮
+#    选中刚下载的 .dll → 面板调 Files API（POST /files/raw）传到 Rocket/Plugins/
+
+# ③ 列表刷新出现该插件 → 点「加载」→ 不停服即时生效
+```
+
+> **G5 边界钉死**：面板**不会自动下载 .dll**——文件来自用户本地选择，安全决策权在用户。详情见 `LdmPage` 的 `InstallStepsCard`（复用 `components/shared/InfoCard`，参考 ConfigPage 「💡 配置提示」卡样式）。
 
 > **激活检测点**（游戏 Extras 实文件核对）：`Modules/Rocket.Unturned/Rocket.Unturned.module` 存在 = LDM 已激活（Unity 模块清单，声明 3 个 Server 程序集 + 版本）。面板可用「该文件存在性 + `/modules` 命令输出」双确认；`.module` 里的 `Version` 即 LDM 主框架版本。
 
