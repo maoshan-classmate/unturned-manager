@@ -375,3 +375,121 @@ U3DS Config.txt 文件路径：`PlayConfigUtils.GetServerConfigPathV2(serverId)`
 | `Allow_Client_Commands` | bool | 客户端命令 | 开关 | 关 | 客户端文本聊天能否执行命令 |
 
 ---
+
+## 3. Mod 框架（LDM）— Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml
+
+> **本章节**：维护 LDM（Legally-Distinct-Missile，Unturned 官方 Mod 框架）配置文件权威表。
+> **激活前置**：游戏 Extras 复制到 Modules（见 `unturned-sop.md` §LDM 激活步骤）+ U3DS 首次启动自动生成 `Servers/<ID>/Rocket/`。
+> **改完需重启**：写配置**运行时允许**（不强制 STOPPED），但生效需用户主动触发「应用变更」按钮走 PTY 重启流水线（ADR-0004 §重启）——前端「保存配置」按钮旁常驻「需重启生效」提示。
+> **详细设计**：`docs/architecture/ldm-integration-design.md` §2.4 / §2.4b / §2.5 / §2.6 / §12.3 Phase 2。
+
+## 3.1 Rocket.config.xml — LDM 主框架配置（16 字段）
+
+> **路径**：`Servers/<ServerID>/Rocket/Rocket.config.xml`
+> **真源**：LDM 仓 `Rocket/Rocket.Core/Serialization/RocketSettings.cs`
+> **C# 类名 ≠ XML 根元素**：类名 `RocketSettings`，XML 根元素 `<RocketConfiguration>`（XmlSerializer 默认行为）。
+> **生效**：改完需重启（点「应用变更」按钮走 PTY 重启流水线）。
+
+| XML 元素 | 类型 | 默认 | 含义 | UI 控件 |
+|---|---|---|---|---|
+| `LanguageCode` | string | `"en"` | 翻译文件代码（`Rocket.{code}.translation.xml`） | 下拉（en/zh-CN/...） |
+| `MaxFrames` | int | `60` | 帧预算（部分 Rocket API 用） | 数字 |
+| `<RCON>` | group | — | Telnet RCON 配置（**本项目不用——ADR-0004 Phase 6 已删**，UI 标「实验性 / 保持未配置」） | **不暴露** |
+| `RCON/Enabled` | bool | `false` | 开关 Telnet RCON | （隐藏） |
+| `RCON/Port` | ushort | `27115` | TCP 端口 | （隐藏） |
+| `RCON/Password` | string | `"changeme"` | **明文**（默认密码，必须改） | （隐藏） |
+| `RCON/EnableMaxGlobalConnections` | bool | `true` | 全局连接限流 | （隐藏） |
+| `RCON/MaxGlobalConnections` | ushort | `10` | 全局连接上限 | （隐藏） |
+| `RCON/EnableMaxLocalConnections` | bool | `true` | 本地连接限流 | （隐藏） |
+| `RCON/MaxLocalConnections` | ushort | `3` | 本地连接上限 | （隐藏） |
+| `<AutomaticShutdown>` | group | — | 周期自动关服 | — |
+| `AutomaticShutdown/Enabled` | bool | `false` | 启用 | 开关 |
+| `AutomaticShutdown/Interval` | int | `86400` | 间隔秒数（24h） | 数字 |
+| `<WebPermissions>` | group | — | 远程权限同步 | — |
+| `WebPermissions/Enabled` | bool | `false` | 启用 | 开关 |
+| `WebPermissions/Url` | string | `""` | 同步 URL | 文本 |
+| `WebPermissions/Interval` | int | `180` | 同步间隔秒 | 数字 |
+| `<WebConfigurations>` | group | — | 远程插件配置同步 | — |
+| `WebConfigurations/Enabled` | bool | `false` | 启用 | 开关 |
+| `WebConfigurations/Url` | string | `""` | 同步 URL | 文本 |
+
+> ⚠️ Rocket.config.xml 写入 RCON 节点时必须**警告**——默认密码是明文 `"changeme"`。本项目 UI 完全隐藏 RCON 字段，**禁止**让用户触碰。
+
+## 3.2 Rocket.Unturned.config.xml — Unturned 特有配置（9 字段）
+
+> **路径**：`Servers/<ServerID>/Rocket/Rocket.Unturned.config.xml`
+> **真源**：LDM 仓 `Rocket/Rocket.Unturned/Serialisation/UnturnedSettings.cs`
+> **何时生成**：首次启动 U3DS（与 Rocket.config.xml 同时）。
+> **生效**：改完需重启（同 3.1）。
+
+| XML 元素 | 类型 | 默认 | 含义 | UI 控件 |
+|---|---|---|---|---|
+| `<AutomaticSave>/Enabled` | bool | `true` | 定时触发 U3DS `/save` 命令 | 开关 |
+| `<AutomaticSave>/Interval` | int | `1800` | 间隔秒数（30 分钟） | 数字 |
+| `<CharacterNameValidation>` | bool | `false` | 启用角色名正则校验 | 开关 |
+| `<CharacterNameValidationRule>` | string | `"([\x00-\xAA]\|[\w_\ \.\+\-])+"` | 正则模式（防注入） | 文本（高级） |
+| `<LogSuspiciousPlayerMovement>` | bool | `true` | 记录瞬移速度违规 | 开关 |
+| `<EnableItemBlacklist>` | bool | `false` | 限制 `/i` 物品（黑名单模式） | 开关 |
+| `<EnableItemSpawnLimit>` | bool | `false` | 限制单次刷物品数 | 开关 |
+| `<MaxSpawnAmount>` | int | `10` | 配合上一项的单次刷物品上限 | 数字 |
+| `<EnableVehicleBlacklist>` | bool | `false` | 限制 `/v` 载具 | 开关 |
+
+## 3.3 Permissions.config.xml — 权限组树形
+
+> **路径**：`Servers/<ServerID>/Rocket/Permissions.config.xml`
+> **真源**：[wasabihosting.com](https://docs.wasabihosting.com/games/unturned/server-configuration) + [restoremonarchy.com](https://restoremonarchy.com/docs/servers/rocket/permissions)
+> **生效**：改后需 PTY 终端输入 `/p reload` 或走「应用变更」按钮重启服务。
+
+**Schema 结构**：
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<RocketPermissions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <DefaultGroup>default</DefaultGroup>
+  <Groups>
+    <Group>
+      <Id>default</Id>                          <!-- 组唯一 ID（kebab-case 推荐） -->
+      <DisplayName>Player</DisplayName>         <!-- 玩家聊天显示的组名 -->
+      <Color>white</Color>                      <!-- black/blue/clear/cyan/gray/green/grey/magenta/red/white/yellow/rocket/#RRGGBB -->
+      <Members>
+        <Member>76561198012345678</Member>      <!-- 玩家 17 位 SteamID64 -->
+      </Members>
+      <ParentGroup>default</ParentGroup>        <!-- 父组 Id（继承父组所有权限） -->
+      <Priority>100</Priority>                  <!-- 数字越小权限越高；同优先级位置靠上者胜出 -->
+      <Permissions>
+        <Permission>rocket.kits</Permission>    <!-- 权限字符串（rocket.kits / rocket.tpa / rocket.home / kit.survival 等，由各插件定义） -->
+      </Permissions>
+    </Group>
+    <Group>
+      <Id>vip</Id>
+      <DisplayName>VIP</DisplayName>
+      <Color>yellow</Color>
+      <ParentGroup>default</ParentGroup>
+      <Priority>50</Priority>
+      <Permissions>
+        <Permission>rocket.kits.vip</Permission>
+        <Permission>rocket.warp</Permission>
+      </Permissions>
+    </Group>
+  </Groups>
+</RocketPermissions>
+```
+
+**面板处理**：树形 Groups 编辑器 + 成员 SteamID64 列表 + 颜色选择器（Color 枚举 + hex）+ 通配符权限（`rocket.*` / `*`）原样展示。
+
+## 3.4 LDM 插件 Configuration.xml — 通用原文模式
+
+> **路径**：`Servers/<ServerID>/Rocket/Plugins/<PluginName>/<PluginName>.configuration.xml`
+> **真源**：每插件自定义（LDM 不强解 schema）
+> **生效**：改后需重启（同 3.1）。
+
+**面板处理**：通用 Monaco XML 编辑器——原文读写 + 实时校验；**不强解字段**（插件 schema 由插件开发者决定，维护成本无限）。Phase 2 用 `RocketConfigXmlParser.parseGeneric / serializeGeneric`（保留注释/CDATA/嵌套）做底层读写。
+
+---
+
+# 4. 字段细节自行溯源指引
+
+> 字段默认值 / 枚举值 / 类型以 **U3-SDK 真源**（`.research/U3-SDK/Assets/Runtime/Assembly-CSharp/Unturned/`）为准；
+> LDM 字段以 **LDM 仓源码**（`.research/Legally-Distinct-Missile/Rocket/Rocket.Core/Serialization/`）为准。
+> 凡设计到具体字段名、枚举值、取值范围、解析/写入逻辑，直接到对应源码查找，不要以本文档或社区教程为准。

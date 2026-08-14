@@ -249,6 +249,23 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 
 > **G5 边界钉死**：面板**不会自动下载 .dll**——文件来自用户本地选择，安全决策权在用户。详情见 `LdmPage` 的 `InstallStepsCard`（复用 `components/shared/InfoCard`，参考 ConfigPage 「💡 配置提示」卡样式）。
 
+### 面板内编辑 LDM 配置 + 应用变更（2026-08-15 设计中，Phase 2 落地）
+
+```
+# ① 面板「Mod 框架」页 → 「框架配置」Tab / 「权限组」Tab / 「插件配置」Tab
+#    改字段（结构化编辑器 or Monaco XML 原文） → 点「保存配置」
+
+# ② 文件已落盘（运行时允许写入，不阻断 ServerManager 状态）
+#    「保存配置」按钮旁常驻提示「需重启服务器才能生效」
+
+# ③ 用户主动点「应用变更」按钮 → 面板调 POST /api/servers/:id/ldm/apply
+#    → ServerManager.applyChangesCore（与 mod_apply 共用，§5.6）
+#    → Save + Shutdown 10 + forceKill + spawn（ADR-0004 §重启流水线）
+#    → WS ldm_apply_progress 推进度 → 配置生效
+```
+
+> **关键边界（用户 2026-08-15 拍板）**：写配置**运行时允许**（不强制 STOPPED），**生效需重启**——前端文案提醒 + 「应用变更」按钮单独触发，写配置时不自动重启。
+
 > **激活检测点**（游戏 Extras 实文件核对）：`Modules/Rocket.Unturned/Rocket.Unturned.module` 存在 = LDM 已激活（Unity 模块清单，声明 3 个 Server 程序集 + 版本）。面板可用「该文件存在性 + `/modules` 命令输出」双确认；`.module` 里的 `Version` 即 LDM 主框架版本。
 
 ### 关键约束

@@ -439,7 +439,7 @@ export interface RocketConfig {
 ```typescript
 /**
  * LDM 配置写入服务——仅写 XML，不写 .dll。
- * 写前必须 U3DS STOPPED（覆盖正在读的文件 = 崩溃）。路由层校验 ServerManager.activeOperation。
+ * 写配置运行时允许（文件 I/O 不阻断 ServerManager 状态）；生效需用户主动触发「应用变更」走 PTY 重启流水线。
  */
 export interface ILdmConfigWriter {
   /**
@@ -749,9 +749,9 @@ export type ApplyProgressEvent =
 | --- | ---- | ------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------- | --------------------------------------- |
 | 1   | GET  | `/api/servers/:id/ldm/installed`            | 已装插件列表 + Rocket.config.xml + Permissions.config.xml | —                                                     | `LdmStateSchema`                        | 真源扫描                                |
 | 2   | GET  | `/api/servers/:id/ldm/plugins/:name/config` | 读单个 Configuration.xml 原文                             | path: name                                            | `PluginConfigSchema`（原文 + metadata） | XML 原文                                |
-| 3   | PUT  | `/api/servers/:id/ldm/plugins/:name/config` | 写 Configuration.xml（原文）                              | `PluginConfigWriteSchema`                             | `OperationResponseSchema`               | 必须 STOPPED                            |
-| 4   | PUT  | `/api/servers/:id/ldm/rocket-config`        | 写 Rocket.config.xml（结构化字段）                        | `RocketConfigWriteSchema`                             | `OperationResponseSchema`               | 必须 STOPPED                            |
-| 5   | PUT  | `/api/servers/:id/ldm/permissions-config`   | 写 Permissions.config.xml（结构化字段）                   | `PermissionsConfigWriteSchema`                        | `OperationResponseSchema`               | 必须 STOPPED                            |
+| 3   | PUT  | `/api/servers/:id/ldm/plugins/:name/config` | 写 Configuration.xml（原文）                              | `PluginConfigWriteSchema`                             | `OperationResponseSchema`               | **运行时允许**，需重启生效（用户主动触发「应用变更」） |
+| 4   | PUT  | `/api/servers/:id/ldm/rocket-config`        | 写 Rocket.config.xml（结构化字段）                        | `RocketConfigWriteSchema`                             | `OperationResponseSchema`               | **运行时允许**，需重启生效（用户主动触发「应用变更」） |
+| 5   | PUT  | `/api/servers/:id/ldm/permissions-config`   | 写 Permissions.config.xml（结构化字段）                   | `PermissionsConfigWriteSchema`                        | `OperationResponseSchema`               | **运行时允许**，需重启生效（用户主动触发「应用变更」） |
 | 6   | POST | `/api/servers/:id/ldm/load-plugin`          | 加载插件（PTY 写 `/rocket load <name>`）                  | `LoadPluginSchema`                                    | `OperationResponseSchema`               | **不停服**（LDM 支持运行时 load）       |
 | 7   | POST | `/api/servers/:id/ldm/unload-plugin`        | 卸载插件（PTY 写 `/rocket unload <name>`）                | `UnloadPluginSchema`                                  | `OperationResponseSchema`               | **不停服**                              |
 | 8   | POST | `/api/servers/:id/ldm/apply`                | 应用配置变更（重启流水线）                                | `LdmApplyRequestSchema`（{changedPlugins: string[]}） | `OperationResponseSchema`               | 走 PTY 重启                             |
@@ -985,7 +985,6 @@ export interface ILdmApplyService {
 | ------------------- | ------------------------- | ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | LDM 主框架未装      | `ldm-not-installed`       | 404    | `Rocket/` 目录不存在                      | 「未检测到 Mod 框架。请复制 U3DS 装包自带的 Extras 到 Modules 目录并重启实例（见「关于 LDM」指引）」 |
 | 插件不存在          | `ldm-plugin-not-found`    | 404    | `Plugins/<Name>/` 不存在                  | 「插件 {{name}} 不存在。请从 GitHub Releases 下载 .dll 并上传到插件目录」                            |
-| U3DS 未停止时写配置 | `server-not-stopped`      | 409    | activeOperation ≠ none 或 state ≠ STOPPED | 「配置写入要求实例已停止（当前：{{state}}）。请先停止实例」                                          |
 | 配置文件损坏        | `ldm-config-corrupted`    | 500    | XML 解析失败                              | 「配置文件损坏，已自动回滚到上次正确状态」                                                           |
 | 写失败              | `ldm-config-write-failed` | 500    | atomic write 失败                         | 「配置文件写入失败：{{reason}}」                                                                     |
 | PTY 关闭超时        | `server-shutdown-timeout` | 504    | waitExit 30s 超时                         | 「实例关闭超时，已强制停止」                                                                         |
@@ -1157,7 +1156,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 - [ ] 没引入 `any`
 - [ ] `.research/U3-SDK` 未动
 - [ ] `unturned-sop.md` / `prohibitions.md` / `reference_ui_terms.md` / `reference_config_files.md §3` 同步更新
-- [ ] §11「LDM 框架全功能盘点」(35 项) + §12「多期接入规划」（4 期切片）已与 ADR-0006 §7 + `reference_config_files.md §3-5` 同步
+- [ ] §11「LDM 框架全功能盘点」(35 项) + §12「多期接入规划」（4 期切片）已与 ADR-0006 §7 + `reference_config_files.md §3 + §4` 同步
 
 ---
 
