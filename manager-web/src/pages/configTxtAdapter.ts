@@ -62,24 +62,35 @@ export function readBoolEntry(
   if (!section) return defaultVal;
   const entry = section.entries.find((e) => e.key === key);
   if (!entry) return defaultVal;
-  if (entry.value === null) return true;
-  // 后端若写入 "true"/"false" 字符串（非裸行形态），按字面真值判断
+  if (entry.value === null) {
+    // U3-SDK 原生格式：裸 key（无 value）= 使用该字段的官方默认值。
+    // 面板序列化时 bool 勾选 → 裸 key（value null），未勾选 → "false"。
+    // 所以裸 key 应返回该字段的默认值（defaultVal），而非写死 true——
+    // 否则默认 false 的字段（如 Friendly_Fire）裸 key 会被误判为「开」。
+    return defaultVal;
+  }
+  // 后端若写入 "true"/"false" 字符串，按字面真值判断
   return Boolean(entry.value) && entry.value !== "false";
 }
 
 /**
- * 构造一条 bool 字段 entry——
- *   勾选 → value=null + type=bool（后端 serializeConfigTxt 写为裸 key 行 = 开关）
- *   未勾选 → value="false" + type=bool（保留 key，强制 false——U3DS 配置文件语义）
+ * 构造一条 bool 字段 entry。
  *
- * 颗粒度说明：保留未勾选条目而非删除，是为了让面板「保留已知键」原则生效
- * （CLAUDE.md §unturned-sop：解析器契约必须保留未知键——面板不能把不认识的指令删了）。
- * bool 字段是已知键，保留=显式 false 比删除更稳。
+ * ★ 2026-08-14 原生格式语义修正：U3-SDK `DatValueEx.cs:134-160` 裸 key（value null）
+ * = 该字段默认值（parse 失败回落 defaultValue），**不是强制 true**。
+ * 面板 bool 是二态 switch——为「所见即所得」：
+ *   勾选 → `key true`（强制 true，不依赖默认）
+ *   取消 → `key false`（强制 false，保留 key——CLAUDE.md「保留已知键」原则）
+ * 裸 key 仅当字段从未被面板保存、或用户在服务端手写默认时出现，读侧用 defaultVal 显示。
  */
 export function boolEntry(key: string, enabled: boolean): ConfigEntry {
-  return enabled
-    ? { key, value: null, comment: null, known: true, type: "bool" }
-    : { key, value: "false", comment: null, known: true, type: "bool" };
+  return {
+    key,
+    value: enabled ? "true" : "false",
+    comment: null,
+    known: true,
+    type: "bool",
+  };
 }
 
 /** string 字段 entry——空串归一为 null（后端 serializeConfigTxt 写时不带等号） */
@@ -92,7 +103,7 @@ export function stringEntry(key: string, value: string): ConfigEntry {
  * UI 字段全集 → 4 个 section 的 ConfigSection[]。
  *
  * Bug B-1 修复后：section 名 + entry key 都用 SDK 英文真源——
- * [Browser] / [Server] / [Items] / [Gameplay] 对应 PlayConfigData.cs 的 BrowserConfigData / ServerConfigData / ItemsConfigData / GameplayConfigData。
+ * Browser / Server / Items / Gameplay 对应 PlayConfigData.cs 的 BrowserConfigData / ServerConfigData / ItemsConfigData / GameplayConfigData。
  *
  * UI 字段清单（与 ConfigTxtFields 同步）——新增 UI 字段必须同步加到这里。
  */
@@ -137,6 +148,81 @@ export function buildTxtSections(fields: ConfigTxtFields): ApiConfigSection[] {
       ],
     },
   ];
+}
+
+/**
+ * ★ 2026-08-14 方案 1：合并保存——只覆盖 UI 托管字段，保留未托管 section/键/注释/rawBlocks。
+ *
+ * 真实 U3DS Config.txt 有 13 个 section、约 295 个字段，面板 UI 只展示/编辑 18 个托管字段。
+ * 若保存时只用 buildTxtSections 的 4 个 section 覆盖整个文件，会删掉 9 个 section + 约 277 个
+ * 未托管字段 + 全部注释——数据丢失。本函数把 18 个 UI 值合并进原始 sections（改 value、保留
+ * comment），其余原样保留。
+ *
+ * @param rawSections - 后端 readConfigTxt 返回的完整 sections（含未托管内容）
+ * @param fields - 前端 UI 的 18 个托管值
+ * @returns 合并后的完整 sections（供 writeConfigTxt 整体写回）
+ */
+export function mergeTxtSections(
+  rawSections: Record<string, ApiConfigSection>,
+  fields: ConfigTxtFields,
+): Record<string, ApiConfigSection> {
+  const merged: Record<string, ApiConfigSection> = {};
+  // 深拷贝——不修改入参（React 状态不可变）
+  for (const [name, section] of Object.entries(rawSections)) {
+    merged[name] = {
+      name: section.name,
+      entries: section.entries.map((e) => ({ ...e })),
+      rawBlocks: section.rawBlocks ? [...section.rawBlocks] : undefined,
+    };
+  }
+
+  // UI 托管字段 → (section, key, value) 覆盖表
+  const managed: Array<[string, string, ConfigEntry]> = [
+    // Browser
+    ["Browser", "Login_Token", stringEntry("Login_Token", fields.Login_Token)],
+    ["Browser", "Desc_Full", stringEntry("Desc_Full", fields.Desc_Full)],
+    ["Browser", "Desc_Server_List", stringEntry("Desc_Server_List", fields.Desc_Server_List)],
+    ["Browser", "Icon", stringEntry("Icon", fields.Icon)],
+    ["Browser", "Thumbnail", stringEntry("Thumbnail", fields.Thumbnail)],
+    // Server
+    ["Server", "VAC_Secure", boolEntry("VAC_Secure", fields.VAC_Secure)],
+    ["Server", "BattlEye_Secure", boolEntry("BattlEye_Secure", fields.BattlEye_Secure)],
+    ["Server", "Max_Ping_Milliseconds", stringEntry("Max_Ping_Milliseconds", fields.Max_Ping_Milliseconds)],
+    ["Server", "Enable_Scheduled_Shutdown", boolEntry("Enable_Scheduled_Shutdown", fields.Enable_Scheduled_Shutdown)],
+    ["Server", "Enable_Update_Shutdown", boolEntry("Enable_Update_Shutdown", fields.Enable_Update_Shutdown)],
+    // Items
+    ["Items", "Spawn_Chance", stringEntry("Spawn_Chance", fields.Spawn_Chance)],
+    ["Items", "Has_Durability", boolEntry("Has_Durability", fields.Has_Durability)],
+    ["Items", "Despawn_Dropped_Time", stringEntry("Despawn_Dropped_Time", fields.Despawn_Dropped_Time)],
+    ["Items", "Respawn_Time", stringEntry("Respawn_Time", fields.Respawn_Time)],
+    // Gameplay
+    ["Gameplay", "Allow_Shoulder_Camera", boolEntry("Allow_Shoulder_Camera", fields.Allow_Shoulder_Camera)],
+    ["Gameplay", "Allow_Freeform_Buildables", boolEntry("Allow_Freeform_Buildables", fields.Allow_Freeform_Buildables)],
+    ["Gameplay", "Friendly_Fire", boolEntry("Friendly_Fire", fields.Friendly_Fire)],
+    ["Gameplay", "Can_Suicide", boolEntry("Can_Suicide", fields.Can_Suicide)],
+  ];
+
+  for (const [sectionName, key, entry] of managed) {
+    const section = merged[sectionName];
+    if (!section) {
+      // section 不存在（原文件可能没这个节）——新建
+      merged[sectionName] = { name: sectionName, entries: [entry], rawBlocks: undefined };
+      continue;
+    }
+    const idx = section.entries.findIndex((e) => e.key === key);
+    if (idx >= 0) {
+      // 保留原 comment（U3DS 自动生成的 // > 默认值说明不能丢），只更新 value/type
+      section.entries[idx] = {
+        ...entry,
+        comment: section.entries[idx]!.comment ?? entry.comment,
+      };
+    } else {
+      // key 不在原文件——追加
+      section.entries.push(entry);
+    }
+  }
+
+  return merged;
 }
 
 /**

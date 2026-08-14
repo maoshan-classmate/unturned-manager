@@ -31,6 +31,7 @@ import { apiClient } from "../api/client.js";
 import { Button } from "../components/ui/button.js";
 import {
   buildTxtSections,
+  mergeTxtSections,
   readBoolEntry,
   readStringEntry,
   getModeDefaults,
@@ -38,6 +39,7 @@ import {
   EMPTY_TXT_FIELDS as EMPTY_TXT,
   type ConfigTxtFields,
 } from "./configTxtAdapter.js";
+import type { ConfigSection as ApiConfigSection } from "@unturned-manager/shared";
 
 type ConfigTab = "commands" | "txt" | "workshop";
 
@@ -209,6 +211,11 @@ function ConfigContent({ serverId }: { serverId: string }) {
   const [tab, setTab] = useState<ConfigTab>("commands");
   const [fields, setFields] = useState<CommandsFields>(EMPTY_FIELDS);
   const [txtFields, setTxtFields] = useState<ConfigTxtFields>(EMPTY_TXT);
+  // ★ 2026-08-14 方案 2：全部配置（13 节 295 字段）的可编辑副本——「显示全部配置」展开区直接改它
+  const [allTxtSections, setAllTxtSections] = useState<Record<
+    string,
+    ApiConfigSection
+  > | null>(null);
   const [workshopRows, setWorkshopRows] = useState<WorkshopRow[]>([]);
   const [workshopSearch, setWorkshopSearch] = useState("");
   const [workshopStatusFilter] = useState("全部状态");
@@ -229,6 +236,10 @@ function ConfigContent({ serverId }: { serverId: string }) {
     unknown: {},
     comments: [],
   });
+  // ★ 2026-08-14 方案 1：保存 Config.txt 时保留原始完整 sections（13 节约 295 字段）——
+  // 只用 18 个 UI 字段覆盖会删掉未托管 section/键/注释（数据丢失）。加载时记录原始 sections，
+  // 保存时 mergeTxtSections 合并后再整体写回。
+  const originalTxtSectionsRef = useRef<Record<string, ApiConfigSection>>({});
 
   const fetchConfig = useCallback(async () => {
     if (!server) return;
@@ -316,6 +327,22 @@ function ConfigContent({ serverId }: { serverId: string }) {
         const res = await apiClient.get(`/servers/${server.id}/config/txt`);
         const raw = res.data.data;
         if (raw?.sections) {
+          // ★ 2026-08-14 方案 1：记录原始完整 sections——保存时 merge 合并，不丢未托管内容
+          const rawSections = raw.sections as Record<string, ApiConfigSection>;
+          originalTxtSectionsRef.current = rawSections;
+          // 方案 2：可编辑副本（深拷贝，不引用原始 ref）
+          setAllTxtSections(
+            Object.fromEntries(
+              Object.entries(rawSections).map(([name, sec]) => [
+                name,
+                {
+                  name: sec.name,
+                  entries: sec.entries.map((e) => ({ ...e })),
+                  rawBlocks: sec.rawBlocks ? [...sec.rawBlocks] : undefined,
+                },
+              ]),
+            ),
+          );
           // BUG-2 闭环 + Bug B-1 修复：read 侧走 helper 解 entries[]——
           // Bug B-1 改用 SDK 英文 section 名（[Browser]/[Server]/[Items]/[Gameplay]）+ SDK 英文 key（PlayConfigData.cs C# 字段名）
           const b = raw.sections["Browser"],
@@ -427,11 +454,13 @@ function ConfigContent({ serverId }: { serverId: string }) {
         // ★ 重启提示：Commands.dat 是服务端启动时读取的，改完要重启才生效（U3-SDK Provider.cs:6663-6700）
         toast.success("配置已保存，重启服务器后生效");
       } else if (tab === "txt") {
-        // BUG-2 闭环：write 侧走 helper 包成 schema 真实形态——
-        // sections: Record<sectionName, { name, entries: ConfigEntry[] }>
-        const sections = buildTxtSections(txtFields);
+        // ★ 2026-08-14 方案 1+2：合并保存。
+        // 基准 = allTxtSections（方案 2 可编辑副本，已含未托管 section/键的编辑）；
+        // 再把 18 个 UI 托管字段 merge 覆盖（方案 1）——两类编辑都生效，未托管内容不丢。
+        const base = allTxtSections ?? originalTxtSectionsRef.current;
+        const merged = mergeTxtSections(base, txtFields);
         await apiClient.put(`/servers/${server.id}/config/txt`, {
-          sections: Object.fromEntries(sections.map((s) => [s.name, s])),
+          sections: merged,
         });
       } else if (tab === "workshop") {
         // v2.6：保存与重启解耦——只写 File_IDs（运行时安全，U3DS 只在启动时读）。
@@ -484,6 +513,28 @@ function ConfigContent({ serverId }: { serverId: string }) {
     setTxtFields((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
   };
+
+  /** ★ 2026-08-14 方案 2：编辑「全部配置」展开区里的未托管字段——直接改可编辑副本 */
+  const updateRawEntry = useCallback(
+    (sectionName: string, key: string, value: string | null) => {
+      setAllTxtSections((prev) => {
+        if (!prev) return prev;
+        const section = prev[sectionName];
+        if (!section) return prev;
+        return {
+          ...prev,
+          [sectionName]: {
+            ...section,
+            entries: section.entries.map((e) =>
+              e.key === key ? { ...e, value } : e,
+            ),
+          },
+        };
+      });
+      setDirty(true);
+    },
+    [],
+  );
 
   const toggleWsSelect = (fileId: string) =>
     setWorkshopRows((prev) =>
@@ -605,6 +656,8 @@ function ConfigContent({ serverId }: { serverId: string }) {
                   fields={txtFields}
                   onChange={handleTxtChange}
                   currentMode={fields.Mode}
+                  allSections={allTxtSections}
+                  onUpdateRawEntry={updateRawEntry}
                 />
               )}
               {tab === "workshop" && (
@@ -898,11 +951,17 @@ function ConfigTxtTab({
   fields,
   onChange,
   currentMode,
+  allSections,
+  onUpdateRawEntry,
 }: {
   fields: ConfigTxtFields;
   onChange: (k: keyof ConfigTxtFields, v: string | boolean) => void;
   /** 当前 Commands.dat 的 Mode 值（Easy/Normal/Hard）——[Items]/[Gameplay] 写入值应用此 mode */
   currentMode: string;
+  /** 全部配置（13 节）可编辑副本——未托管模块卡片用 */
+  allSections: Record<string, ApiConfigSection> | null;
+  /** 编辑全部配置里的未托管字段 */
+  onUpdateRawEntry: (sectionName: string, key: string, value: string | null) => void;
 }) {
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -978,6 +1037,37 @@ function ConfigTxtTab({
         currentMode={currentMode}
         onChange={onChange}
       />
+
+      {/* ★ 2026-08-14 方案 2：细节调整说明卡片（与「当前生效难度」同款）——下方为未托管模块，各自独立卡片默认收起 */}
+      <div className="rounded-md border px-3 py-2" style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}>
+        <p className="text-xs" style={{ color: "#94A3B8" }}>
+          细节调整
+        </p>
+        <p className="mt-1 text-xs" style={{ color: "#64748B" }}>
+          以下按模块分组，展开可编辑高级选项。不了解含义的字段请保留默认（留空 = 使用官方默认值）。
+        </p>
+      </div>
+
+      {/* 未托管模块各自独立卡片（载具/僵尸/玩家等），默认收起可展开编辑 */}
+      {allSections &&
+        Object.entries(allSections)
+          .filter(([name]) => !["Browser", "Server", "Items", "Gameplay"].includes(name))
+          .map(([name, section]) => (
+            <RawSectionBlock
+              key={name}
+              sectionName={name}
+              section={section}
+              onUpdate={onUpdateRawEntry}
+            />
+          ))}
+      {(!allSections ||
+        Object.entries(allSections).filter(
+          ([name]) => !["Browser", "Server", "Items", "Gameplay"].includes(name),
+        ).length === 0) && (
+        <p className="text-xs text-slate-500">
+          暂无可展开的细节模块——请先保存一次配置后再查看
+        </p>
+      )}
     </div>
   );
 }
@@ -996,6 +1086,114 @@ function getFieldPlaceholder(
   const modeDefaults = getModeDefaults(mode);
   if (key in modeDefaults) return String(modeDefaults[key]);
   return undefined;
+}
+
+/** 全部配置折叠面板——一个 section（模块）一组，默认收起，展开编辑字段 */
+function RawSectionBlock({
+  sectionName,
+  section,
+  onUpdate,
+}: {
+  /** 模块名（SDK section 名，如 Vehicles/Zombies） */
+  sectionName: string;
+  /** 该模块的字段 */
+  section: ApiConfigSection;
+  /** 编辑字段回调 */
+  onUpdate: (sectionName: string, key: string, value: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // 模块中文名映射（用户可读）；未知则用原始名
+  const MODULE_LABELS: Record<string, string> = {
+    Vehicles: "载具",
+    Zombies: "僵尸",
+    Animals: "动物",
+    Barricades: "路障",
+    Structures: "建筑",
+    Players: "玩家",
+    Objects: "物体",
+    Events: "事件",
+    UnityEvents: "内置事件",
+    Gameplay: "玩法",
+  };
+  const label = MODULE_LABELS[sectionName] ?? sectionName;
+
+  return (
+    <div className="rounded border" style={{ borderColor: "#334059" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs"
+        style={{ color: "#94A3B8" }}
+      >
+        <span className="flex items-center gap-2">
+          <span style={{ color: "#3B82F6" }}>{label}</span>
+          <span className="text-slate-500">({sectionName})</span>
+        </span>
+        <span>{open ? "收起" : "展开"}</span>
+      </button>
+
+      {open && (
+        <div className="px-2.5 pb-2.5 pt-1 border-t" style={{ borderColor: "#334059" }}>
+          {section.entries.length === 0 ? (
+            <p className="text-xs text-slate-500">暂无字段</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+              {section.entries.map((entry) => (
+                <RawEntryField key={entry.key} entry={entry} onUpdate={onUpdate} sectionName={sectionName} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 单个未托管字段的编辑控件——通用 KV 编辑器：输入值覆盖默认，清空 = 用默认 */
+function RawEntryField({
+  entry,
+  sectionName,
+  onUpdate,
+}: {
+  entry: ApiConfigSection["entries"][number];
+  sectionName: string;
+  onUpdate: (sectionName: string, key: string, value: string | null) => void;
+}) {
+  const [val, setVal] = useState(entry.value ?? "");
+  const [dirty, setDirty] = useState(false);
+
+  // 提交编辑（失焦/回车）——空串归一为 null（用默认）
+  const commit = () => {
+    const normalized = val.trim();
+    onUpdate(sectionName, entry.key, normalized.length > 0 ? normalized : null);
+    setDirty(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="text-[11px] font-mono" style={{ color: "#94A3B8" }} title={entry.comment ?? undefined}>
+        {entry.key}
+        {entry.value === null && !dirty && (
+          <span className="ml-1 text-slate-500 font-sans">（默认）</span>
+        )}
+      </label>
+      <input
+        type="text"
+        value={val}
+        onChange={(e) => {
+          setVal(e.target.value);
+          setDirty(true);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="w-full h-7 rounded text-xs px-2 font-mono bg-slate-950 border border-slate-700 text-slate-100"
+      />
+    </div>
+  );
 }
 
 function TxtSection({

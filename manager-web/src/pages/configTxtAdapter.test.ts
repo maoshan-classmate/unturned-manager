@@ -19,6 +19,7 @@ import {
   boolEntry,
   stringEntry,
   buildTxtSections,
+  mergeTxtSections,
   getModeDefaults,
   EMPTY_TXT_FIELDS,
   type ConfigTxtFields,
@@ -75,14 +76,17 @@ describe("readBoolEntry — section → bool UI 字段", () => {
     expect(readBoolEntry(section, "VAC_Secure")).toBe(false);
   });
 
-  it("value = null + type=bool → 返回 true（裸 key 行 = 开关启用）", () => {
+  it("value = null → 返回 defaultVal（U3-SDK 裸 key = 默认值，DatValueEx.cs:158）", () => {
     const section: ConfigSection = {
       name: "Server",
       entries: [
         { key: "VAC_Secure", value: null, comment: null, known: true, type: "bool" },
       ],
     };
-    expect(readBoolEntry(section, "VAC_Secure")).toBe(true);
+    // 默认 true 的字段 → true
+    expect(readBoolEntry(section, "VAC_Secure", true)).toBe(true);
+    // 默认 false 的字段（如 Friendly_Fire）→ false，不是写死 true
+    expect(readBoolEntry(section, "Friendly_Fire", false)).toBe(false);
   });
 
   it("value = 'true' → 返回 true（显式 true 字符串）", () => {
@@ -108,11 +112,11 @@ describe("readBoolEntry — section → bool UI 字段", () => {
 
 // ─── boolEntry / stringEntry ────────────────────────────
 
-describe("boolEntry — 已知键保留语义", () => {
-  it("enabled=true → value=null + type=bool（裸 key 行 = 开关）", () => {
+describe("boolEntry — 原生格式 bool 语义", () => {
+  it("enabled=true → value='true' + type=bool（显式 true，不依赖默认）", () => {
     expect(boolEntry("VAC_Secure", true)).toEqual({
       key: "VAC_Secure",
-      value: null,
+      value: "true",
       comment: null,
       known: true,
       type: "bool",
@@ -181,7 +185,7 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     );
     expect(bools.length).toBeGreaterThan(0);
 
-    // 默认 true 的字段（裸 key 行 value=null）
+    // 默认 true 的字段（显式 true 保留——不依赖裸 key 默认语义）
     const defaultTrue = bools.filter((e) =>
       [
         "VAC_Secure",
@@ -192,7 +196,7 @@ describe("buildTxtSections — UI 字段 → schema", () => {
         "Can_Suicide",
       ].includes(e.key),
     );
-    expect(defaultTrue.every((e) => e.value === null)).toBe(true);
+    expect(defaultTrue.every((e) => e.value === "true")).toBe(true);
 
     // 默认 false 的字段（显式 false 保留）
     const defaultFalse = bools.filter((e) =>
@@ -253,12 +257,12 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     expect(get("Server", "Max_Ping_Milliseconds")?.value).toBe("500");
     expect(get("Items", "Spawn_Chance")?.value).toBe("0.35");
 
-    // bool 字段：enabled=true → value=null
-    expect(get("Server", "VAC_Secure")?.value).toBeNull();
-    expect(get("Server", "BattlEye_Secure")?.value).toBeNull();
-    expect(get("Server", "Enable_Scheduled_Shutdown")?.value).toBeNull();
-    expect(get("Items", "Has_Durability")?.value).toBeNull();
-    expect(get("Gameplay", "Allow_Shoulder_Camera")?.value).toBeNull();
+    // bool 字段：enabled=true → value="true"（显式 true，不依赖默认）
+    expect(get("Server", "VAC_Secure")?.value).toBe("true");
+    expect(get("Server", "BattlEye_Secure")?.value).toBe("true");
+    expect(get("Server", "Enable_Scheduled_Shutdown")?.value).toBe("true");
+    expect(get("Items", "Has_Durability")?.value).toBe("true");
+    expect(get("Gameplay", "Allow_Shoulder_Camera")?.value).toBe("true");
 
     // bool 字段：enabled=false → value="false"（保留）
     expect(get("Server", "Enable_Update_Shutdown")?.value).toBe("false");
@@ -274,5 +278,77 @@ describe("buildTxtSections — UI 字段 → schema", () => {
       .find((s) => s.name === "Browser")
       ?.entries.find((e) => e.key === "Login_Token");
     expect(entry?.value).toBeNull();
+  });
+});
+
+// ─── mergeTxtSections（方案 1：合并保存不丢未托管内容）────
+
+describe("mergeTxtSections — 18 个 UI 字段合并进原始 sections", () => {
+  /** 构造含未托管内容的原始 sections（真实 U3DS 形态：13 节中的 3 节 + 未托管 key） */
+  function rawFixture(): Record<string, ConfigSection> {
+    return {
+      Browser: {
+        name: "Browser",
+        entries: [
+          { key: "Login_Token", value: "abc123", comment: "auto", known: true },
+          { key: "Icon", value: null, comment: "auto", known: true },
+        ],
+      },
+      Server: {
+        name: "Server",
+        entries: [
+          { key: "VAC_Secure", value: null, comment: "auto", known: true },
+          { key: "Max_Ping_Milliseconds", value: "750", comment: "auto", known: true },
+        ],
+      },
+      // 未托管 section——保存必须原样保留
+      Vehicles: {
+        name: "Vehicles",
+        entries: [
+          { key: "Max_Instances_Tiny", value: "4", comment: "auto", known: true },
+          { key: "Vehicle_Respawn_Time", value: null, comment: "auto", known: true },
+        ],
+        rawBlocks: ["Links [\n{...}"],
+      },
+    };
+  }
+
+  it("覆盖托管字段值 + 保留未托管 section/key/comment", () => {
+    const raw = rawFixture();
+    const fields: ConfigTxtFields = {
+      ...EMPTY_TXT_FIELDS,
+      Login_Token: "new-token",
+      VAC_Secure: true,
+      Max_Ping_Milliseconds: "500",
+    };
+
+    const merged = mergeTxtSections(raw, fields);
+
+    // 托管字段被覆盖
+    expect(merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("new-token");
+    expect(merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.value).toBe("true");
+    expect(merged.Server!.entries.find((e) => e.key === "Max_Ping_Milliseconds")?.value).toBe("500");
+    // 注释保留
+    expect(merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.comment).toBe("auto");
+    // 未托管 section 原样保留（含 rawBlocks）
+    expect(merged.Vehicles).toBeDefined();
+    expect(merged.Vehicles!.entries.find((e) => e.key === "Max_Instances_Tiny")?.value).toBe("4");
+    expect(merged.Vehicles!.rawBlocks).toEqual(["Links [\n{...}"]);
+    // 未托管字段不被删
+    expect(merged.Browser!.entries.find((e) => e.key === "Icon")?.value).toBeNull();
+  });
+
+  it("section 不存在时新建", () => {
+    const raw: Record<string, ConfigSection> = {};
+    const fields: ConfigTxtFields = { ...EMPTY_TXT_FIELDS, Login_Token: "x" };
+    const merged = mergeTxtSections(raw, fields);
+    expect(merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("x");
+  });
+
+  it("原始 sections 不被修改（不可变）", () => {
+    const raw = rawFixture();
+    const fields: ConfigTxtFields = { ...EMPTY_TXT_FIELDS, Login_Token: "x" };
+    mergeTxtSections(raw, fields);
+    expect(raw.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("abc123");
   });
 });

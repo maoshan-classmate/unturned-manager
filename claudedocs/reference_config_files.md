@@ -78,8 +78,9 @@
 ## 2. Config.txt — 高级游戏设置
 
 **路径**：`Servers/<ServerID>/Config.txt`  
-**格式**：`Key Value`（空格分隔），`>` 开头为注释行  
-**版本**：≥3.25.8.0（2025-09），替代旧 Config.json
+**格式**：U3-SDK 原生 DAT 语法（真源 `DatTokenizer.cs`/`DatParser.cs`）：`Section { }` 大括号块 + `Key Value` 空格分隔 + `//` 开头注释（`// >` 为 U3DS 自动生成）+ `Version 1` 头  
+**版本**：≥3.25.8.0（2025-09），替代旧 Config.json  
+**裸 key 语义**：`VAC_Secure`（无 value）= 该字段官方默认值（`DatValueEx.cs:158` parse 失败回落 defaultValue）；`VAC_Secure true` = 强制开启；`VAC_Secure false` = 强制关闭
 
 ### 2.1 Browser 段（Steam 浏览器展示）
 
@@ -127,23 +128,23 @@ U3DS Config.txt 文件路径：`PlayConfigUtils.GetServerConfigPathV2(serverId)`
 
 | UI label | 写入 key | SDK Section | SDK 字段（`PlayConfigData.cs`） |
 |---|---|---|---|
-| Steam 浏览器登录令牌 | `Login_Token` | `[Browser]` | `:124` `BrowserConfigData.Login_Token` |
-| 完整描述 | `Desc_Full` | `[Browser]` | `:113` `BrowserConfigData.Desc_Full` |
-| 列表描述 | `Desc_Server_List` | `[Browser]` | `:118` `BrowserConfigData.Desc_Server_List` |
-| 图标URL | `Icon` | `[Browser]` | `:98` `BrowserConfigData.Icon` |
-| 缩略图URL | `Thumbnail` | `[Browser]` | `:103` `BrowserConfigData.Thumbnail` |
-| VAC反作弊 | `VAC_Secure` | `[Server]` | `:402` `ServerConfigData.VAC_Secure` |
-| BattlEye | `BattlEye_Secure` | `[Server]` | SDK 本地副本未找到字段定义 |
-| 最大Ping(ms) | `Max_Ping_Milliseconds` | `[Server]` | `:404` `ServerConfigData.Max_Ping_Milliseconds` |
-| 定时关机 | `Enable_Scheduled_Shutdown` | `[Server]` | `:318` `ServerConfigData.Enable_Scheduled_Shutdown` |
-| 更新自动关机 | `Enable_Update_Shutdown` | `[Server]` | `:350` `ServerConfigData.Enable_Update_Shutdown` |
-| 生成倍率 | `Spawn_Chance` | `[Items]`（按当前 Mode） | `:487` `ItemsConfigData.Spawn_Chance` |
-| 物品耐久 | `Has_Durability` | `[Items]`（按当前 Mode） | `:554` `ItemsConfigData.Has_Durability` |
-| 掉落消失(s) | `Despawn_Dropped_Time` | `[Items]`（按当前 Mode） | `:492` `ItemsConfigData.Despawn_Dropped_Time` |
-| 重生时间(s) | `Respawn_Time` | `[Items]`（按当前 Mode） | `:504` `ItemsConfigData.Respawn_Time` |
-| 肩后视角 | `Allow_Shoulder_Camera` | `[Gameplay]`（按当前 Mode） | `:2215` `GameplayConfigData.Allow_Shoulder_Camera` |
-| 自由建造 | `Allow_Freeform_Buildables` | `[Gameplay]`（按当前 Mode） | `:2250` `GameplayConfigData.Allow_Freeform_Buildables` |
-| 玩家伤害（label 取反） | `Friendly_Fire` | `[Gameplay]`（按当前 Mode） | `:2225` `GameplayConfigData.Friendly_Fire` |
-| 允许自杀 | `Can_Suicide` | `[Gameplay]`（按当前 Mode） | `:2220` `GameplayConfigData.Can_Suicide` |
+| Steam 浏览器登录令牌 | `Login_Token` | `Browser` | `:124` `BrowserConfigData.Login_Token` |
+| 完整描述 | `Desc_Full` | `Browser` | `:113` `BrowserConfigData.Desc_Full` |
+| 列表描述 | `Desc_Server_List` | `Browser` | `:118` `BrowserConfigData.Desc_Server_List` |
+| 图标URL | `Icon` | `Browser` | `:98` `BrowserConfigData.Icon` |
+| 缩略图URL | `Thumbnail` | `Browser` | `:103` `BrowserConfigData.Thumbnail` |
+| VAC反作弊 | `VAC_Secure` | `Server` | `:402` `ServerConfigData.VAC_Secure` |
+| BattlEye | `BattlEye_Secure` | `Server` | SDK 本地副本未找到字段定义 |
+| 最大Ping(ms) | `Max_Ping_Milliseconds` | `Server` | `:404` `ServerConfigData.Max_Ping_Milliseconds` |
+| 定时关机 | `Enable_Scheduled_Shutdown` | `Server` | `:318` `ServerConfigData.Enable_Scheduled_Shutdown` |
+| 更新自动关机 | `Enable_Update_Shutdown` | `Server` | `:350` `ServerConfigData.Enable_Update_Shutdown` |
+| 生成倍率 | `Spawn_Chance` | `Items`（按当前 Mode） | `:487` `ItemsConfigData.Spawn_Chance` |
+| 物品耐久 | `Has_Durability` | `Items`（按当前 Mode） | `:554` `ItemsConfigData.Has_Durability` |
+| 掉落消失(s) | `Despawn_Dropped_Time` | `Items`（按当前 Mode） | `:492` `ItemsConfigData.Despawn_Dropped_Time` |
+| 重生时间(s) | `Respawn_Time` | `Items`（按当前 Mode） | `:504` `ItemsConfigData.Respawn_Time` |
+| 肩后视角 | `Allow_Shoulder_Camera` | `Gameplay`（按当前 Mode） | `:2215` `GameplayConfigData.Allow_Shoulder_Camera` |
+| 自由建造 | `Allow_Freeform_Buildables` | `Gameplay`（按当前 Mode） | `:2250` `GameplayConfigData.Allow_Freeform_Buildables` |
+| 玩家伤害（label 取反） | `Friendly_Fire` | `Gameplay`（按当前 Mode） | `:2225` `GameplayConfigData.Friendly_Fire` |
+| 允许自杀 | `Can_Suicide` | `Gameplay`（按当前 Mode） | `:2220` `GameplayConfigData.Can_Suicide` |
 
 ---
