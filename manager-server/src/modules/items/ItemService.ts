@@ -118,12 +118,18 @@ export class ItemService implements IItemService {
   }
 
   seedBuiltinItems(): void {
-    const stmt = this.db.prepare(
+    // 幂等插入缺失行 + 对已存在内置行同步 name/label（INSERT OR IGNORE 不更新已存在行——
+    // 若服务器在加 label 前灌过种子，必须在此重刷，否则内置 label 永远是 NULL）
+    const insert = this.db.prepare(
       "INSERT OR IGNORE INTO item_list (id, name, label, source) VALUES (?, ?, ?, 'builtin')",
+    );
+    const sync = this.db.prepare(
+      "UPDATE item_list SET name = ?, label = ? WHERE id = ? AND source = 'builtin'",
     );
     this.db.transaction(() => {
       for (const item of BUILTIN_ITEMS) {
-        stmt.run(item.id, item.name, item.label ?? null);
+        insert.run(item.id, item.name, item.label ?? null);
+        sync.run(item.name, item.label ?? null, item.id);
       }
     })();
   }

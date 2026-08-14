@@ -3,11 +3,11 @@ import Database from "better-sqlite3";
 import { ItemService } from "../src/modules/items/ItemService.js";
 import { AppError } from "../src/utils/AppError.js";
 
-// 注入假内置种子——真实播种行为（INSERT OR IGNORE 幂等/不覆盖自定义）
+// 注入假内置种子——真实播种行为（UPSERT 幂等/同步 label/不覆盖自定义）
 vi.mock("../src/modules/items/itemSeed.js", () => ({
   BUILTIN_ITEMS: [
-    { id: 100, name: "测试内置A" },
-    { id: 101, name: "测试内置B" },
+    { id: 100, name: "测试内置A", label: "内置甲" },
+    { id: 101, name: "测试内置B", label: "内置乙" },
   ],
 }));
 
@@ -149,20 +149,42 @@ describe("ItemService — 物品清单 CRUD", () => {
   });
 
   describe("seedBuiltinItems", () => {
-    it("播种内置种子（source=builtin），幂等不重复插入", () => {
+    it("播种内置种子（source=builtin 带 label），幂等不重复插入", () => {
       service.seedBuiltinItems();
       service.seedBuiltinItems();
       const rows = service.listItems();
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.id)).toEqual([100, 101]);
       expect(rows.every((r) => r.source === "builtin")).toBe(true);
+      expect(rows.map((r) => r.label)).toEqual(["内置甲", "内置乙"]);
     });
 
-    it("不覆盖自定义物品（自定义先占同 ID）", () => {
-      service.createItem({ id: 100, name: "自定义占位" });
+    it("重播种同步已存在内置行的 label（旧种子无 label → 启动后刷上）", () => {
+      // 模拟旧种子：先插一行内置无 label
+      db.prepare(
+        "INSERT INTO item_list (id, name, source) VALUES (?, ?, 'builtin')",
+      ).run(100, "测试内置A");
+      // 重新播种 → 该行 label 被同步，不重复插入
+      service.seedBuiltinItems();
+      const rows = service.listItems();
+      expect(rows).toHaveLength(2);
+      const row = rows.find((r) => r.id === 100);
+      expect(row).toMatchObject({
+        name: "测试内置A",
+        label: "内置甲",
+        source: "builtin",
+      });
+    });
+
+    it("不覆盖自定义物品（自定义先占同 ID，label 不被内置同步覆盖）", () => {
+      service.createItem({ id: 100, name: "自定义占位", label: "我的中文名" });
       service.seedBuiltinItems();
       const row = service.listItems().find((r) => r.id === 100);
-      expect(row).toMatchObject({ name: "自定义占位", source: "custom" });
+      expect(row).toMatchObject({
+        name: "自定义占位",
+        label: "我的中文名",
+        source: "custom",
+      });
     });
   });
 });
