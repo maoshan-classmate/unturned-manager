@@ -866,6 +866,21 @@ function CommandsTab({
 }
 
 // ── Config.txt tab ──
+
+/**
+ * 难度值 → 中文标签。
+ * ★ 2026-08-14：未配置难度时显示「官方默认（普通）」——U3DS 未写 Mode 命令默认 Normal
+ * （EGameMode.cs），玩家不理解「未配置」意味着什么。
+ *
+ * @param mode - Commands.dat 的 Mode 值（Easy/Normal/Hard）；空/未知按官方默认 Normal 兜底
+ * @returns 界面用语的中文难度标签
+ */
+function formatModeLabel(mode: string): string {
+  const found = COMMANDS_DAT_ENUMS.Mode.find((m) => m.value === mode);
+  if (found) return found.label;
+  return "官方默认（普通）";
+}
+
 function ConfigTxtTab({
   fields,
   onChange,
@@ -880,11 +895,11 @@ function ConfigTxtTab({
     <div className="p-4 md:p-6 space-y-6">
       <div className="rounded-md border px-3 py-2" style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}>
         <p className="text-xs" style={{ color: "#94A3B8" }}>
-          当前生效 mode = <span style={{ color: "#22C55E" }}>{currentMode || "（未配置）"}</span>
+          当前生效难度：<span style={{ color: "#22C55E" }}>{formatModeLabel(currentMode)}</span>
         </p>
         <p className="mt-1 text-xs" style={{ color: "#64748B" }}>
-          [Items]/[Gameplay] 段写入的值对应当前 Mode 命令指定的难度（U3DS `PlayConfigData.cs:2856-2873` 单 section 格式，不支持 per-mode 字段值）。
-          切换 mode 请到「启动参数」卡片改 Mode 选项并保存。
+          此页面的物品与玩法设置会应用到当前难度。留空的项目将采用 Unturned 官方默认值。
+          如需切换难度，请到「Commands.dat」标签页修改「难度」并保存。
         </p>
       </div>
       <TxtSection

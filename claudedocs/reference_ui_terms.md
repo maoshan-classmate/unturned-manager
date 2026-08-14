@@ -22,6 +22,8 @@
 | OperationType 枚举（manual_start/.../mod_apply） | 启动 / 停止 / 重启 / 应用 Mod 变更（后端拼中文，用 `formatOperationType`） |
 | Login Token（Config.txt 浏览器列表字段） | Steam 浏览器登录令牌 |
 | Loadout | 开局物品 |
+| Mode（Commands.dat 难度枚举 Easy/Normal/Hard） | 难度（简单 / 普通 / 困难）——界面用「难度」；未配置时显示「官方默认（普通）」 |
+| per-mode 字段值 / 单 section 格式 / `[Items]/[Gameplay]` 段 | 物品与玩法设置（用户不感知配置文件的节结构——只说明「此页面的设置会应用到当前难度」） |
 | SkillsetID 0（none） | 无技能 |
 | SkillsetID 1（fire） | 消防员 |
 | SkillsetID 2（police） | 警察 |
