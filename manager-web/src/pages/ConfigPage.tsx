@@ -1205,19 +1205,39 @@ function RawEntryField({
     );
   }
 
-  // 数值/文本 placeholder：per-mode 显示当前难度默认值，否则用文件注释
-  const placeholder =
+  // 数值/文本 placeholder：显示默认值预览
+  // - per-mode 数值 → 当前难度默认（PER_MODE_DEFAULTS 取）
+  // - 非 per-mode 数值 → 定义表 def（纯值，如 "604800"）
+  // - 文本 → 文件注释
+  const defaultPreview =
     perMode && typeof modeDefault === "string"
-      ? `默认 ${modeDefault}`
+      ? modeDefault
+      : def && def.type === "number" && !def.def.includes("简单") && !def.def.includes("普通") && !def.def.includes("困难")
+        ? def.def
+        : undefined;
+  const placeholder =
+    defaultPreview !== undefined
+      ? `默认 ${defaultPreview}`
       : entry.comment ?? undefined;
+
+  // 数值 clamp：输入时按定义表 min/max 截断（0–1 输 2 → 1）
+  const clampNumber = (raw: string): string => {
+    if (def?.type !== "number" || def.min === undefined) return raw;
+    const n = Number(raw);
+    if (Number.isNaN(n)) return raw;
+    let clamped = n;
+    if (def.min !== undefined && clamped < def.min) clamped = def.min;
+    if (def.max !== undefined && clamped > def.max) clamped = def.max;
+    return String(clamped);
+  };
 
   return (
     <ConfigField
       label={label}
       value={entry.value ?? ""}
       onChange={(v) => {
-        const normalized = v.trim();
-        onUpdate(sectionName, entry.key, normalized.length > 0 ? normalized : null);
+        const clamped = clampNumber(v.trim());
+        onUpdate(sectionName, entry.key, clamped.length > 0 ? clamped : null);
       }}
       placeholder={placeholder}
     />
