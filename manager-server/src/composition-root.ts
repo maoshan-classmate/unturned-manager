@@ -24,6 +24,7 @@ import {
 
 import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
+import { AppError } from "./utils/AppError.js";
 import { AuthService } from "./modules/auth/AuthService.js";
 import { FileLockProvider } from "./modules/filelock/FileLockProvider.js";
 import { ProcessSupervisor } from "./modules/process/ProcessSupervisor.js";
@@ -173,15 +174,59 @@ export function buildContainer(db: Database.Database): AppContainer {
     }
     ptyManager.write(msg.serverId, "Save\n");
     try {
-      // SOP：PTY 输出「World saved」= 存档完成信号（无 A2S 轮询，ADR-0004 §3.3）
-      await ptyManager.waitForMarker(msg.serverId, /world saved/i, 30_000);
+      // ★ 2026-08-14 对齐官方真源：U3-SDK `CommandSave.cs:15` 存档完成后打本地化 SaveText
+      // `SaveText` = "Successfully saved the game."（实机 `Localization/English/Server/ServerCommandSave.dat`
+      // xxd 提取确认）。旧正则 /world saved/i 与官方文本不匹配 → 存档永远超时。
+      // 负向信号：`SaveManager.cs:51` 地图未加载完时 warn `Ignoring request to save before level finished loading`
+      // → 直接判「地图未就绪」而非等满 30s 超时。
+      const success = /successfully saved the game/i;
+      const failure = /ignoring request to save before level finished loading/i;
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const settle = (err?: AppError): void => {
+          if (settled) return;
+          settled = true;
+          offData();
+          offExit();
+          if (err) reject(err);
+          else resolve();
+        };
+        const offData = ptyManager.onData(msg.serverId, (line: string) => {
+          if (success.test(line)) {
+            settle();
+          } else if (failure.test(line)) {
+            settle(
+              new AppError(
+                "save_level_not_loaded",
+                "地图还没加载完，无法存档——请等服务端就绪后再试",
+                409,
+              ),
+            );
+          }
+        });
+        const offExit = ptyManager.onExit(msg.serverId, () => {
+          settle(new AppError("pty-exited", "控制台已关闭，存档中断", 409));
+        });
+        const timer = setTimeout(() => {
+          settle(
+            new AppError(
+              "save_timeout",
+              "存档超时——没有等到保存完成的信号",
+              504,
+            ),
+          );
+        }, 30_000);
+        timer.unref?.();
+      });
       return { ok: true };
-    } catch {
+    } catch (err) {
       return {
         ok: false,
         error: {
-          code: "save_timeout",
-          message: "存档超时——没有等到保存完成的信号",
+          code:
+            err instanceof AppError ? err.code : "save_timeout",
+          message:
+            err instanceof Error ? err.message : "存档失败",
         },
       };
     }

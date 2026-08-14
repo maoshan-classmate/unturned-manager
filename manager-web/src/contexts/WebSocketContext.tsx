@@ -12,6 +12,7 @@ import {
   getAccessTokenExpMs,
 } from "../api/client.js";
 import { useAuth } from "./AuthContext.js";
+import { generateUUID } from "../lib/utils.js";
 
 /**
  * 服务端推送的 WS 事件（契约真源在 shared/contracts/broadcast.ts）。
@@ -166,7 +167,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           reject(new Error("连接未就绪，请稍后重试"));
           return;
         }
-        const requestId = crypto.randomUUID();
+        // ★ HTTP 非安全上下文下 crypto.randomUUID 不可用（TypeError）——
+        // 用 generateUUID fallback（getRandomValues 在 HTTP/HTTPS 均可用）
+        const requestId = generateUUID();
         const timeoutMs = opts?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
         const timer = setTimeout(() => {
           pendingRef.current.delete(requestId);

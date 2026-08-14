@@ -51,6 +51,41 @@ export function errorMessage(err: unknown, fallback = "操作失败"): string {
   return err instanceof Error ? err.message : fallback;
 }
 
+/**
+ * 生成 RFC 4122 v4 UUID。
+ * 优先 `crypto.randomUUID()`（安全上下文可用）；HTTP 非安全上下文下
+ * `randomUUID` 不可用，fallback 到 `crypto.getRandomValues()` 手写 v4——
+ * `getRandomValues` 在 HTTP/HTTPS 均可用且是 CSPRNG，不降级安全性。
+ *
+ * @returns 36 字符的 UUID v4 字符串（如 '9c1b5e4a-...'）
+ *
+ * @example
+ * ```ts
+ * generateUUID() // '9c1b5e4a-7a3f-4b5c-8d9e-0f1a2b3c4d5e'
+ * ```
+ */
+export function generateUUID(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function"
+  ) {
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+      (
+        +c ^
+        (crypto.getRandomValues(new Uint8Array(1))[0]! & (15 >> (+c / 4)))
+      ).toString(16),
+    );
+  }
+  // 双 API 均不可用（理论不会触达）——非安全关键用途的兜底
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+}
+
 // ─── Mod 工具（v2.2 新增）────────────────────────────
 
 /**
