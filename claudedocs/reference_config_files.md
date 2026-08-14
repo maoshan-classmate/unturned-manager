@@ -2,8 +2,12 @@
 
 > 面向 Web UI 管理面板的可视化配置编辑器设计。  
 > 每个字段标注：类型、默认值、取值范围、Web UI 控件建议、**SDK 真源（U3-SDK 代码行号，`.research/U3-SDK/`）**。
+> 字段默认值 / 枚举值 / 类型以 **SDK 真源（U3-SDK `PlayConfigData.cs` 对应 ConfigData 类字段声明 + 实机生成文件注释）** 为准。
 
 > **字段细节自行溯源**：本文档只收录面板已实现字段的权威表，**不穷举所有配置项**。凡设计到具体字段名、枚举值、取值范围、解析/写入逻辑等细节，请直接到 U3-SDK 源码中查找对应类（`.research/U3-SDK/Assets/Runtime/Assembly-CSharp/Unturned/`），不要以本文档或社区教程为准。
+
+> **§2.1-2.4 托管字段**：面板「高级设置」页直接编辑（ConfigField/ConfigToggle 控件）。  
+> **§2.6-2.14 未托管模块字段**：面板「细节调整」区只读展示 + 可编辑（bool 用开关、数值用输入框），字段默认值按当前难度（Commands.dat Mode）取值。两区字段表均含「中文 label + 允许值 + 默认值 + 说明」，供 UI 与文档对齐。
 
 ---
 
@@ -146,5 +150,228 @@ U3DS Config.txt 文件路径：`PlayConfigUtils.GetServerConfigPathV2(serverId)`
 | 自由建造 | `Allow_Freeform_Buildables` | `Gameplay`（按当前 Mode） | `:2250` `GameplayConfigData.Allow_Freeform_Buildables` |
 | 玩家伤害（label 取反） | `Friendly_Fire` | `Gameplay`（按当前 Mode） | `:2225` `GameplayConfigData.Friendly_Fire` |
 | 允许自杀 | `Can_Suicide` | `Gameplay`（按当前 Mode） | `:2220` `GameplayConfigData.Can_Suicide` |
+
+### 2.6 载具段（VehiclesConfigData）— 20 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Decay_Time` | float | 闲置损坏时间 | 数值（秒） | 604800 | 载具被闲置多久后开始受损 |
+| `Decay_Damage_Per_Second` | float | 闲置损坏速度 | 数值 | 0.1 | 超过 Decay_Time 后每秒承受的伤害 |
+| `Has_Battery_Chance` | float | 带电池概率 | 0–1 | 简单1 / 普通0.8 / 困难0.25 | 生成时带电池的概率 |
+| `Min_Battery_Charge` | float | 电池最小电量 | 0–1 | 简单0.8 / 普通0.5 / 困难0.1 | 带电池时的最小初始电量 |
+| `Max_Battery_Charge` | float | 电池最大电量 | 0–1 | 简单1 / 普通0.75 / 困难0.3 | 带电池时的最大初始电量 |
+| `Has_Tire_Chance` | float | 带轮胎概率 | 0–1 | 简单1 / 普通0.85 / 困难0.7 | 每轮生成带轮胎的概率 |
+| `Respawn_Time` | float | 消失时间 | 数值（秒） | 300 | 载具爆炸或卡水底后多久消失 |
+| `Unlocked_After_Seconds_In_Safezone` | float | 安全区自动解锁 | 数值（秒） | 3600 | 上锁载具在安全区空置多久后自动解锁 |
+| `Armor_Multiplier` | float | 护甲系数 | 数值 | 1 | 缩放载具受到的伤害 |
+| `Child_Explosion_Armor_Multiplier` | float | 爆炸物护甲系数 | 数值 | 1 | 路障遮挡爆炸时对载具伤害的缩放 |
+| `Gun_Lowcal_Damage_Multiplier` | float | 轻武器伤害系数 | 数值 | 1 | 非重型武器对载具的伤害缩放 |
+| `Gun_Highcal_Damage_Multiplier` | float | 重型武器伤害系数 | 数值 | 1 | 重型武器对载具的伤害缩放 |
+| `Melee_Damage_Multiplier` | float | 近战伤害系数 | 数值 | 1 | 近战武器和拳头对载具的伤害缩放 |
+| `Melee_Repair_Multiplier` | float | 近战修复系数 | 数值 | 1 | 焊枪等近战工具的修复量缩放 |
+| `Max_Instances_Tiny` | uint | 迷你图最大数量 | 整数 | 4 | 迷你尺寸地图自然生成载具上限 |
+| `Max_Instances_Small` | uint | 小型图最大数量 | 整数 | 8 | 小型尺寸地图自然生成载具上限 |
+| `Max_Instances_Medium` | uint | 中型图最大数量 | 整数 | 16 | 中型尺寸地图自然生成载具上限 |
+| `Max_Instances_Large` | uint | 大型图最大数量 | 整数 | 32 | 大型尺寸地图自然生成载具上限 |
+| `Max_Instances_Insane` | uint | 超大图最大数量 | 整数 | 64 | 超大尺寸地图自然生成载具上限 |
+| `Min_Natural_Vehicles` | uint | 自然载具下限 | 整数 | 16 | 低于此数量时自然生成更多载具（与 Max_Instances 取较小值） |
+
+### 2.7 僵尸段（ZombiesConfigData）— 42 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Spawn_Chance` | float | 生成概率 | 0–1 | 简单0.2 / 普通0.25 / 困难0.3 | 僵尸生成概率 |
+| `Loot_Chance` | float | 掉落概率 | 0–1 | 简单0.55 / 普通0.5 / 困难0.3 | 僵尸掉落物品的概率 |
+| `Crawler_Chance` | float | 爬行者概率 | 0–1 | 简单0 / 普通0.15 / 困难0.125 | 生成爬行僵尸的概率 |
+| `Sprinter_Chance` | float | 疾跑者概率 | 0–1 | 简单0 / 普通0.15 / 困难0.175 | 生成疾跑僵尸的概率 |
+| `Flanker_Chance` | float | 侧翼者概率 | 0–1 | 简单0 / 普通0.025 / 困难0.05 | 生成侧翼僵尸的概率 |
+| `Burner_Chance` | float | 燃烧者概率 | 0–1 | 简单0 / 普通0.025 / 困难0.05 | 生成燃烧僵尸的概率 |
+| `Acid_Chance` | float | 酸液者概率 | 0–1 | 简单0 / 普通0.025 / 困难0.05 | 生成酸液僵尸的概率 |
+| `Boss_Electric_Chance` | float | 电系首领概率 | 0–1 | 0 | 生成电系首领僵尸的概率 |
+| `Boss_Wind_Chance` | float | 震地首领概率 | 0–1 | 0 | 生成震地首领僵尸的概率 |
+| `Boss_Fire_Chance` | float | 喷火首领概率 | 0–1 | 0 | 生成喷火首领僵尸的概率 |
+| `Spirit_Chance` | float | 幽灵概率 | 0–1 | 0 | 生成幽灵僵尸的概率 |
+| `DL_Red_Volatile_Chance` | float | 红色夜魔概率 | 0–1 | 0 | 生成消逝的光芒红色夜魔僵尸的概率 |
+| `DL_Blue_Volatile_Chance` | float | 蓝色夜魔概率 | 0–1 | 0 | 生成消逝的光芒蓝色夜魔僵尸的概率 |
+| `Boss_Elver_Stomper_Chance` | float | 巨树首领概率 | 0–1 | 0 | 生成埃尔弗最终首领僵尸的概率 |
+| `Boss_Kuwait_Chance` | float | 科威特首领概率 | 0–1 | 0 | 生成科威特最终首领僵尸的概率 |
+| `Respawn_Day_Time` | float | 白天重生时间 | 数值（秒） | 360 | 死亡僵尸默认重生间隔（白天） |
+| `Respawn_Night_Time` | float | 满月重生时间 | 数值（秒） | 30 | 满月时死亡僵尸重生间隔 |
+| `Respawn_Beacon_Time` | float | 尸潮信标重生 | 数值（秒） | 0 | 尸潮信标时死亡僵尸重生间隔 |
+| `Quest_Boss_Respawn_Interval` | float | 任务首领重生间隔 | 数值（秒） | 600 | 任务型首领僵尸的最小重生间隔 |
+| `Damage_Multiplier` | float | 伤害系数 | 数值 | 简单0.75 / 普通1 / 困难1.5 | 僵尸造成的伤害缩放 |
+| `Armor_Multiplier` | float | 护甲系数 | 数值 | 简单1.25 / 普通1 / 困难0.75 | 僵尸受到的伤害缩放 |
+| `Backstab_Multiplier` | float | 背刺系数 | 数值 | 1.25 | 背后攻击僵尸时的伤害缩放 |
+| `NonHeadshot_Armor_Multiplier` | float | 非爆头护甲系数 | 数值 | 1 | 身体/手臂/腿部的武器伤害系数 |
+| `Beacon_Experience_Multiplier` | float | 信标经验系数 | 数值 | 1 | 尸潮信标期间击杀僵尸的经验缩放 |
+| `Full_Moon_Experience_Multiplier` | float | 满月经验系数 | 数值 | 2 | 满月期间击杀僵尸的经验缩放 |
+| `Min_Drops` | uint | 最小掉落 | 整数 | 1 | 普通僵尸最小掉落数 |
+| `Max_Drops` | uint | 最大掉落 | 整数 | 1 | 普通僵尸最大掉落数 |
+| `Min_Mega_Drops` | uint | 巨型最小掉落 | 整数 | 5 | 巨型僵尸最小掉落数 |
+| `Max_Mega_Drops` | uint | 巨型最大掉落 | 整数 | 5 | 巨型僵尸最大掉落数 |
+| `Min_Boss_Drops` | uint | 首领最小掉落 | 整数 | 8 | 首领僵尸最小掉落数 |
+| `Max_Boss_Drops` | uint | 首领最大掉落 | 整数 | 10 | 首领僵尸最大掉落数 |
+| `Slow_Movement` | bool | 缓慢移动 | 开关 | 简单开 / 普通关 / 困难关 | 开启后所有僵尸速度略慢，更易逃跑 |
+| `Can_Stun` | bool | 可被眩晕 | 开关 | 简单开 / 普通开 / 困难关 | 关闭后僵尸无法被任何方式眩晕 |
+| `Only_Critical_Stuns` | bool | 仅关键眩晕 | 开关 | 简单关 / 普通关 / 困难开 | 开启后仅特定武器/背刺可眩晕僵尸 |
+| `Weapons_Use_Player_Damage` | bool | 武器用玩家伤害 | 开关 | 简单关 / 普通关 / 困难开 | 开启后打僵尸用武器 PvP 伤害 |
+| `Can_Target_Barricades` | bool | 可攻击路障 | 开关 | 开 | 僵尸会攻击阻挡的路障 |
+| `Can_Target_Structures` | bool | 可攻击建筑 | 开关 | 开 | 僵尸会攻击阻挡的建筑 |
+| `Can_Target_Vehicles` | bool | 可攻击载具 | 开关 | 开 | 僵尸会攻击阻挡的载具 |
+| `Can_Target_Objects` | bool | 可攻击世界物件 | 开关 | 开 | 僵尸会攻击阻挡的围栏等世界物件 |
+| `Beacon_Max_Rewards` | uint | 信标最大奖励 | 整数 | 0 | 大于 0 时尸潮信标最大掉落数 |
+| `Beacon_Max_Participants` | uint | 信标最大参与 | 整数 | 0 | 大于 0 时尸潮信标掉落缩放的最大人数 |
+| `Beacon_Rewards_Multiplier` | float | 信标奖励系数 | 数值 | 1 | 尸潮信标总掉落缩放（先于 Beacon_Max_Rewards） |
+
+### 2.8 动物段（AnimalsConfigData）— 9 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Respawn_Time` | float | 重生时间 | 数值（秒） | 180 | 死亡动物多久重生 |
+| `Damage_Multiplier` | float | 伤害系数 | 数值 | 简单0.75 / 普通1 / 困难1.5 | 动物造成的伤害缩放 |
+| `Armor_Multiplier` | float | 护甲系数 | 数值 | 简单1.25 / 普通1 / 困难0.75 | 动物受到的伤害缩放 |
+| `Max_Instances_Tiny` | uint | 迷你图最大数量 | 整数 | 4 | 迷你尺寸地图动物上限 |
+| `Max_Instances_Small` | uint | 小型图最大数量 | 整数 | 8 | 小型尺寸地图动物上限 |
+| `Max_Instances_Medium` | uint | 中型图最大数量 | 整数 | 16 | 中型尺寸地图动物上限 |
+| `Max_Instances_Large` | uint | 大型图最大数量 | 整数 | 32 | 大型尺寸地图动物上限 |
+| `Max_Instances_Insane` | uint | 超大图最大数量 | 整数 | 64 | 超大尺寸地图动物上限 |
+| `Weapons_Use_Player_Damage` | bool | 武器用玩家伤害 | 开关 | 简单关 / 普通关 / 困难开 | 开启后打动物用武器 PvP 伤害 |
+
+### 2.9 路障段（BarricadesConfigData）— 11 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Decay_Time` | uint | 腐烂时间 | 整数（秒） | 604800 | 所有者/组多久未上线后路障不再保存 |
+| `Armor_Lowtier_Multiplier` | float | 低阶护甲系数 | 数值 | 1 | 低阶护甲路障受到的伤害缩放 |
+| `Armor_Hightier_Multiplier` | float | 高阶护甲系数 | 数值 | 0.5 | 高阶护甲路障受到的伤害缩放 |
+| `Gun_Lowcal_Damage_Multiplier` | float | 轻武器伤害系数 | 数值 | 1 | 非重型武器对路障的伤害缩放 |
+| `Gun_Highcal_Damage_Multiplier` | float | 重型武器伤害系数 | 数值 | 1 | 重型武器对路障的伤害缩放 |
+| `Melee_Damage_Multiplier` | float | 近战伤害系数 | 数值 | 1 | 近战武器对路障的伤害缩放 |
+| `Melee_Repair_Multiplier` | float | 近战修复系数 | 数值 | 1 | 焊枪等近战工具的修复量缩放 |
+| `Allow_Item_Placement_On_Vehicle` | bool | 允许载具上放置 | 开关 | 开 | 玩家能否在载具上建造 |
+| `Allow_Trap_Placement_On_Vehicle` | bool | 允许载具上放陷阱 | 开关 | 开 | 玩家能否在载具上放铁丝网等陷阱 |
+| `Max_Item_Distance_From_Hull` | float | 最大建造距离 | 数值 | 64 | 玩家能在载具碰撞体多远处建造物品 |
+| `Max_Trap_Distance_From_Hull` | float | 最大陷阱距离 | 数值 | 16 | 玩家能在载具碰撞体多远处放陷阱 |
+
+### 2.10 建筑段（StructuresConfigData）— 7 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Decay_Time` | uint | 腐烂时间 | 整数（秒） | 604800 | 所有者/组多久未上线后建筑不再保存 |
+| `Armor_Lowtier_Multiplier` | float | 低阶护甲系数 | 数值 | 1 | 低阶护甲建筑受到的伤害缩放 |
+| `Armor_Hightier_Multiplier` | float | 高阶护甲系数 | 数值 | 0.5 | 高阶护甲建筑受到的伤害缩放 |
+| `Gun_Lowcal_Damage_Multiplier` | float | 轻武器伤害系数 | 数值 | 1 | 非重型武器对建筑的伤害缩放 |
+| `Gun_Highcal_Damage_Multiplier` | float | 重型武器伤害系数 | 数值 | 1 | 重型武器对建筑的伤害缩放 |
+| `Melee_Damage_Multiplier` | float | 近战伤害系数 | 数值 | 1 | 近战武器对建筑的伤害缩放 |
+| `Melee_Repair_Multiplier` | float | 近战修复系数 | 数值 | 1 | 焊枪等近战工具的修复量缩放 |
+
+### 2.11 玩家段（PlayersConfigData）— 47 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Health_Default` | uint | 初始生命 | 0–100 | 100 | 玩家出生时的生命值 |
+| `Health_Regen_Min_Food` | uint | 回血最低饱食 | 整数 | 90 | 饱食度高于此值才开始回血 |
+| `Health_Regen_Min_Water` | uint | 回血最低饮水 | 整数 | 90 | 饮水量高于此值才开始回血 |
+| `Health_Regen_Ticks` | uint | 回血速度 | 整数 | 60 | 饱食/饮水足够时回血的速度 |
+| `Food_Default` | uint | 初始饱食 | 0–100 | 简单100 / 普通100 / 困难85 | 玩家出生时的饱食度 |
+| `Food_Use_Ticks` | uint | 饱食消耗速度 | 整数 | 简单350 / 普通300 / 困难250 | 饱食度消耗速度 |
+| `Food_Damage_Ticks` | uint | 饿死速度 | 整数 | 15 | 饱食度耗尽后饿死的速度 |
+| `Water_Default` | uint | 初始饮水 | 0–100 | 简单100 / 普通100 / 困难85 | 玩家出生时的饮水量 |
+| `Water_Use_Ticks` | uint | 饮水消耗速度 | 整数 | 简单320 / 普通270 / 困难220 | 饮水量消耗速度 |
+| `Water_Damage_Ticks` | uint | 渴死速度 | 整数 | 20 | 饮水量耗尽后渴死的速度 |
+| `Virus_Default` | uint | 初始免疫 | 0–100 | 100 | 玩家出生时的免疫力 |
+| `Virus_Infect` | uint | 感染阈值 | 整数 | 50 | 免疫力低于此值时开始下降 |
+| `Virus_Use_Ticks` | uint | 免疫消耗速度 | 整数 | 125 | 低于 Virus_Infect 后免疫下降速度 |
+| `Virus_Damage_Ticks` | uint | 免疫为零死亡速度 | 整数 | 25 | 免疫力为零后死亡速度 |
+| `Leg_Regen_Ticks` | uint | 断腿愈合速度 | 整数 | 750 | 断腿自动愈合的速度 |
+| `Bleed_Damage_Ticks` | uint | 流血伤害速度 | 整数 | 10 | 流血期间掉血频率 |
+| `Bleed_Regen_Ticks` | uint | 流血愈合速度 | 整数 | 750 | 流血自动愈合的速度 |
+| `Armor_Multiplier` | float | 护甲系数 | 数值 | 1 | 玩家受到的伤害缩放 |
+| `Experience_Multiplier` | float | 经验系数 | 数值 | 简单1.5 / 普通1 / 困难1.5 | 所有活动获得的经验缩放 |
+| `Detect_Radius_Multiplier` | float | 侦测半径系数 | 数值 | 简单0.5 / 普通1 / 困难1.25 | 僵尸/动物侦测玩家的半径缩放 |
+| `Ray_Aggressor_Distance` | float | 攻击判定距离 | 数值 | 8 | 攻击距玩家多近算「攻击行为」 |
+| `Lose_Skills_PvP` | float | 玩家击杀保留技能 | 0–1 | 1 | 被玩家击杀后保留的技能比例 |
+| `Lose_Skills_PvE` | float | 环境击杀保留技能 | 0–1 | 1 | 被环境击杀后保留的技能比例 |
+| `Lose_Skill_Levels_PvP` | uint | 玩家击杀扣技能级 | 整数 | 简单0 / 普通1 / 困难2 | 被玩家击杀后扣除的技能等级 |
+| `Lose_Skill_Levels_PvE` | uint | 环境击杀扣技能级 | 整数 | 简单0 / 普通1 / 困难2 | 被环境击杀后扣除的技能等级 |
+| `Lose_Experience_PvP` | float | 玩家击杀保留经验 | 0–1 | 0.5 | 被玩家击杀后保留的经验比例 |
+| `Lose_Experience_PvE` | float | 环境击杀保留经验 | 0–1 | 0.5 | 被环境击杀后保留的经验比例 |
+| `Skill_Cost_Multiplier` | float | 技能花费系数 | 数值 | 1 | 购买/升级技能的经验花费缩放 |
+| `Lose_Items_PvP` | float | 玩家击杀掉物概率 | 0–1 | 1 | 被玩家击杀时每件物品掉落的概率 |
+| `Lose_Items_PvE` | float | 环境击杀掉物概率 | 0–1 | 1 | 被环境击杀时每件物品掉落的概率 |
+| `Lose_Clothes_PvP` | bool | 玩家击杀掉衣服 | 开关 | 开 | 被玩家击杀时掉落所有衣物 |
+| `Lose_Clothes_PvE` | bool | 环境击杀掉衣服 | 开关 | 开 | 被环境击杀时掉落所有衣物 |
+| `Lose_Weapons_PvP` | bool | 玩家击杀掉武器 | 开关 | 开 | 被玩家击杀时掉落主副武器 |
+| `Lose_Weapons_PvE` | bool | 环境击杀掉武器 | 开关 | 开 | 被环境击杀时掉落主副武器 |
+| `Can_Hurt_Legs` | bool | 坠伤 | 开关 | 开 | 关闭后高空坠落不会掉血 |
+| `Can_Break_Legs` | bool | 坠断腿 | 开关 | 简单关 / 普通开 / 困难开 | 关闭后高空坠落不会断腿 |
+| `Can_Fix_Legs` | bool | 断腿自愈 | 开关 | 简单开 / 普通开 / 困难关 | 关闭后断腿不会自动愈合 |
+| `Can_Start_Bleeding` | bool | 可流血 | 开关 | 简单关 / 普通开 / 困难开 | 关闭后伤害不会导致流血 |
+| `Can_Stop_Bleeding` | bool | 流血自愈 | 开关 | 简单开 / 普通开 / 困难关 | 关闭后流血不会自动愈合 |
+| `Spawn_With_Max_Skills` | bool | 满级技能出生 | 开关 | 关 | 所有技能是否默认满级 |
+| `Spawn_With_Stamina_Skills` | bool | 满级耐力技能出生 | 开关 | 关 | 体能/潜水/锻炼/跑酷是否默认满级 |
+| `Skillset_Reduces_Skill_Cost` | bool | 职业技能半价 | 开关 | 开 | 与玩家职业相关的技能花费减半 |
+| `Skillset_Prevents_Skill_Loss` | bool | 职业技能不掉级 | 开关 | 开 | 与玩家职业相关的技能死亡不掉级 |
+| `Prevent_Level_Skill_Overrides` | bool | 禁止等级覆盖技能 | 开关 | 关 | 关闭后等级不修改技能初始/花费/上限 |
+| `Allow_Instakill_Headshots` | bool | 狙击爆头必杀 | 开关 | 简单关 / 普通关 / 困难开 | 带必杀爆头的枪是否无视护甲 |
+| `Allow_Per_Character_Saves` | bool | 按角色存档 | 开关 | 关 | 每个角色栏是否有独立存档 |
+| `Enable_Terrain_Color_Kick` | bool | 地形色踢出 | 开关 | 开 | 玩家肤色与地形色太接近时踢出 |
+
+### 2.12 世界物件段（ObjectConfigData）— 8 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Binary_State_Reset_Multiplier` | float | 电器关闭系数 | 数值 | 1 | 冰箱等交互物自动关闭的时间缩放 |
+| `Fuel_Reset_Multiplier` | float | 燃油补充系数 | 数值 | 1 | 世界燃油源自动补充的时间缩放 |
+| `Water_Reset_Multiplier` | float | 水源补充系数 | 数值 | 1 | 世界水源自动补充的时间缩放 |
+| `Resource_Reset_Multiplier` | float | 资源生长系数 | 数值 | 1 | 树/岩石/灌木生长的速度缩放 |
+| `Resource_Drops_Multiplier` | float | 资源掉落系数 | 数值 | 1 | 树/岩石等资源的掉落物缩放 |
+| `Rubble_Reset_Multiplier` | float | 可毁物修复系数 | 数值 | 1 | 围栏等可毁物自动修复的时间缩放 |
+| `Allow_Holiday_Drops` | bool | 节日掉落 | 开关 | 开 | 节日专属物件能否掉落特殊物品 |
+| `Items_Obstruct_Tree_Respawns` | bool | 阻挡树重生 | 开关 | 开 | 树桩上的路障是否阻止树生长 |
+
+### 2.13 事件段（EventsConfigData）— 30 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Rain_Frequency_Min` | float | 雨最小间隔 | 数值（天） | 2.3 | 两次传统降雨的最小间隔天数 |
+| `Rain_Frequency_Max` | float | 雨最大间隔 | 数值（天） | 5.6 | 两次传统降雨的最大间隔天数 |
+| `Rain_Duration_Min` | float | 雨最短时长 | 数值（天） | 0.05 | 传统降雨最短时长；0 关闭 |
+| `Rain_Duration_Max` | float | 雨最长时长 | 数值（天） | 0.15 | 传统降雨最长时长；0 关闭 |
+| `Snow_Frequency_Min` | float | 雪最小间隔 | 数值（天） | 1.3 | 两次传统降雪的最小间隔天数 |
+| `Snow_Frequency_Max` | float | 雪最大间隔 | 数值（天） | 4.6 | 两次传统降雪的最大间隔天数 |
+| `Snow_Duration_Min` | float | 雪最短时长 | 数值（天） | 0.2 | 传统降雪最短时长；0 关闭 |
+| `Snow_Duration_Max` | float | 雪最长时长 | 数值（天） | 0.5 | 传统降雪最长时长；0 关闭 |
+| `Weather_Frequency_Multiplier` | float | 天气频率系数 | 数值 | 1 | 天气事件间隔天数缩放 |
+| `Weather_Duration_Multiplier` | float | 天气时长系数 | 数值 | 1 | 天气事件持续天数缩放；0 完全关闭 |
+| `Airdrop_Frequency_Min` | float | 空投最小间隔 | 数值（天） | 0.8 | 两次空投的最小间隔天数（依赖 Use_Airdrops） |
+| `Airdrop_Frequency_Max` | float | 空投最大间隔 | 数值（天） | 6.5 | 两次空投的最大间隔天数（依赖 Use_Airdrops） |
+| `Airdrop_Speed` | float | 空投飞机速度 | 数值（米/秒） | 128 | 空投飞机飞过地图的速度 |
+| `Airdrop_Force` | float | 空投浮力 | 数值 | 9.5 | 抵抗重力的空投箱向上力 |
+| `Arena_Min_Players` | uint | 竞技场最小人数 | 整数 | 2 | 开始竞技场匹配所需的最少队伍数 |
+| `Arena_Compactor_Damage` | uint | 圈外基础伤害 | 整数 | 9 | 竞技场圈外每秒基础伤害 |
+| `Arena_Compactor_Extra_Damage_Per_Second` | float | 圈外递增伤害 | 数值 | 1 | 竞技场圈外每秒累积的额外伤害 |
+| `Arena_Clear_Timer` | uint | 传送前等待 | 整数（秒） | 5 | 匹配就绪到传送玩家进圈的时间 |
+| `Arena_Finale_Timer` | uint | 决赛等待 | 整数（秒） | 10 | 宣布胜者后到重启的时间 |
+| `Arena_Restart_Timer` | uint | 中场休息 | 整数（秒） | 15 | 中场到下一场比赛的时间 |
+| `Arena_Compactor_Delay_Timer` | uint | 首圈延迟 | 整数（秒） | 1 | 第一圈开始收缩前的时间 |
+| `Arena_Compactor_Pause_Timer` | uint | 圈收缩暂停 | 整数（秒） | 5 | 圈收缩完成到再次收缩的间隔 |
+| `Use_Airdrops` | bool | 启用空投 | 开关 | 开 | 飞机是否飞过地图投放空投箱 |
+| `Arena_Use_Compactor_Pause` | bool | 圈内多圈 | 开关 | 开 | 开启后圈内选择多个更小的圈 |
+| `Arena_Compactor_Speed_Tiny` | float | 迷你图缩圈速度 | 数值（米/秒） | 0.5 | 迷你尺寸地图圈的收缩速度 |
+| `Arena_Compactor_Speed_Small` | float | 小型图缩圈速度 | 数值（米/秒） | 1.5 | 小型尺寸地图圈的收缩速度 |
+| `Arena_Compactor_Speed_Medium` | float | 中型图缩圈速度 | 数值（米/秒） | 3 | 中型尺寸地图圈的收缩速度 |
+| `Arena_Compactor_Speed_Large` | float | 大型图缩圈速度 | 数值（米/秒） | 4.5 | 大型尺寸地图圈的收缩速度 |
+| `Arena_Compactor_Speed_Insane` | float | 超大图缩圈速度 | 数值（米/秒） | 6 | 超大尺寸地图圈的收缩速度 |
+| `Arena_Compactor_Shrink_Factor` | float | 缩圈保留系数 | 0–1 | 0.5 | 选择下一个更小圈时保留原圈的比例 |
+
+### 2.14 Unity 事件段（UnityEventConfigData）— 4 字段
+
+| 字段 | 类型 | 中文 label | 允许值 | 默认值 | 说明 |
+|---|---|---|---|---|---|
+| `Allow_Server_Messages` | bool | 服务端广播 | 开关 | 关 | 服务端文本聊天能否广播 |
+| `Allow_Server_Commands` | bool | 服务端命令 | 开关 | 关 | 服务端文本聊天能否执行命令 |
+| `Allow_Client_Messages` | bool | 客户端广播 | 开关 | 关 | 客户端文本聊天能否广播 |
+| `Allow_Client_Commands` | bool | 客户端命令 | 开关 | 关 | 客户端文本聊天能否执行命令 |
 
 ---

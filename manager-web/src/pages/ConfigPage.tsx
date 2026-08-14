@@ -39,6 +39,8 @@ import {
   EMPTY_TXT_FIELDS as EMPTY_TXT,
   type ConfigTxtFields,
 } from "./configTxtAdapter.js";
+import { TXT_FIELD_DEFS } from "./txtFieldDefs.js";
+import { PER_MODE_DEFAULTS } from "./perModeDefaults.js";
 import type { ConfigSection as ApiConfigSection } from "@unturned-manager/shared";
 
 type ConfigTab = "commands" | "txt" | "workshop";
@@ -976,18 +978,17 @@ function ConfigTxtTab({
       </div>
       <TxtSection
         title="浏览器"
+        sectionName="Browser"
         fields={
           [
             [
               "Login_Token",
-              "Steam 浏览器登录令牌",
-              "text",
               "AppID 304930 申请的令牌；与 Commands.dat 的游戏服务器登录令牌选填其一即可",
             ],
-            ["Desc_Full", "完整描述", "text", undefined],
-            ["Desc_Server_List", "列表描述", "text", undefined],
-            ["Icon", "图标URL", "text", undefined],
-            ["Thumbnail", "缩略图URL", "text", undefined],
+            ["Desc_Full"],
+            ["Desc_Server_List"],
+            ["Icon"],
+            ["Thumbnail"],
           ] as const
         }
         txtFields={fields}
@@ -996,13 +997,14 @@ function ConfigTxtTab({
       />
       <TxtSection
         title="服务器"
+        sectionName="Server"
         fields={
           [
-            ["VAC_Secure", "VAC反作弊", "toggle"],
-            ["BattlEye_Secure", "BattlEye", "toggle"],
-            ["Max_Ping_Milliseconds", "最大Ping(ms)", "text"],
-            ["Enable_Scheduled_Shutdown", "定时关机", "toggle"],
-            ["Enable_Update_Shutdown", "更新自动关机", "toggle"],
+            ["VAC_Secure"],
+            ["BattlEye_Secure"],
+            ["Max_Ping_Milliseconds"],
+            ["Enable_Scheduled_Shutdown"],
+            ["Enable_Update_Shutdown"],
           ] as const
         }
         txtFields={fields}
@@ -1011,12 +1013,13 @@ function ConfigTxtTab({
       />
       <TxtSection
         title="物品"
+        sectionName="Items"
         fields={
           [
-            ["Spawn_Chance", "生成倍率", "text"],
-            ["Has_Durability", "物品耐久", "toggle"],
-            ["Despawn_Dropped_Time", "掉落消失(s)", "text"],
-            ["Respawn_Time", "重生时间(s)", "text"],
+            ["Spawn_Chance"],
+            ["Has_Durability"],
+            ["Despawn_Dropped_Time"],
+            ["Respawn_Time"],
           ] as const
         }
         txtFields={fields}
@@ -1025,12 +1028,13 @@ function ConfigTxtTab({
       />
       <TxtSection
         title="玩法开关"
+        sectionName="Gameplay"
         fields={
           [
-            ["Allow_Shoulder_Camera", "肩后视角", "toggle"],
-            ["Allow_Freeform_Buildables", "自由建造", "toggle"],
-            ["Friendly_Fire", "玩家伤害", "toggle"],
-            ["Can_Suicide", "允许自杀", "toggle"],
+            ["Allow_Shoulder_Camera"],
+            ["Allow_Freeform_Buildables"],
+            ["Friendly_Fire"],
+            ["Can_Suicide"],
           ] as const
         }
         txtFields={fields}
@@ -1057,6 +1061,7 @@ function ConfigTxtTab({
               key={name}
               sectionName={name}
               section={section}
+              currentMode={currentMode}
               onUpdate={onUpdateRawEntry}
             />
           ))}
@@ -1092,12 +1097,15 @@ function getFieldPlaceholder(
 function RawSectionBlock({
   sectionName,
   section,
+  currentMode,
   onUpdate,
 }: {
   /** 模块名（SDK section 名，如 Vehicles/Zombies） */
   sectionName: string;
   /** 该模块的字段 */
   section: ApiConfigSection;
+  /** 当前 Commands.dat Mode（Easy/Normal/Hard）——per-mode bool 默认值按它取 */
+  currentMode: string;
   /** 编辑字段回调 */
   onUpdate: (sectionName: string, key: string, value: string | null) => void;
 }) {
@@ -1118,81 +1126,101 @@ function RawSectionBlock({
   const label = MODULE_LABELS[sectionName] ?? sectionName;
 
   return (
-    <div className="rounded border" style={{ borderColor: "#334059" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs"
-        style={{ color: "#94A3B8" }}
-      >
-        <span className="flex items-center gap-2">
-          <span style={{ color: "#3B82F6" }}>{label}</span>
-          <span className="text-slate-500">({sectionName})</span>
-        </span>
-        <span>{open ? "收起" : "展开"}</span>
-      </button>
-
-      {open && (
-        <div className="px-2.5 pb-2.5 pt-1 border-t" style={{ borderColor: "#334059" }}>
-          {section.entries.length === 0 ? (
-            <p className="text-xs text-slate-500">暂无字段</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-              {section.entries.map((entry) => (
-                <RawEntryField key={entry.key} entry={entry} onUpdate={onUpdate} sectionName={sectionName} />
-              ))}
-            </div>
-          )}
+    <ConfigSection
+      title={`${label}（${sectionName}）`}
+      actions={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-[11px] px-2 h-6 rounded"
+          style={{ color: "#94A3B8" }}
+        >
+          {open ? "收起" : "展开"}
+        </button>
+      }
+    >
+      {!open ? (
+        <p className="text-xs text-slate-500">
+          {section.entries.length} 项设置——展开可编辑
+        </p>
+      ) : section.entries.length === 0 ? (
+        <p className="text-xs text-slate-500">暂无字段</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+          {section.entries.map((entry) => (
+            <RawEntryField
+              key={entry.key}
+              entry={entry}
+              onUpdate={onUpdate}
+              sectionName={sectionName}
+              currentMode={currentMode}
+            />
+          ))}
         </div>
       )}
-    </div>
+    </ConfigSection>
   );
 }
 
-/** 单个未托管字段的编辑控件——通用 KV 编辑器：输入值覆盖默认，清空 = 用默认 */
+/** 单个未托管字段的编辑控件——bool 用 ConfigToggle，非 bool 用 ConfigField（复用配置页统一组件） */
 function RawEntryField({
   entry,
   sectionName,
+  currentMode,
   onUpdate,
 }: {
   entry: ApiConfigSection["entries"][number];
   sectionName: string;
+  /** 当前 Commands.dat Mode（Easy/Normal/Hard）——per-mode bool 裸 key 时按它取默认开/关 */
+  currentMode: string;
   onUpdate: (sectionName: string, key: string, value: string | null) => void;
 }) {
-  const [val, setVal] = useState(entry.value ?? "");
-  const [dirty, setDirty] = useState(false);
+  // 从定义表按 (section, key) 查字段类型/中文名——同名 key 跨模块以 section 区分
+  const def = TXT_FIELD_DEFS.find(
+    (d) => d.key === entry.key && d.section === sectionName,
+  );
+  const isBool = def?.type === "bool";
+  const label = def?.label ?? entry.key;
+  // 当前难度的默认值（PER_MODE_DEFAULTS 结构化查表，零字符串解析）
+  const perMode = PER_MODE_DEFAULTS[`${sectionName}.${entry.key}`];
+  const modeKey = currentMode?.trim().toLowerCase() as "easy" | "normal" | "hard";
+  const modeDefault = perMode ? perMode[modeKey] ?? perMode.normal : undefined;
+  // bool 当前值：
+  // - value 有值（"true"/"false"）→ 按字面
+  // - 裸 key（null = 用默认）→ 按定义表默认（per-mode 按当前难度取）
+  const boolVal =
+    entry.value === "true" ||
+    (entry.value === null &&
+      (def?.def === "开" || modeDefault === true));
 
-  // 提交编辑（失焦/回车）——空串归一为 null（用默认）
-  const commit = () => {
-    const normalized = val.trim();
-    onUpdate(sectionName, entry.key, normalized.length > 0 ? normalized : null);
-    setDirty(false);
-  };
+  if (isBool) {
+    return (
+      <ConfigToggle
+        label={label}
+        checked={boolVal}
+        onChange={(checked) =>
+          onUpdate(sectionName, entry.key, checked ? "true" : "false")
+        }
+      />
+    );
+  }
+
+  // 数值/文本 placeholder：per-mode 显示当前难度默认值，否则用文件注释
+  const placeholder =
+    perMode && typeof modeDefault === "string"
+      ? `默认 ${modeDefault}`
+      : entry.comment ?? undefined;
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <label className="text-[11px] font-mono" style={{ color: "#94A3B8" }} title={entry.comment ?? undefined}>
-        {entry.key}
-        {entry.value === null && !dirty && (
-          <span className="ml-1 text-slate-500 font-sans">（默认）</span>
-        )}
-      </label>
-      <input
-        type="text"
-        value={val}
-        onChange={(e) => {
-          setVal(e.target.value);
-          setDirty(true);
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        className="w-full h-7 rounded text-xs px-2 font-mono bg-slate-950 border border-slate-700 text-slate-100"
-      />
-    </div>
+    <ConfigField
+      label={label}
+      value={entry.value ?? ""}
+      onChange={(v) => {
+        const normalized = v.trim();
+        onUpdate(sectionName, entry.key, normalized.length > 0 ? normalized : null);
+      }}
+      placeholder={placeholder}
+    />
   );
 }
 
@@ -1201,26 +1229,29 @@ function TxtSection({
   fields: fieldDefs,
   txtFields,
   currentMode,
+  sectionName,
   onChange,
 }: {
   title: string;
-  /** [key, label, type, hint?]——hint 是固定文本提示，优先级高于 SDK 默认 placeholder */
-  fields: readonly (readonly [
-    keyof ConfigTxtFields,
-    string,
-    "text" | "toggle",
-    string?,
-  ])[];
+  /** [key, hint?]——label/type 从 TXT_FIELD_DEFS 按 (section, key) 查；hint 是固定文本提示，优先级高于 SDK 默认 placeholder */
+  fields: readonly (readonly [keyof ConfigTxtFields, string?])[];
   txtFields: ConfigTxtFields;
   /** 当前 Commands.dat Mode——per-mode 字段（Spawn_Chance 等）placeholder 按它动态取 */
   currentMode: string;
+  /** SDK section 名（Browser/Server/Items/Gameplay）——查定义表用 */
+  sectionName: string;
   onChange: (k: keyof ConfigTxtFields, v: string | boolean) => void;
 }) {
   return (
     <ConfigSection title={title}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-        {fieldDefs.map(([k, label, type, hint]) =>
-          type === "toggle" ? (
+        {fieldDefs.map(([k, hint]) => {
+          const def = TXT_FIELD_DEFS.find(
+            (d) => d.key === k && d.section === sectionName,
+          );
+          const label = def?.label ?? k;
+          const isToggle = def?.type === "bool";
+          return isToggle ? (
             <ConfigToggle
               key={k}
               label={label}
@@ -1235,8 +1266,8 @@ function TxtSection({
               onChange={(v) => onChange(k, v)}
               placeholder={hint ?? getFieldPlaceholder(k, currentMode)}
             />
-          ),
-        )}
+          );
+        })}
       </div>
     </ConfigSection>
   );
