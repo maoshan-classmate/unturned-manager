@@ -56,6 +56,8 @@ export interface ConfigTxtRecord {
 export interface ConfigSection {
   name: string;
   entries: ConfigEntry[];
+  /** U3DS 原生未知结构（[ ] 列表 / 嵌套 { } 块）原始文本块——面板只读保留，round-trip 不丢 */
+  rawBlocks?: string[];
 }
 
 export interface ConfigEntry {

@@ -105,21 +105,87 @@ describe("ConfigService — 5 种格式往返", () => {
     });
   });
 
-  it("Config.txt: sections Record 往返", async () => {
-    // ConfigService parseConfigTxt 只认 '=' 或 ':' 分隔（当前实现），所以测试用等号
+  it("Config.txt: 原生格式 sections Record 往返（U3-SDK DatTokenizer 语法）", async () => {
+    // U3-SDK 原生格式（DatTokenizer.cs / DatParser.cs）：区块 { } + key value 空格分隔 + // 注释
     const input =
-      "[Browser]\nLogin_Token=abc123\nDesc_Full=hello\n\n[Server]\nVAC_Secure=true\n";
+      "Version 1\n" +
+      "\n" +
+      "Browser\n" +
+      "{\n" +
+      "\t// > Short description\n" +
+      "\tDesc_Hint\n" +
+      "\t// > Long description\n" +
+      "\tDesc_Full hello\n" +
+      "}\n" +
+      "\n" +
+      "Server\n" +
+      "{\n" +
+      "\t// > Default: True\n" +
+      "\tVAC_Secure\n" +
+      "\tMax_Ping_Milliseconds 750\n" +
+      "}\n";
     await fs.writeFile(path.join(serverDir, "Config.txt"), input);
 
     const first = await svc.readConfigTxt(serverId);
+    // 原生 section 名（无方括号）
     expect(first.sections.Browser?.entries).toContainEqual(
-      expect.objectContaining({ key: "Login_Token", value: "abc123" }),
+      expect.objectContaining({ key: "Desc_Hint", value: null }),
+    );
+    expect(first.sections.Browser?.entries).toContainEqual(
+      expect.objectContaining({ key: "Desc_Full", value: "hello" }),
     );
     expect(first.sections.Server?.entries[0]?.key).toBe("VAC_Secure");
 
     await svc.writeConfigTxt(serverId, first);
     const second = await svc.readConfigTxt(serverId);
     expect(Object.keys(second.sections).sort()).toEqual(["Browser", "Server"]);
+  });
+
+  it("Config.txt: round-trip 保注释 + 保裸 key + 保 value", async () => {
+    const input =
+      "Version 1\n" +
+      "Browser\n" +
+      "{\n" +
+      "\t// > auto comment\n" +
+      "\tIcon\n" +
+      "\tLogin_Token abc123\n" +
+      "}\n";
+    await fs.writeFile(path.join(serverDir, "Config.txt"), input);
+
+    const first = await svc.readConfigTxt(serverId);
+    await svc.writeConfigTxt(serverId, first);
+    const second = await svc.readConfigTxt(serverId);
+
+    // 注释保留（关联到 key）
+    expect(second.sections.Browser?.entries[0]?.comment).toBe("auto comment");
+    // 裸 key（value null）保留
+    expect(second.sections.Browser?.entries[0]?.value).toBeNull();
+    // 覆盖 key 保留 value
+    expect(second.sections.Browser?.entries[1]?.value).toBe("abc123");
+  });
+
+  it("Config.txt: 未知嵌套结构（列表/嵌套块）rawBlocks 保留不丢", async () => {
+    const input =
+      "Version 1\n" +
+      "Browser\n" +
+      "{\n" +
+      "\tLinks\n" +
+      "\t[\n" +
+      "\t\t{\n" +
+      "\t\t\tMessage Hello\n" +
+      "\t\t\tURL https://example.com\n" +
+      "\t\t}\n" +
+      "\t]\n" +
+      "}\n";
+    await fs.writeFile(path.join(serverDir, "Config.txt"), input);
+
+    const first = await svc.readConfigTxt(serverId);
+    await svc.writeConfigTxt(serverId, first);
+    const second = await svc.readConfigTxt(serverId);
+
+    // rawBlocks 保存了 Links 嵌套结构（首行 `Links [`）
+    const raw = second.sections.Browser?.rawBlocks ?? [];
+    expect(raw.some((b) => b.includes("Links"))).toBe(true);
   });
 
   it("Workshop.json: 只写 File_IDs，其他字段不动", async () => {

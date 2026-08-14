@@ -52,6 +52,8 @@ export const ConfigEntrySchema = z.object({
 export const ConfigSectionSchema = z.object({
   name: z.string(),
   entries: z.array(ConfigEntrySchema),
+  /** U3DS 原生未知结构（[ ] 列表 / 嵌套 { } 块）原始文本块——面板只读保留，round-trip 不丢 */
+  rawBlocks: z.array(z.string()).optional(),
 });
 
 export const ConfigTxtRecordSchema = z.object({

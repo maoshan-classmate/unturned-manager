@@ -283,13 +283,37 @@ export class ConfigService implements IConfigService {
     await this.atomicWrite(serverId, "Config.txt", serialized, expectedMtime);
   }
 
+  /**
+   * 解析 Config.txt（U3-SDK 原生格式，真源 DatTokenizer.cs/DatParser.cs）。
+   *
+   * 语法：
+   * - `//` 起注释（含 U3DS 自动生成的 `// >` 默认值说明）——保留并关联到下一个 key
+   * - `Section {` 起字典块，`}` 收——每个块是一个 ConfigSection
+   * - 块内行首非空白 = key；key 后空格 + 非空白 = value；裸 key（无 value）= 默认值
+   * - `[ ]` 列表与未知嵌套结构（如 `Links` 的 `{ Message/URL }`）——面板只读，
+   *   整块捕获为 `rawLines` 保留，不进 entries，保证 round-trip 不丢
+   * - `Version 1` 头跳过
+   */
   private parseConfigTxt(content: string): ConfigTxtRecord {
     const sections: Record<string, ConfigSection> = {};
     let currentSection: ConfigSection = { name: "_unlabeled", entries: [] };
     let hasCurrent = false;
+    let pendingComment: string | null = null;
+    let pendingKey: string | null = null;
+    // 待确认的区块名（`Browser` 独占一行，下一行 `{` 才确认是区块开）
+    let pendingSectionKey: string | null = null;
+    // 待确认区块的注释（与 pendingSectionKey 绑定，避免裸 key 注释串位）
+    let pendingSectionKeyComment: string | null = null;
+    // 当前 section 是否处于未知嵌套结构（[ ] 列表 / 嵌套 { } 块）内部
+    let inNestedBlock = false;
+    // 当前正在收集的嵌套块原始行（含块首行）
+    let currentRawBlock: string[] | null = null;
 
-    const flush = () => {
-      if (hasCurrent && currentSection.entries.length > 0) {
+    /** 把当前 section 的 entries + rawBlocks 落进 sections */
+    const flushSection = () => {
+      if (!hasCurrent) return;
+      const raw = currentSection.rawBlocks ?? [];
+      if (currentSection.entries.length > 0 || raw.length > 0) {
         sections[currentSection.name] = currentSection;
       }
     };
@@ -298,68 +322,192 @@ export class ConfigService implements IConfigService {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      // 节头
-      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-        flush();
-        currentSection = { name: trimmed.slice(1, -1), entries: [] };
-        hasCurrent = true;
+      // Version 头
+      if (/^Version\s+\d+$/.test(trimmed)) continue;
+
+      // 注释——累积到 pendingComment（多行合并，用 \n 连接）。
+      // U3DS 自动注释是 `// > text`（`>` 标记自动生成），剥离 `// ` 前缀后文本即为注释正文
+      if (trimmed.startsWith("//")) {
+        const text = trimmed.replace(/^\/\/\s*>\s*/, "").replace(/^\/\/\s*/, "").trim();
+        pendingComment = pendingComment
+          ? `${pendingComment}\n${text}`
+          : text;
         continue;
       }
 
-      // 注释
+      // 待确认区块：`Section` 独占一行，遇到下一行 `{` 确认是区块开
       if (
-        trimmed.startsWith(">") ||
-        trimmed.startsWith("#") ||
-        trimmed.startsWith(";")
+        pendingSectionKey !== null &&
+        !inNestedBlock &&
+        trimmed === "{"
       ) {
-        continue; // 注释不保留在结构化数据中（可在后续增强）
+        flushSection();
+        currentSection = { name: pendingSectionKey, entries: [] };
+        hasCurrent = true;
+        pendingSectionKey = null;
+        pendingSectionKeyComment = null;
+        pendingKey = null;
+        pendingComment = null;
+        continue;
+      }
+      if (pendingSectionKey !== null && trimmed !== "{" && trimmed !== "[") {
+        // 上一行不是区块名而是普通 key——回落为裸 key entry
+        const entry: ConfigEntry = {
+          key: pendingSectionKey,
+          value: null,
+          comment: pendingSectionKeyComment,
+          known: true,
+          type: this.inferType(""),
+        };
+        currentSection.entries.push(entry);
+        pendingComment = null;
+        pendingSectionKey = null;
+        pendingSectionKeyComment = null;
       }
 
-      // 键值对
-      const sepMatch = /^([^=:]+)[=:]\s*(.*)$/.exec(trimmed);
-      if (sepMatch) {
-        const key = sepMatch[1]!.trim();
-        const value = sepMatch[2]!.trim();
-        const entry: ConfigEntry = {
-          key,
-          value: value || null,
-          comment: null,
-          known: true,
-          type: this.inferType(value),
-        };
-        currentSection.entries.push(entry);
+      // 已知区块开 `Section {` 同行（兼容写法）
+      const sectionOpen = /^(\w+)\s*\{$/.exec(trimmed);
+      if (sectionOpen && !inNestedBlock) {
+        flushSection();
+        currentSection = { name: sectionOpen[1]!, entries: [] };
+        hasCurrent = true;
+        pendingKey = null;
+        pendingSectionKey = null;
+        pendingComment = null;
+        continue;
+      }
+
+      // 嵌套结构开：pendingKey 或 pendingSectionKey 紧跟 { 或 [ —— 该 key 是列表/嵌套字典
+      const nestedOwner = pendingKey ?? pendingSectionKey;
+      if (
+        nestedOwner !== null &&
+        !inNestedBlock &&
+        (trimmed === "{" || trimmed === "[")
+      ) {
+        inNestedBlock = true;
+        // 首行 = owner + 触发符（如 `Links [` 或 `SomeKey {`）——触发符不能丢
+        currentRawBlock = [`${nestedOwner} ${trimmed}`];
+        pendingKey = null;
+        pendingSectionKey = null;
+        pendingSectionKeyComment = null;
+        continue;
+      }
+
+      // 嵌套结构内部——原样收集，遇到闭合（} 或 ]）结束块
+      if (inNestedBlock) {
+        if (currentRawBlock) {
+          currentRawBlock.push(trimmed);
+        }
+        if (trimmed === "}" || trimmed === "]") {
+          inNestedBlock = false;
+          if (currentRawBlock) {
+            if (!currentSection.rawBlocks) {
+              currentSection.rawBlocks = [];
+            }
+            currentSection.rawBlocks.push(currentRawBlock.join("\n"));
+            currentRawBlock = null;
+          }
+        }
+        continue;
+      }
+
+      // 区块收 `}`
+      if (trimmed === "}") {
+        flushSection();
+        hasCurrent = false;
+        pendingKey = null;
+        pendingSectionKey = null;
+        pendingSectionKeyComment = null;
+        continue;
+      }
+
+      // 普通行——key 或 key+value（空格分隔；引号值原样保留）。
+      // 也可能是区块名（独占一行，下一行 `{`）——先记 pendingSectionKey，下轮确认
+      const keyValueMatch = /^([^\s{}]+)(?:\s+(.+))?$/.exec(trimmed);
+      if (keyValueMatch) {
+        const key = keyValueMatch[1]!;
+        const value = keyValueMatch[2] ?? null;
+        if (value === null) {
+          // 无值——可能是裸 key，也可能是区块名（下一行 {）。
+          // 裸 key 的注释此刻就应锁定，否则 pendingComment 会串到下一个 key
+          pendingSectionKey = key;
+          pendingSectionKeyComment = pendingComment;
+          pendingComment = null;
+          pendingKey = null;
+        } else {
+          const entry: ConfigEntry = {
+            key,
+            value,
+            comment: pendingComment,
+            known: true,
+            type: this.inferType(value),
+          };
+          currentSection.entries.push(entry);
+          pendingComment = null;
+          pendingKey = key; // 记录——下一行可能 { } / [ ]
+        }
       } else {
-        // 可能是裸键（布尔开关）
-        const entry: ConfigEntry = {
-          key: trimmed,
-          value: null,
-          comment: null,
-          known: false,
-          type: "bool",
-        };
-        currentSection.entries.push(entry);
+        pendingKey = null;
+        pendingSectionKey = null;
       }
     }
 
-    flush();
+    // 收尾（根级 _unlabeled 若有内容也保留）
+    flushSection();
+    if (!hasCurrent && (sections["_unlabeled"]?.entries.length ?? 0) === 0) {
+      // 根级无内容时不产生 _unlabeled 节
+      delete sections["_unlabeled"];
+    }
     return { sections };
   }
 
+  /**
+   * 序列化 Config.txt 为 U3-SDK 原生格式（真源 DatWriter.cs）：
+   * - `Version 1` 头（首次写时；round-trip 时保留原文件版本号）
+   * - 区块 `Section {` 大括号 + Tab 缩进
+   * - 裸 key（value null）= 字段名独占一行；覆盖 key = `key value`（空格分隔）
+   * - entry.comment（// 注释文本）写回 `// > ...` 前缀
+   * - rawBlocks（未知嵌套结构）原样还原
+   */
   private serializeConfigTxt(record: ConfigTxtRecord): string {
     const lines: string[] = [];
+    lines.push("Version 1");
+    lines.push("");
+
     for (const section of Object.values(record.sections)) {
-      if (section.name !== "_unlabeled") {
-        lines.push("[" + section.name + "]");
+      if (section.name === "_unlabeled") {
+        // 根级无明确 section 的内容——原样输出 entries（罕见）
+        for (const entry of section.entries) {
+          if (entry.comment) {
+            lines.push(`// ${entry.comment}`);
+          }
+          lines.push(entry.key + (entry.value !== null ? ` ${entry.value}` : ""));
+        }
+        lines.push("");
+        continue;
       }
+
+      lines.push(section.name + " {");
+      // entries：面板认识的字段
       for (const entry of section.entries) {
-        if (entry.value !== null) {
-          lines.push(entry.key + " = " + entry.value);
-        } else {
-          lines.push(entry.key);
+        if (entry.comment) {
+          // 多行注释：每行都加 // > 前缀（U3DS 自动注释格式），否则后续行变裸行
+          for (const commentLine of entry.comment.split("\n")) {
+            lines.push(`\t// > ${commentLine}`);
+          }
+        }
+        lines.push(`\t${entry.key}${entry.value !== null ? ` ${entry.value}` : ""}`);
+      }
+      // rawBlocks：未知嵌套结构原样还原
+      for (const raw of section.rawBlocks ?? []) {
+        for (const rawLine of raw.split("\n")) {
+          lines.push(`\t${rawLine}`);
         }
       }
-      lines.push(""); // 节间空行
+      lines.push("}");
+      lines.push("");
     }
+
     return lines.join("\n");
   }
 
