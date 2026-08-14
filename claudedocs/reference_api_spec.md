@@ -13,7 +13,7 @@
 | Dashboard | `pages/DashboardPage.tsx` | StatCard×4 + 启停重启 | servers + WS state_change |
 | Console | `pages/ConsolePage.tsx` | 实时控制台 | servers/execute + WS console_line |
 | Mods | `pages/ModsPage.tsx` | Mod 卡片 + 添加 + 已下载列表 | config/workshop + workshop/mods |
-| Config | `pages/ConfigPage.tsx` | Commands/Txt/Workshop 三 Tab 编辑器 | config/* |
+| Config | `pages/ConfigPage.tsx` | 基本设置/高级设置/Mod 列表 三 Tab 编辑器 | config/* |
 | Files | `pages/FilesPage.tsx` | 文件浏览/上传/新建/删除/重命名 | servers/:id (files 域) |
 | ServerSetup | `pages/ServerSetupPage.tsx` | 实例管理 + SteamCMD 状态/更新 | servers + steamcmd |
 | Settings | `pages/SettingsPage.tsx` | 5 张卡片（账户/安全/网页/日志/默认值） | — |
@@ -49,21 +49,21 @@
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| GET | `/:id/mods/downloaded` | `IWorkshopAcfService.listItems` + `IWorkshopMetadataService.batchGetDetails` | — | `ConfigPage` Workshop Tab | ✅ |
-| POST | `/:id/mods/download` | `ISteamCmdManager.downloadWorkshopItem` | ✅ `ModDownloadRequestSchema` | `ConfigPage` Workshop Tab 下载按钮 | ✅ |
-| DELETE | `/:id/mods/:fileId` | `IWorkshopDeleteService.deleteMod` | — | `ConfigPage` Workshop Tab 移除按钮 | ✅ |
+| GET | `/:id/mods/downloaded` | `IWorkshopAcfService.listItems` + `IWorkshopMetadataService.batchGetDetails` | — | `ConfigPage` 的 Mod 列表 tab（内部组件 WorkshopTab） | ✅ |
+| POST | `/:id/mods/download` | `ISteamCmdManager.downloadWorkshopItem` | ✅ `ModDownloadRequestSchema` | `ConfigPage` 的 Mod 列表 tab 下载按钮 | ✅ |
+| DELETE | `/:id/mods/:fileId` | `IWorkshopDeleteService.deleteMod` | — | `ConfigPage` 的 Mod 列表 tab 移除按钮 | ✅ |
 | GET | `/:id/mods/acf` | `IWorkshopAcfService.listItems` | — | 内部诊断 | — |
 
 ### 2.4 配置文件 `/api/servers`
 
 | 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
 |---|---|---|---|---|---|
-| GET | `/:id/config/commands` | `ConfigService.readCommandsDat` | — | `ConfigPage` Commands Tab | ⚠️ Map 序列化→`{}`，前端读空 |
-| PUT | `/:id/config/commands` | `ConfigService.writeCommandsDat` | ❌ 未消费 | `ConfigPage` 保存 Commands | ❌ 前端传对象→后端 `for...of` 抛错→500 |
-| GET | `/:id/config/txt` | `ConfigService.readConfigTxt` | — | `ConfigPage` Txt Tab | ❌ 后端数组 vs 前端 map，永远默认值 |
+| GET | `/:id/config/commands` | `ConfigService.readCommandsDat` | — | `ConfigPage` 基本设置 tab | ⚠️ Map 序列化→`{}`，前端读空 |
+| PUT | `/:id/config/commands` | `ConfigService.writeCommandsDat` | ❌ 未消费 | `ConfigPage` 保存 基本设置 | ❌ 前端传对象→后端 `for...of` 抛错→500 |
+| GET | `/:id/config/txt` | `ConfigService.readConfigTxt` | — | `ConfigPage` 高级设置 tab | ❌ 后端数组 vs 前端 map，永远默认值 |
 | PUT | `/:id/config/txt` | `ConfigService.writeConfigTxt` | ❌ 未消费 | `ConfigPage` 保存 Txt | ❌ 契约不一致 |
-| GET | `/:id/config/workshop` | `ConfigService.readWorkshopConfig` | — | `ModsPage`/`ConfigPage` Workshop | ✅ |
-| PUT | `/:id/config/workshop` | `ConfigService.writeWorkshopFileIds` | ✅ `WriteWorkshopFileIdsSchema` | `ConfigPage` Workshop Tab 保存 | ✅ |
+| GET | `/:id/config/workshop` | `ConfigService.readWorkshopConfig` | — | `ModsPage` / `ConfigPage` 的 Mod 列表 tab | ✅ |
+| PUT | `/:id/config/workshop` | `ConfigService.writeWorkshopFileIds` | ✅ `WriteWorkshopFileIdsSchema` | `ConfigPage` 的 Mod 列表 tab 保存 | ✅ |
 
 ### 2.5 文件 `/api/servers`（files 域）
 

@@ -19,7 +19,7 @@
 | **`workshop_creators` 表** | 缓存作者名 | **删除** | 同上；v2.4 起**不查作者名**（对齐 DST：作者字段仅内部持有 SteamID，不展示） |
 | **acf 处理** | "只读" | **同步维护** | Mod 管理的核心闭环，U3DS 启动读 acf |
 | **前端防抖** | 手动 useState | **React Query** | 自动 staleTime + 同 queryKey 复用 |
-| **8 个用户报告问题** | 散点修复 | **ModsPage 单 Tab 改造 + Config > Workshop Tab 复用** | ModsPage 只负责"浏览 + 下载入口"；已下载 Mod 的启用/禁用/删除/配置复用 Config > Workshop Tab（已有组件，不新建） |
+| **8 个用户报告问题** | 散点修复 | **ModsPage 单 Tab 改造 + Config > Mod 列表 tab 复用** | ModsPage 只负责"浏览 + 下载入口"；已下载 Mod 的启用/禁用/删除/配置复用 Config > Mod 列表 tab（内部组件名 WorkshopTab，已有组件，不新建） |
 | **`VDF` 解析** | 假设有第三方库 | **200 行自写** | DST 验证可行；零依赖 |
 | **MVP 概念** | 有 | **没有——按生产质量全量交付** | 用户明确指示 |
 
@@ -138,7 +138,7 @@
 
 ### 2.2 前端组件图（C4 Level 3b）
 
-> **关键设计决策（v2.1 修正）**：模组页面 = **Steam 创意工坊浏览**（查询 + 下载入口），**已下载 Mod 的管理（启用/禁用/删除/配置）复用 Config > Workshop Tab**（已有 `WorkshopTab` 组件，`ConfigPage.tsx:208-216`，不新建）。两个页面职责清晰分离。
+> **关键设计决策（v2.1 修正）**：模组页面 = **Steam 创意工坊浏览**（查询 + 下载入口），**已下载 Mod 的管理（启用/禁用/删除/配置）复用 Config > Mod 列表 tab**（内部组件名 `WorkshopTab`，`ConfigPage.tsx:208-216`，不新建）。两个页面职责清晰分离。
 
 ```
 ModsPage（单 Tab：Steam 创意工坊浏览）
@@ -163,7 +163,7 @@ ModsPage（单 Tab：Steam 创意工坊浏览）
     ├── 操作区：[下载] [在 Steam 中打开]
     └── 关闭按钮
 
-ConfigPage > WorkshopTab（已有，不改组件结构；只接新端点）—— **v2.6 保存与重启解耦**
+ConfigPage > Mod 列表 tab（内部组件 `WorkshopTab`，不改组件结构；只接新端点）—— **v2.6 保存与重启解耦**
 ├── 状态：File_IDs ∩ acf → UnifiedMod[]
 ├── 行内操作：[启用/禁用] [更新] [删除]（DELETE 端点新增）
 └── 底部 [保存配置] 按钮 → 调 PUT /api/servers/:id/config/workshop（**仅写 File_IDs，不重启**）
@@ -211,7 +211,7 @@ routes/mods.ts → SteamCmdManager.downloadWorkshopItem(installDir, [fileId])
   │   · toast.success('Hawaii 下载成功')  ← 全部反馈，结束
   │
   ▼
-用户主动切到 Config > Workshop Tab（按需）
+用户主动切到 Config > Mod 列表 tab（按需）
   │   · 看到新行（File_IDs 已含 fileId，或 staging 状态单独标记）
   │   · 用户点 [保存配置]（或 [应用]）按钮
   │
@@ -792,7 +792,7 @@ router.post('/:id/mods/download', async (req, res) => {
 
 ### 5.1 改造现有 `ModCard`（不新建组件，遵守三行原则）
 
-> **v2.1 修正**：ModCard 只服务 ModsPage（单 Tab 浏览），**只有 `browse` 一种 variant**。已下载 Mod 的启用/禁用/删除在 Config > Workshop Tab 走 DataTable 行内操作（已有），不抽 ModCard 多 variant——三行原则。
+> **v2.1 修正**：ModCard 只服务 ModsPage（单 Tab 浏览），**只有 `browse` 一种 variant**。已下载 Mod 的启用/禁用/删除在 Config > Mod 列表 tab 走 DataTable 行内操作（已有），不抽 ModCard 多 variant——三行原则。
 
 **Props 改造**（单 variant，v2.4 不展示作者/ID）：
 ```typescript
@@ -976,7 +976,7 @@ export function Toaster() {
 
 ### 5.5 重写 `ModsPage` — 单 Tab（Steam 创意工坊浏览）
 
-> **v2.1 修正**：ModsPage 只承担"Steam 创意工坊浏览 + 下载入口"两个职责，已下载 Mod 的管理走 Config > Workshop Tab。**没有 TabBar**，**没有"已下载/已启用"两个 tab**。
+> **v2.1 修正**：ModsPage 只承担"Steam 创意工坊浏览 + 下载入口"两个职责，已下载 Mod 的管理走 Config > Mod 列表 tab。**没有 TabBar**，**没有"已下载/已启用"两个 tab**。
 
 **状态架构**：
 ```typescript
@@ -1246,7 +1246,7 @@ DROP TABLE IF EXISTS workshop_creators;
 2. **`@tanstack/react-query` 引入**（用于前端防抖）—— ✅ **已同意**
 3. **VDF 解析器自写**（200 行，零依赖）—— ✅ **已同意**
 4. **acf 维护纳入生产**（不只是 P2）—— ✅ **已同意**
-5. ~~**ModsPage 改三 Tab**~~ → **v2.1 修正**：ModsPage = 单 Tab（Steam 工坊浏览）+ 下载入口；已下载 Mod 的启用/禁用/删除/配置在 Config > Workshop Tab（已有 `WorkshopTab` 组件）
+5. ~~**ModsPage 改三 Tab**~~ → **v2.1 修正**：ModsPage = 单 Tab（Steam 工坊浏览）+ 下载入口；已下载 Mod 的启用/禁用/删除/配置在 Config > Mod 列表 tab（内部组件 `WorkshopTab`）
 
 ---
 

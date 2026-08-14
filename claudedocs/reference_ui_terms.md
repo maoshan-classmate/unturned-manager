@@ -46,6 +46,9 @@
 | Rocket.config.xml / Permissions.config.xml | Mod 框架配置 / 权限组配置（**文件名保留原文**——用户去 GitHub 查问题时搜的就是这个名） |
 | LDM 插件（.dll） | 插件（叙述语境）或 Mod 框架插件（表单字段/筛选 chip） |
 | `Modules/Rocket.Unturned/` | Mod 框架模块（叙述语境；玩家升级 U3DS 时随包附带） |
+| `Commands.dat`（ConfigPage Tab 文件名） | 基本设置（端口/地图/玩家数/密码/开局物品——玩家最高频改的） |
+| `Config.txt`（ConfigPage Tab 文件名） | 高级设置（VAC/BattlEye/生成倍率/玩法开关——平时不动） |
+| `Workshop`（ConfigPage Tab 文件名） | Mod 列表（已下载到本地的 Mod 启用管理；区别于 ModsPage 顶栏的「创意工坊」= Steam 市场浏览） |
 | `Plugins/<Name>.dll` | 插件文件（玩家从 GitHub 下载后上传到这里） |
 | `/rocket` / `/p` 命令 | 在控制台输入（界面文案提及命令时**保留原文**——玩家去社区问问题搜的就是这个字符串） |
 

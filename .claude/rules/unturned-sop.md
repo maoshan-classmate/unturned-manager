@@ -148,7 +148,7 @@ mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownload
 
 ```
 【第一步：保存 Mod 列表（仅写 File_IDs）】
-用户在 ConfigPage > WorkshopTab 勾选启用 → 点 [保存配置]
+用户在 ConfigPage > Mod 列表 tab（内部组件 `WorkshopTab`）勾选启用 → 点 [保存配置]
   → PUT /api/servers/:id/config/workshop { fileIds: [...] }
   → ConfigService.writeWorkshopFileIds 原子写 WorkshopDownloadConfig.json
   → U3DS 只在启动时读 File_IDs，运行中不重扫——运行时安全，写入零冲突

@@ -218,7 +218,7 @@
 /                               → DashboardPage（实例列表 + 统计）
 /:serverId/console              → ConsolePage（xterm.js 终端）
 /:serverId/mods                 → ModsPage（创意工坊浏览 + 已下载管理）
-/:serverId/config/commands      → ConfigPage（Commands.dat / Config.txt / Workshop Tab）
+/:serverId/config/commands      → ConfigPage（基本设置 / 高级设置 / Mod 列表 三 Tab）
 /:serverId/files                → FilesPage（文件浏览器）
 /:serverId/server-setup         → ServerSetupPage（安装引导 + 实例控制 + 计划任务）
 /:serverId/settings             → SettingsPage（WebAPI Key / 改密）
