@@ -525,33 +525,12 @@ function ConfigContent({ serverId }: { serverId: string }) {
     workshopPage * PAGE_SIZE,
   );
 
-  // ── Loading / Error ──
-  if (serverLoading || configLoading)
-    return (
-      <Centered>
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
-        <span className="text-sm text-slate-400">加载中...</span>
-      </Centered>
-    );
-  if (serverError || configError)
-    return (
-      <Centered>
-        <AlertCircle size={32} className="text-red-500" />
-        <span className="text-sm text-slate-100">无法加载配置</span>
-        <span className="text-xs text-slate-500">
-          {serverError || configError}
-        </span>
-        <Button
-          onClick={fetchConfig}
-          variant="ghost"
-          size="sm"
-          className="text-slate-400"
-        >
-          重试
-        </Button>
-      </Centered>
-    );
-  // 无服务器时仍然渲染完整页面骨架，仅禁用保存
+  // ── 内容区加载 / 错误 ──
+  // ★ 页面骨架（Header + TabBar + Tips）常驻不遮罩——只有 Main 内容区在加载/错误时切换显示。
+  // Workshop 标签加载慢（/mods/downloaded 合并 acf + WebAPI 元数据），整页遮罩会把 TabBar 也盖住，
+  // 用户无法切回其他标签；serverLoading 只在 useServer 列表未就绪（server 未找到）时兜底。
+  const contentLoading = configLoading || (serverLoading && !server);
+  const contentError = configError || serverError;
 
   return (
     <div className="flex flex-col h-full">
@@ -593,31 +572,56 @@ function ConfigContent({ serverId }: { serverId: string }) {
 
       {/* Content: 左侧主表 + 右侧 Tips Panel（小屏隐藏 Tips） */}
       <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-4 p-4 md:p-6 pt-4">
-        {/* Main */}
+        {/* Main——加载/错误只在内容区显示，Header/TabBar/Tips 常驻 */}
         <div className="flex-1 overflow-auto rounded-lg border border-slate-700 bg-slate-950 min-w-0">
-          {tab === "commands" && (
-            <CommandsTab fields={fields} onChange={handleFieldChange} />
-          )}
-          {tab === "txt" && (
-            <ConfigTxtTab
-              fields={txtFields}
-              onChange={handleTxtChange}
-              currentMode={fields.Mode}
-            />
-          )}
-          {tab === "workshop" && (
-            <WorkshopTab
-              rows={filteredWorkshop}
-              paged={wsPaged}
-              search={workshopSearch}
-              onSearch={setWorkshopSearch}
-              statusFilter={workshopStatusFilter}
-              page={workshopPage}
-              onPage={setWorkshopPage}
-              onToggleSelect={toggleWsSelect}
-              onToggleStatus={toggleWsStatus}
-              onRemove={removeWs}
-            />
+          {contentLoading ? (
+            <Centered>
+              <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+              <span className="text-sm text-slate-400">加载中...</span>
+            </Centered>
+          ) : contentError ? (
+            <Centered>
+              <AlertCircle size={32} className="text-red-500" />
+              <span className="text-sm text-slate-100">无法加载配置</span>
+              <span className="text-xs text-slate-500">
+                {serverError || configError}
+              </span>
+              <Button
+                onClick={fetchConfig}
+                variant="ghost"
+                size="sm"
+                className="text-slate-400"
+              >
+                重试
+              </Button>
+            </Centered>
+          ) : (
+            <>
+              {tab === "commands" && (
+                <CommandsTab fields={fields} onChange={handleFieldChange} />
+              )}
+              {tab === "txt" && (
+                <ConfigTxtTab
+                  fields={txtFields}
+                  onChange={handleTxtChange}
+                  currentMode={fields.Mode}
+                />
+              )}
+              {tab === "workshop" && (
+                <WorkshopTab
+                  rows={filteredWorkshop}
+                  paged={wsPaged}
+                  search={workshopSearch}
+                  onSearch={setWorkshopSearch}
+                  statusFilter={workshopStatusFilter}
+                  page={workshopPage}
+                  onPage={setWorkshopPage}
+                  onToggleSelect={toggleWsSelect}
+                  onToggleStatus={toggleWsStatus}
+                  onRemove={removeWs}
+                />
+              )}
+            </>
           )}
         </div>
         {/* Tips Panel — 小屏隐藏 */}
