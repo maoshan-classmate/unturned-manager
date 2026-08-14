@@ -7,6 +7,14 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
+  /* 整体字号放大：text-sm 14→15px（表单/按钮/表格正文）；其余保持 Tailwind 默认比例 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.9375rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+
   --color-background: hsl(222 47% 11%);
   --color-foreground: hsl(210 40% 98%);
   --color-card: hsl(217 33% 17%);
@@ -61,6 +69,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
+  font-size: 17px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
