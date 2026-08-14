@@ -44,7 +44,7 @@ SteamApiModDetail = "http://api.steampowered.com/IPublishedFileService/GetDetail
 
 ### 2.2 关键点
 
-- **WebAPI Key 是硬依赖**：`utils.GetSteamApiKey()` 从全局设置读取，两个接口都带 `key` 参数。这与本项目 `research_verification_tracker.md` 的旧结论（"GetPublishedFileDetails 无需 Key"）**冲突**，需以最新实证（`?xml=1` 已返回 HTML）为准——见 §5。
+- **WebAPI Key 是硬依赖**：`utils.GetSteamApiKey()` 从全局设置读取，两个接口都带 `key` 参数，需以最新实证（`?xml=1` 已返回 HTML）为准——见 §5。
 - **AppID 用 `322330` 过滤**，且用 `requiredtags` 只搜服务端 mod（`server_only_mod` / `all_clients_require_mod`），避免把客户端 mod 混进来。
 
 ---
@@ -112,9 +112,9 @@ steamcmd/steamcmd.sh +force_install_dir <dmp_files>/mods/ugc/<cluster>
 
 ### 5.1 先决问题：Steam `?xml=1` 已失效
 
-本项目 `research_verification_tracker.md` 曾确认「`?xml=1` 零凭证获取元数据」，但 `runtime-audit` 实测 3 个 Mod ID 全部返回 **HTML**（46KB 网页，`<title>Steam Community :: Screenshot</title>`），`parseXml` 恒 null → `GET /workshop/mods/:fileId` 恒 404。
+旧假设「`?xml=1` 零凭证获取元数据」已被否定，`runtime-audit` 实测 3 个 Mod ID 全部返回 **HTML**（46KB 网页，`<title>Steam Community :: Screenshot</title>`），`parseXml` 恒 null → `GET /workshop/mods/:fileId` 恒 404。
 
-**DMP 的做法（带 Key 的 `IPublishedFileService`）是权威替代方案**，且提供搜索（`QueryFiles`）+ 详情（`GetDetails`）+ 批量补齐三个我们需要的接口形态。**建议把 `unturned-sop.md` 与 verification tracker 的「零凭证 XML」条目作废，迁移到 WebAPI Key 方案**（WebAPI Key 由用户在自己的 Steam 账号 `steamcommunity.com/dev/apikey` 免费申请）。
+**DMP 的做法（带 Key 的 `IPublishedFileService`）是权威替代方案**，且提供搜索（`QueryFiles`）+ 详情（`GetDetails`）+ 批量补齐三个我们需要的接口形态。**建议把 `unturned-sop.md` 的「零凭证 XML」条目作废，迁移到 WebAPI Key 方案**（WebAPI Key 由用户在自己的 Steam 账号 `steamcommunity.com/dev/apikey` 免费申请）。
 
 ### 5.2 逐能力映射表
 

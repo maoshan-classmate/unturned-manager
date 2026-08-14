@@ -73,7 +73,6 @@ Unturned 3.x Linux 专用服务端的自托管 Web 管理面板。
 | `docs/architecture/design-system-mapping.md` | 前端组件实现前 |
 | `claudedocs/reference_config_files.md` | 涉及配置文件读写 |
 | `claudedocs/reference_console_commands.md` | 涉及服务端控制台命令（PTY 终端输入） |
-| `claudedocs/research_verification_tracker.md` | 承诺"能跑"之前 |
 | `docs/external-resources.md` | 需要查外部官方文档链接（Steam WebAPI / Node.js / React / Tailwind 等） |
 
 ---

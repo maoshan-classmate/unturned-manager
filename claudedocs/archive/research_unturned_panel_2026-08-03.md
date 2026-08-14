@@ -44,7 +44,7 @@ U3DS 运行在 Unity 2020.3 LTS 上，默认脚本后端是 **Mono**（非 IL2CP
 
 **实际部署建议**：LinuxGSM 截至 2026 年仍要求 `mono-complete`；建议部署时安装 Mono 以防缺失依赖。部分系统上 Unity headless 构建可能内嵌足够运行时而不需要完整系统 Mono——但以"安装 Mono"作为安全基线。
 
-> ⚠️ 原调研中"不需要 Mono"的判断已被推翻。详见 `claudedocs/research_verification_tracker.md`。
+> ⚠️ 原调研中"不需要 Mono"的判断已被推翻，LinuxGSM 2026 年仍要求 Mono 5。
 
 ### 2.3 启动
 
@@ -344,29 +344,6 @@ mod 作者可设置 "Allowed IPs" 限制**服务端**自动下载。**不影响�
 | `github.com/pterodactyl/panel` | Pterodactyl 面板 |
 | `github.com/pelican-dev/panel` | Pelican 面板 |
 | Multiple hosting providers | 交叉验证配置格式 |
-
-### 待二次确认 → 详见 `claudedocs/research_verification_tracker.md`
-
-已将所有"待确认/置信度中低"条目收拢到独立的验证追踪文档。关键结论：
-
-| # | 条目 | 核查结果 |
-|---|---|---|
-| 1 | Devlog #012 HTTP API 存在？ | ❌ 不存在（Unturned II only，已取消） |
-| 2 | Config.txt 含 RCON 段？ | ❌ 不含 |
-| 3 | Should_Monitor_Updates 行为？ | ✅ 已确认：检测更新→广播→强制踢出→关机 |
-| 4 | 原生 RCON 配置存在？ | ✅ 确认，但线协议仍未知 |
-| 5 | Steam WebAPI 无 Key？ | `?xml=1` ✅ / WebAPI ❓ 待实测 |
-| 6 | OpenMod RCON 可靠性？ | 无已知问题，但缺大规模数据 |
-| 7 | Game Labs/SynUW？ | ❌ 不存在于 Unturned 生态 |
-| 8 | **不需要 Mono？** | **❌ 被推翻**，LinuxGSM 2026 仍要求 Mono |
-
-**对开发有阻塞影响的两项需优先实测**：
-- Steam WebAPI `GetPublishedFileDetails` 对 Unturned 304930 的无 Key 调用
-- OpenMod `reload` 在生产中的实际成功率
-
-其余验证项可在开发过程中逐步清除，不阻塞 `/sc:design` 启动。
-
----
 
 ## 9. 子产物索引
 

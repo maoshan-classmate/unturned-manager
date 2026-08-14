@@ -2,7 +2,6 @@
 1. 全面调研：Linux 安装、RCON 协议、Steam Workshop、Mod 管理、竞品面板（全在 claudedocs/）
 2. 配置文件完整参数表：claudedocs/reference_config_files.md
 3. 控制台指令完整参考：claudedocs/reference_console_commands.md (~64 条)
-4. 待验证项追踪：claudedocs/research_verification_tracker.md
 
 ## 关键发现
 - Mono 依赖：LinuxGSM 2026 仍要求 Mono 5（原"不需要 Mono"假设被推翻）

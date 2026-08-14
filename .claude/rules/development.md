@@ -7,7 +7,6 @@
 3. `docs/architecture/design-system-mapping.md`（前端设计映射）
 4. `claudedocs/reference_config_files.md`（配置文件字段权威表）
 5. `claudedocs/reference_console_commands.md`（服务端控制台命令参考——经 PTY 终端输入）
-6. `claudedocs/research_verification_tracker.md`（未验证项清单）
 
 ## 提交规范
 

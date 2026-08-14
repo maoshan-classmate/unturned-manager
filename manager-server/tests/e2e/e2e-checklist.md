@@ -56,4 +56,4 @@ test('D1: 启动服务器', async ({ page }) => {
 });
 ```
 
-> **注意**：本文件是卡 D §5 的交付物。U3DS 实机验证放到 Sprint 5（见 `claudedocs/research_verification_tracker.md` §🔧）。
+> **注意**：本文件是卡 D §5 的交付物。U3DS 实机验证放到 Sprint 5。

@@ -54,7 +54,6 @@
 | 架构规格 | `docs/architecture/` | 精确文件名列表 | 列表追加 |
 | 外部资源索引 | `docs/` | `external-resources.md` | —（固定文件名） |
 | 活参考文档 | `claudedocs/` | `reference_*.md` 通配 | **无需修改脚本** |
-| 核心调研报告 | `claudedocs/` | `research_verification_tracker.md` | 列表追加 |
 
 ### Agent 层（语义检查，提醒级）
 

@@ -791,7 +791,7 @@ ProcessSupervisor → child_process
 
 - 本文档是 `docs/architecture/` 的核心文件，与 `design-system-mapping.md`（设计系统映射）并列为架构层两大权威来源。
 - 任何架构变更必须先改本文档、再改代码；PR 评审以本文档为基准。
-- 配套活参考：`claudedocs/reference_config_files.md`（配置文件字段）、`claudedocs/reference_console_commands.md`（控制台命令）、`claudedocs/research_verification_tracker.md`（未验证项）。
+- 配套活参考：`claudedocs/reference_config_files.md`（配置文件字段）、`claudedocs/reference_console_commands.md`（控制台命令）。
 - 技术决策记录在 `docs/adr/`；`docs/external-resources.md` 索引外部官方文档。
 
 ---

@@ -56,7 +56,6 @@ REQUIRED_DOCS=(
   "docs/architecture|architecture-spec.md design-system-mapping.md|架构规格"
   "docs|external-resources.md|外部资源索引"
   "claudedocs|reference_*.md|活参考文档"
-  "claudedocs|research_verification_tracker.md|核心调研报告"
 )
 
 # 检查 1: CLAUDE.md 的 @path 死引用
