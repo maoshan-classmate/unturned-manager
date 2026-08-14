@@ -386,11 +386,18 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     const chipLocator = loadoutSection.locator("span.font-mono");
     const beforeCount = await chipLocator.count();
 
-    // 添加：点 [+ 添加开局物品] → 下拉选第一个可用技能组（默认 255 或首个未配置）
+    // 添加：技能组选择器选第一个可用项（默认 255 或首个未配置），再点 [添加开局物品]
+    const skillsetSelect = loadoutSection.getByRole("combobox", {
+      name: "选择技能组",
+    });
+    await expect(skillsetSelect).toBeVisible({ timeout: 5_000 });
+    const firstOptionValue = await skillsetSelect
+      .locator("option")
+      .first()
+      .getAttribute("value");
+    if (!firstOptionValue) throw new Error("技能组选择器为空");
+    await skillsetSelect.selectOption(firstOptionValue);
     await loadoutSection.getByRole("button", { name: /添加开局物品/ }).click();
-    const addOption = loadoutSection.locator("ul button").first();
-    await expect(addOption).toBeVisible({ timeout: 5_000 });
-    await addOption.click();
 
     // 物品选择 dialog 打开——输入物品 ID 回车成标签（清单为空 → 走裸 ID 提交）
     const itemInput = page.getByPlaceholder(/搜索物品 ID 或名称/);

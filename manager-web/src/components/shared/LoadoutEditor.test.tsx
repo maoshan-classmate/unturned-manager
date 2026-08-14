@@ -57,21 +57,24 @@ describe("LoadoutEditor — 开局物品编辑", () => {
     expect(screen.getByText(/具体技能组条目会被覆盖/)).toBeInTheDocument();
   });
 
-  it("添加下拉：未配置时含 255；已配技能组时 255 不出现（D4 互斥）", async () => {
-    const user = userEvent.setup();
-    // 场景 1：无任何配置 → 255 可选
+  it("技能组选择器：未配置时默认 255；已配技能组时 255 不出现（D4 互斥）", async () => {
+    // 场景 1：无配置 → 255 默认选中 + 可选
     const { unmount } = renderEditor([]);
-    await user.click(await screen.findByRole("button", { name: /添加开局物品/ }));
-    expect(screen.getByText("所有技能组")).toBeInTheDocument();
-    // 关闭下拉（再点按钮 toggle）
-    await user.click(screen.getByRole("button", { name: /添加开局物品/ }));
+    const sel = screen.getByRole("combobox", { name: "选择技能组" });
+    expect(sel).toHaveValue("255");
+    expect(
+      Array.from(sel.querySelectorAll("option")).map((o) => o.value),
+    ).toContain("255");
     unmount();
 
-    // 场景 2：已配技能组（警察 2）→ 255 不可添加，未配技能组仍可选
+    // 场景 2：已配技能组（警察 2）→ 255 不在选项中，未配技能组仍可选
     renderEditor([{ skillsetId: 2, itemIds: [15] }]);
-    await user.click(await screen.findByRole("button", { name: /添加开局物品/ }));
-    expect(screen.queryByText("所有技能组")).toBeNull();
-    expect(screen.getByText("消防员")).toBeInTheDocument();
+    const sel2 = screen.getByRole("combobox", { name: "选择技能组" });
+    const optVals = Array.from(sel2.querySelectorAll("option")).map(
+      (o) => o.value,
+    );
+    expect(optVals).not.toContain("255");
+    expect(optVals).toContain("1"); // 消防员可选
   });
 
   it("编辑条目 → 打开物品选择 dialog 预填已有标签", async () => {
@@ -113,9 +116,12 @@ describe("LoadoutEditor — 开局物品编辑", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     renderEditor([], onChange);
-    await user.click(await screen.findByRole("button", { name: /添加开局物品/ }));
-    // 选一个技能组（如 消防员 1）
-    await user.click(screen.getByText("消防员"));
+    // 选择器选「消防员（1）」，再点添加
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "选择技能组" }),
+      "1",
+    );
+    await user.click(screen.getByRole("button", { name: /添加开局物品/ }));
     // dialog 打开，无预填标签
     const tags = await screen.findByTestId("loadout-tags");
     expect(within(tags).queryByText("1")).toBeNull();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -92,7 +92,8 @@ type DeleteTarget = { index: number; skillsetId: number } | null;
  */
 export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
   const { items, reload } = useItems();
-  const [addOpen, setAddOpen] = useState(false);
+  // 添加区常驻技能组选择器——先选职业组再点「添加开局物品」（用户反馈：不要从按钮弹出下拉选）
+  const [selectedSkillset, setSelectedSkillset] = useState<number>(255);
   const [picker, setPicker] = useState<PickerState>(null);
   const [listDialogOpen, setListDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
@@ -124,19 +125,23 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
     [usedSkillsetIds, hasSkillset, has255],
   );
 
-  /** 默认选中 255（D1），不可用时取第一个可加技能组（D2：不再跳「无技能(0)」） */
-  const defaultSkillset = addableSkillsets.includes(255)
-    ? 255
-    : addableSkillsets[0];
+  /** 技能组选择器选中值同步——当所选技能组被占用/互斥禁用时回落到默认（255 优先，D2 不跳「无技能」） */
+  useEffect(() => {
+    const fallback = addableSkillsets.includes(255)
+      ? 255
+      : (addableSkillsets[0] ?? 255);
+    setSelectedSkillset((prev) =>
+      addableSkillsets.includes(prev) ? prev : fallback,
+    );
+  }, [addableSkillsets]);
 
-  /** 打开添加下拉选中的技能组的物品选择 dialog */
+  /** 打开「当前所选技能组」的物品选择 dialog */
   const openPickerForAdd = (skillsetId: number) => {
     setPicker({
       skillsetId,
       skillsetName: SKILLSET_NAMES[skillsetId] ?? `#${skillsetId}`,
       itemIds: [],
     });
-    setAddOpen(false);
   };
 
   /** 编辑已有条目的物品选择 dialog */
@@ -262,42 +267,32 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
         </div>
       )}
 
-      {/* 添加按钮 + 技能组下拉 */}
+      {/* 添加区：常驻技能组选择器 + 添加按钮（先选职业组，再点添加进 dialog） */}
       {addableSkillsets.length > 0 && (
-        <div className="relative pt-2 border-t border-slate-700">
-          <div className="flex justify-end">
+        <div className="pt-2 border-t border-slate-700">
+          <div className="flex items-center gap-2">
+            <label className="text-xs shrink-0 text-slate-400">技能组</label>
+            <select
+              value={selectedSkillset}
+              onChange={(e) => setSelectedSkillset(Number(e.target.value))}
+              aria-label="选择技能组"
+              className="flex-1 h-8 rounded text-xs px-2 bg-slate-950 border border-slate-700 text-slate-100"
+            >
+              {addableSkillsets.map((id) => (
+                <option key={id} value={id}>
+                  {SKILLSET_NAMES[id] ?? `#${id}`}（ID {id}）
+                </option>
+              ))}
+            </select>
             <button
               type="button"
-              onClick={() => setAddOpen((v) => !v)}
-              className="flex items-center gap-1 px-3 h-7 rounded text-xs text-white bg-emerald-500 hover:bg-emerald-600"
+              onClick={() => openPickerForAdd(selectedSkillset)}
+              className="flex items-center gap-1 px-3 h-7 rounded text-xs text-white bg-emerald-500 hover:bg-emerald-600 shrink-0"
             >
               <Plus size={12} />
               添加开局物品
             </button>
           </div>
-          {addOpen && (
-            <>
-              {/* 点击外部关闭 */}
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setAddOpen(false)}
-              />
-              <ul className="absolute z-50 right-0 mt-1 w-44 rounded border border-slate-700 bg-slate-900 shadow-lg py-1">
-                {addableSkillsets.map((id) => (
-                  <li key={id}>
-                    <button
-                      type="button"
-                      onClick={() => openPickerForAdd(id)}
-                      className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800"
-                    >
-                      <span>{SKILLSET_NAMES[id] ?? `#${id}`}</span>
-                      <span className="font-mono text-slate-500">ID {id}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
         </div>
       )}
       {addableSkillsets.length === 0 && (
