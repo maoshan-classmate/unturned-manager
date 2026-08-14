@@ -66,6 +66,40 @@ describe("ItemListDialog — 物品清单管理", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it("新增：填已存在的内置 ID → 字段报错，不调 createItem", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /新增物品/ }));
+    await user.type(screen.getByPlaceholderText(/例如 1/), "1");
+    await user.type(screen.getByPlaceholderText(/自定义名/), "重复内置物品");
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.getByText("该物品 ID 已存在")).toBeInTheDocument();
+    expect(createItem).not.toHaveBeenCalled();
+  });
+
+  it("新增：填已存在的自定义 ID → 字段报错，不调 createItem", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /新增物品/ }));
+    await user.type(screen.getByPlaceholderText(/例如 1/), "9999");
+    await user.type(screen.getByPlaceholderText(/自定义名/), "重复自定义物品");
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.getByText("该物品 ID 已存在")).toBeInTheDocument();
+    expect(createItem).not.toHaveBeenCalled();
+  });
+
+  it("编辑：改 ID 撞已存在 → 字段报错，不调 updateItem", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /编辑物品 9999/ }));
+    const idInput = screen.getByPlaceholderText(/例如 1/);
+    await user.clear(idInput);
+    await user.type(idInput, "1");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(screen.getByText("该物品 ID 已存在")).toBeInTheDocument();
+    expect(updateItem).not.toHaveBeenCalled();
+  });
+
   it("编辑：改 ID + 名称 → updateItem(原ID, 新值) → onChanged", async () => {
     const user = userEvent.setup();
     vi.mocked(updateItem).mockResolvedValue({ id: 7777, name: "改名MOD", source: "custom" });

@@ -39,6 +39,8 @@ interface ItemFormDialogProps {
   originalId: number | null;
   /** 编辑预填值 */
   initial?: { id: number; name: string; label?: string | null };
+  /** 当前全部物品 ID 集合（内置 + 自定义）——提交前本地查重，命中直接在 ID 字段下报错；后端 409 兜底 */
+  existingIds: Set<number>;
   onSave: (input: { id: number; name: string; label?: string | null }) => Promise<void>;
   onClose: () => void;
 }
@@ -47,6 +49,7 @@ interface ItemFormDialogProps {
 function ItemFormDialog({
   open,
   originalId,
+  existingIds,
   initial,
   onSave,
   onClose,
@@ -56,6 +59,7 @@ function ItemFormDialog({
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<ItemFormValues>({
     resolver: zodResolver(itemFormSchema),
@@ -77,6 +81,12 @@ function ItemFormDialog({
   }, [open, initial, reset]);
 
   const onSubmit = async (data: ItemFormValues) => {
+    // ★ 提交前本地查重：ID 主键全局唯一（内置 + 自定义同一张表），命中直接在 ID 字段下报错，
+    // 省一次网络往返；后端 SQLITE_CONSTRAINT_UNIQUE → 409 仍保留作兜底。
+    if (data.id !== originalId && existingIds.has(data.id)) {
+      setError("id", { type: "custom", message: "该物品 ID 已存在" });
+      return;
+    }
     try {
       await onSave({
         id: data.id,
@@ -242,6 +252,12 @@ export function ItemListDialog({
     );
   }, [search, items]);
 
+  /** 全部物品 ID 集合（内置 + 自定义同表）——新增/编辑表单提交前本地查重 */
+  const existingIds = useMemo(
+    () => new Set(items.map((i) => i.id)),
+    [items],
+  );
+
   /** 新增/编辑提交——调用 API 后刷新清单 */
   const handleSave = async (input: {
     id: number;
@@ -380,6 +396,7 @@ export function ItemListDialog({
       <ItemFormDialog
         open={editTarget !== null}
         originalId={editTarget?.originalId ?? null}
+        existingIds={existingIds}
         initial={
           editTarget?.mode === "edit" ? editTarget.initial : undefined
         }
