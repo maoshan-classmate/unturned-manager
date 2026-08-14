@@ -69,6 +69,11 @@ export type {
   ILdmAssemblyVersionReader,
   LdmRuntimeStatusReader,
 } from "./contracts/ldm.js";
+export type {
+  IItemService,
+  ItemRecord,
+  ItemSource,
+} from "./contracts/items.js";
 
 // Schemas (Sprint 2: zod-openapi 契约层)
 export * from "./schemas/index.js";

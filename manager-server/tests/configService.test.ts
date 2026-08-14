@@ -71,6 +71,40 @@ describe("ConfigService — 5 种格式往返", () => {
     ).rejects.toMatchObject({ code: "config_conflict", status: 409 });
   });
 
+  it("Commands.dat: 255 与技能组并存 → 抛 loadout-mutually-exclusive(400)", async () => {
+    await expect(
+      svc.writeCommandsDat(serverId, {
+        known: {},
+        unknown: {},
+        comments: [],
+        loadouts: [
+          { skillsetId: 255, itemIds: [1100] },
+          { skillsetId: 2, itemIds: [1064] },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "loadout-mutually-exclusive", status: 400 });
+  });
+
+  it("Commands.dat: 仅 255 或仅技能组 → 正常写", async () => {
+    // 仅 255
+    await svc.writeCommandsDat(serverId, {
+      known: {},
+      unknown: {},
+      comments: [],
+      loadouts: [{ skillsetId: 255, itemIds: [1100] }],
+    });
+    // 仅技能组（多个并存合法——D4）
+    await svc.writeCommandsDat(serverId, {
+      known: {},
+      unknown: {},
+      comments: [],
+      loadouts: [
+        { skillsetId: 2, itemIds: [1064] },
+        { skillsetId: 10, itemIds: [311, 312] },
+      ],
+    });
+  });
+
   it("Config.txt: sections Record 往返", async () => {
     // ConfigService parseConfigTxt 只认 '=' 或 ':' 分隔（当前实现），所以测试用等号
     const input =
@@ -160,7 +194,7 @@ describe("ConfigService — 5 种格式往返", () => {
   // ─── Loadout 重复行（CommandLoadout.cs:13-49 + PlayerSkills.cs:43-97）────────
 
   it("Loadout: 解析多行 Loadout 为结构化 loadouts 数组", async () => {
-    // 11 = 军人（合法），3 = 农民，255 = 默认全部技能组；itemID = ushort 0–65535
+    // 11 = 军人（合法），3 = 农民，255 = 所有技能组；itemID = ushort 0–65535
     const input =
       [
         "Name MyServer",
@@ -212,7 +246,7 @@ describe("ConfigService — 5 种格式往返", () => {
       comments: [],
       loadouts: [
         { skillsetId: 1, itemIds: [5, 18] },
-        { skillsetId: 255, itemIds: [1, 2, 3] },
+        { skillsetId: 2, itemIds: [1, 2, 3] },
       ],
     });
 
@@ -222,9 +256,9 @@ describe("ConfigService — 5 种格式往返", () => {
     );
     const lines = content.trim().split("\n");
 
-    // Loadout 行存在且格式正确
+    // Loadout 行存在且格式正确（多技能组并存合法——D4）
     expect(lines).toContain("Loadout 1/5/18");
-    expect(lines).toContain("Loadout 255/1/2/3");
+    expect(lines).toContain("Loadout 2/1/2/3");
     // 已知键 Loadout 不进 known 行——所以不会同时出现单行 'Loadout ...'
     expect(lines.filter((l) => l.startsWith("Loadout ")).length).toBe(2);
   });
@@ -234,7 +268,7 @@ describe("ConfigService — 5 种格式往返", () => {
       [
         "Name MyServer",
         "Loadout 1/5/18",
-        "Loadout 255/1/2/3",
+        "Loadout 2/1/2/3",
         "# trailing comment",
       ].join("\n") + "\n";
     await fs.writeFile(path.join(serverDir, "Server", "Commands.dat"), input);
@@ -258,7 +292,7 @@ describe("ConfigService — 5 种格式往返", () => {
       loadouts: [
         { skillsetId: 1, itemIds: [5] }, // 合法
         { skillsetId: 99, itemIds: [10] }, // 非法 skillsetId → 跳过
-        { skillsetId: 255, itemIds: [1, 2] }, // 合法
+        { skillsetId: 2, itemIds: [1, 2] }, // 合法
       ],
     });
 
@@ -267,7 +301,7 @@ describe("ConfigService — 5 种格式往返", () => {
       "utf-8",
     );
     expect(content).toContain("Loadout 1/5");
-    expect(content).toContain("Loadout 255/1/2");
+    expect(content).toContain("Loadout 2/1/2");
     expect(content).not.toContain("Loadout 99/");
   });
 });

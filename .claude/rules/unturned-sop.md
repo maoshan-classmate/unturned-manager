@@ -105,13 +105,13 @@ Votify N 5 60 15 75 3
 Loadout 2/17/1064
 # 农民开局带工具斧 + 种子
 Loadout 4/62/1118
-# 全部技能组（255）默认带基本医疗包 + 绷带
+# 所有技能组（255）基础包——带基本医疗包 + 绷带（对所有人生效；与具体技能组互斥）
 Loadout 255/1100/1101
 ```
 
 格式：`Loadout <SkillsetID>/<itemID>/<itemID>/...`
 
-- SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=默认全部技能组
+- SkillsetID：`0`=无技能 `1`=消防员 `2`=警察 `3`=军人 `4`=农民 `5`=渔夫 `6`=露营者 `7`=工匠 `8`=厨师 `9`=盗贼 `10`=医生 `255`=所有技能组（基础层，对所有人生效——`CommandLoadout.cs:42-44` 写 `PlayerInventory.loadout`；与具体技能组互斥，`bestowLoadout()` 基础层非空时跳过技能组分支，`PlayerInventory.cs:1400-1406`）
 - ItemID：`0`–`65535` ushort，可在游戏内 `Items.asset` 查到；非法 ItemID 会触发该条 Loadout 命令报错中止（`CommandLoadout.cs:33-39`）；合法 ushort 但指向不存在物品的 ID 命令层不校验
 
 面板编辑器：`claudedocs/reference_config_files.md` §1.7 + Figma ConfigPage Tab「Commands.dat」→「开局物品（Loadout）」区块。

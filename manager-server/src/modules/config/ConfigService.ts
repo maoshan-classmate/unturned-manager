@@ -189,6 +189,19 @@ export class ConfigService implements IConfigService {
     record: CommandsDatRecord,
     expectedMtime?: number,
   ): Promise<void> {
+    // ★ 255 互斥校验（D4，后端兜底）——SDK `bestowLoadout()` 是 if/else if：
+    // 基础层（255）非空时跳过技能组分支，并存时技能组条目不生效。
+    // 前端禁用是主防线；此处防 API 层绕过，且强制用户先消解磁盘上已存在的冲突配置。
+    const loadouts = record.loadouts ?? [];
+    const has255 = loadouts.some((l) => l.skillsetId === 255);
+    const hasSkillset = loadouts.some((l) => l.skillsetId !== 255);
+    if (has255 && hasSkillset) {
+      throw new AppError(
+        "loadout-mutually-exclusive",
+        "「所有技能组」与具体技能组不能同时配置——具体技能组条目会被覆盖、实际不生效",
+        400,
+      );
+    }
     const serialized = this.serializeCommandsDat(record);
     await this.atomicWrite(
       serverId,

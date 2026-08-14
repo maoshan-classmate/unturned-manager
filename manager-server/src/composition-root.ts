@@ -19,6 +19,7 @@ import {
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
+  type IItemService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -39,6 +40,7 @@ import { WorkshopDeleteService } from "./modules/workshop/WorkshopDeleteService.
 import { LogStreamer } from "./modules/logs/LogStreamer.js";
 import { SessionManager } from "./modules/sessions/SessionManager.js";
 import { U3dsStatusProvider } from "./modules/u3ds/U3dsStatusProvider.js";
+import { ItemService } from "./modules/items/ItemService.js";
 import { LdmAssemblyVersionReader } from "./modules/ldm/LdmAssemblyVersionReader.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
@@ -68,6 +70,8 @@ export interface AppContainer {
   ldmDiscovery: ILdmDiscoveryService;
   ldmCommands: ILdmPluginCommandsService;
   ldmSource: ILdmPluginSourceService;
+  // 物品清单（开局物品选择器 + 名称反查）——全局一份
+  itemService: IItemService;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -127,6 +131,10 @@ export function buildContainer(db: Database.Database): AppContainer {
 
   // AuthService
   const authService = new AuthService(db);
+
+  // 物品清单服务——内置种子幂等播种（INSERT OR IGNORE，启动时执行一次）
+  const itemService = new ItemService(db);
+  itemService.seedBuiltinItems();
 
   // ── LDM Mod 框架 Phase 1 模块 ─────────────────────────────────
   const ldmVersionReader = new LdmAssemblyVersionReader();
@@ -240,5 +248,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmDiscovery,
     ldmCommands,
     ldmSource,
+    itemService,
   };
 }

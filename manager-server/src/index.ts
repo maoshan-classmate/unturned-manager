@@ -48,6 +48,7 @@ import { createWorkshopRouter } from "./routes/workshop.js";
 import { createSettingsRouter } from "./routes/settings.js";
 import { createSessionsRouter } from "./routes/sessions.js";
 import { createU3dsRouter } from "./routes/u3ds.js";
+import { createItemsRouter } from "./routes/items.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
 
@@ -155,6 +156,8 @@ app.use(
 );
 // Unturned 服务端（U3DS）安装状态查询——修第 11 项
 app.use("/api/u3ds", createU3dsRouter(container.u3dsStatus));
+// 物品清单（开局物品选择器 + 名称反查）——全局一份
+app.use("/api/items", createItemsRouter(container.itemService));
 
 // WebSocket
 wsBroadcaster.init(

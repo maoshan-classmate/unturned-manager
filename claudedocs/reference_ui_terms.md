@@ -35,7 +35,12 @@
 | SkillsetID 8（chef） | 厨师 |
 | SkillsetID 9（thief） | 盗贼 |
 | SkillsetID 10（doctor） | 医生 |
-| SkillsetID 255（default loadout） | 默认（所有技能组） |
+| SkillsetID 255（All Skillsets，对所有技能组生效的基础层） | 所有技能组 |
+| item_list / ItemRecord / 物品清单 | 物品清单 |
+| builtin（内置种子物品） | 内置（物品清单行徽章；只读不可改） |
+| custom（用户自定义物品） | 自定义（物品清单行徽章；可编辑删除） |
+| 未知物品（ID 不在清单内） | 未知物品（物品标签名称反查未命中时显示） |
+| label（item_list 中文显示名） | 显示名称（可选，中文）——仅前端 UI 显示，不写入 Commands.dat |
 | LDM（Legally-Distinct-Missile） | Mod 框架（**保留 LDM 是品牌名，玩家圈层高识别度**—— Steam Workshop 上查询/外链到 GitHub Releases 时直接用 LDM；面板"应用配置"按钮旁的「关于 LDM」徽章可保留；其他界面文案统一「Mod 框架」） |
 | Rocket（LDM 子目录名） | Mod 框架配置（内部术语；用户可见文案中**不出现**——只说「Mod 框架」） |
 | Rocket.config.xml / Permissions.config.xml | Mod 框架配置 / 权限组配置（**文件名保留原文**——用户去 GitHub 查问题时搜的就是这个名） |

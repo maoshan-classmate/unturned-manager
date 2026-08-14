@@ -21,11 +21,11 @@ export const REPEATABLE_KEYS = new Set(['Loadout']);
 
 /**
  * 单条 Loadout 行结构（CommandLoadout.cs:13-49 / PlayerSkills.cs:43-97）。
- * 权威约束：SkillsetID ∈ {0,1,2,3,4,5,6,7,8,9,10,255}（255 = 默认全部技能组），
+ * 权威约束：SkillsetID ∈ {0,1,2,3,4,5,6,7,8,9,10,255}（255 = 所有技能组），
  *           ItemID ∈ [0, 65535] ushort。同一 SkillsetID 多行 = 后写覆盖前写。
  */
 export const LoadoutEntrySchema = z.object({
-  /** 0–10 = 11 个技能组，255 = 默认全部技能组 */
+  /** 0–10 = 11 个技能组，255 = 所有技能组 */
   skillsetId: z.number().int().min(0).max(255),
   /** 该技能组开局携带的物品 ID 列表；空数组表示该技能组无物品加成 */
   itemIds: z.array(z.number().int().min(0).max(65535)),
