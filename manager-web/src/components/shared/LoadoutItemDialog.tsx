@@ -21,14 +21,16 @@ interface LoadoutItemDialogProps {
   onCancel: () => void;
 }
 
-/** 下拉最多展示条数（超出滚动） */
-const DROPDOWN_LIMIT = 8;
+/** 下拉分页：初始/每滚动一批加载条数 */
+const PAGE_SIZE = 10;
 
 /**
  * 单个技能组的开局物品选择 dialog。
  * 交互：搜索/手输选物品 → 回车/点击成标签 → 多标签 → 保存/取消。
- * 输入框同时支持：① 搜索内置+自定义清单（ID 或名称子串）；② 直接输合法整数
- * ID（Mod 物品，清单外 → 标签显示「未知物品」）。重复 ID 忽略，Backspace 删末标签。
+ * 输入框同时支持：① 搜索内置+自定义清单（ID 或名称子串，显示中文 label）；
+ * ② 直接输合法整数 ID（Mod 物品，清单外 → 标签显示「未知物品」）。
+ * 下拉是**分页列表**——滚动到底自动加载下 10 条，不再一次性铺满。
+ * 重复 ID 忽略，Backspace 删末标签。
  *
  * @param props - 组件属性
  * @param props.open - 是否打开
@@ -65,7 +67,10 @@ export function LoadoutItemDialog({
   const [tags, setTags] = useState<number[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  /** 下拉已加载条数（分页：滚动到底 +10） */
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   // 打开时重置工作副本（不污染已保存状态）
   useEffect(() => {
@@ -73,6 +78,7 @@ export function LoadoutItemDialog({
       setTags(initialItemIds);
       setInputValue("");
       setActiveIndex(0);
+      setVisibleCount(PAGE_SIZE);
     }
   }, [open, initialItemIds]);
 
@@ -98,22 +104,37 @@ export function LoadoutItemDialog({
     const q = inputValue.trim().toLowerCase();
     if (!q) return items;
     return items.filter(
-      (i) => i.id.toString().includes(q) || i.name.toLowerCase().includes(q),
+      (i) =>
+        i.id.toString().includes(q) ||
+        i.name.toLowerCase().includes(q) ||
+        (i.label ?? "").toLowerCase().includes(q),
     );
   }, [inputValue, items]);
+
+  /** 当前已加载的子集（分页切片） */
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const hasMore = visibleCount < filtered.length;
+
+  // 键盘高亮项滚动进可视区（分页列表可能超出视口）；jsdom 无 scrollIntoView → 可选链保护
+  useEffect(() => {
+    const el = listRef.current?.querySelector('[data-active="true"]');
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex]);
 
   /** 提交一个物品 ID 为标签（重复忽略） */
   const addTag = (id: number) => {
     setTags((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setInputValue("");
     setActiveIndex(0);
+    setVisibleCount(PAGE_SIZE);
     inputRef.current?.focus();
   };
 
-  /** 回车提交：优先高亮的下拉项；无匹配且输入为合法整数 → 提交裸 ID（Mod 物品） */
+  /** 回车提交：优先高亮的下拉项（需有输入或手动导航过）；否则合法整数 → 提交裸 ID（Mod 物品） */
   const commit = () => {
-    if (filtered.length > 0) {
-      const option = filtered[activeIndex % filtered.length];
+    const navigated = inputValue.trim() !== "" || activeIndex > 0;
+    if (navigated && visible.length > 0) {
+      const option = visible[activeIndex % visible.length];
       if (option) {
         addTag(option.id);
         return;
@@ -129,6 +150,14 @@ export function LoadoutItemDialog({
     }
   };
 
+  /** 列表滚动到底 → 加载下 PAGE_SIZE 条 */
+  const handleListScroll = (e: React.UIEvent<HTMLUListElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 20) {
+      setVisibleCount((c) => Math.min(c + PAGE_SIZE, filtered.length));
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -137,7 +166,12 @@ export function LoadoutItemDialog({
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => i + 1);
+      const next = activeIndex + 1;
+      // 到达当前已加载末尾且还有更多 → 先扩一页，让高亮能继续前进
+      if (visible.length > 0 && next >= visible.length && hasMore) {
+        setVisibleCount((c) => Math.min(c + PAGE_SIZE, filtered.length));
+      }
+      setActiveIndex(next);
       return;
     }
     if (e.key === "ArrowUp") {
@@ -151,7 +185,7 @@ export function LoadoutItemDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onCancel} width={520}>
+    <Dialog open={open} onClose={onCancel} width={640}>
       <div className="p-4">
         <Dialog.Title>开局物品：{skillsetName}</Dialog.Title>
 
@@ -185,51 +219,69 @@ export function LoadoutItemDialog({
           )}
         </div>
 
-        {/* 输入 + 下拉 */}
-        <div className="mt-2 relative">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value);
-              setActiveIndex(0);
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="搜索物品 ID 或名称，或直接输入物品 ID（支持 Mod 物品）"
-            className="w-full h-9 rounded text-xs px-3 font-mono bg-slate-950 border border-slate-700 text-slate-100"
-          />
-          {filtered.length > 0 && (
-            <ul className="absolute z-10 mt-1 w-full max-h-52 overflow-y-auto rounded border border-slate-700 bg-slate-900 shadow-lg">
-              {filtered.slice(0, DROPDOWN_LIMIT).map((item, idx) => (
+        {/* 输入框 */}
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setActiveIndex(0);
+            setVisibleCount(PAGE_SIZE);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="搜索物品 ID 或名称，或直接输入物品 ID（支持 Mod 物品）"
+          className="mt-2 w-full h-9 rounded text-xs px-3 font-mono bg-slate-950 border border-slate-700 text-slate-100"
+        />
+
+        {/* 分页下拉列表——常驻块（不 absolute，避免被覆盖），滚动到底加载更多 */}
+        {filtered.length > 0 && (
+          <ul
+            ref={listRef}
+            onScroll={handleListScroll}
+            className="mt-2 w-full max-h-64 overflow-y-auto rounded border border-slate-700 bg-slate-900"
+          >
+            {visible.map((item, idx) => {
+              const active = idx === activeIndex % visible.length;
+              return (
                 <li key={item.id}>
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => addTag(item.id)}
                     onMouseEnter={() => setActiveIndex(idx)}
+                    data-active={active}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
-                      idx === activeIndex % filtered.length
+                      active
                         ? "bg-slate-700 text-white"
                         : "text-slate-300 hover:bg-slate-800"
                     }`}
                   >
-                    <span className="font-mono text-slate-400">{item.id}</span>
-                    <span>{item.name}</span>
+                    <span className="font-mono text-slate-400 shrink-0">
+                      {item.id}
+                    </span>
+                    <span>{item.label ?? item.name}</span>
+                    {item.label && item.label !== item.name && (
+                      <span className="text-slate-500 text-[10px] truncate">
+                        {item.name}
+                      </span>
+                    )}
                     {item.source === "builtin" && (
-                      <span className="ml-auto text-[10px] text-slate-500">内置</span>
+                      <span className="ml-auto text-[10px] text-slate-500 shrink-0">
+                        内置
+                      </span>
                     )}
                   </button>
                 </li>
-              ))}
-              {filtered.length > DROPDOWN_LIMIT && (
-                <li className="px-3 py-1 text-[10px] text-slate-500">
-                  还有 {filtered.length - DROPDOWN_LIMIT} 条，继续输入过滤
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
+              );
+            })}
+            {hasMore && (
+              <li className="px-3 py-1.5 text-[10px] text-center text-slate-500">
+                已显示 {visible.length} / {filtered.length} 条——继续向下滚动加载
+              </li>
+            )}
+          </ul>
+        )}
 
         <Dialog.Footer>
           <button
