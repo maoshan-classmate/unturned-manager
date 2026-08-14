@@ -27,8 +27,18 @@ const SUBSCRIBE_TIMEOUT_MS = 5_000;
 //   间隔内未回 pong（isAlive 仍 false）视为死连接 terminate 清理。
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+/** ★ 2026-08-14 历史回灌：每个 serverId 保留最近 200 条 console_line，
+ *  新订阅者注册时先把这 200 条当作 console_line 事件推给它（按时间序），
+ *  解决「切走再切回控制台历史日志消失」问题。
+ *  200 行 ≈ 8 屏可见区上下文，调试够用；每行 ~1KB × serverId 数 = 内存可控。
+ *  跨面板重启不持久化（内存级）——重启后从零开始。 */
+const CONSOLE_BUFFER_MAX = 200;
+
 // 每个 ws 连接订阅的 serverId 集合（Phase 0 升级：含事件类型过滤）
 const wsSubscriptions = new Map<WebSocket, WsSubscription>();
+
+/** console_line 历史回灌 buffer：serverId → 最近 N 条。事件入 broadcast 时 push，超 N 截断头部。 */
+const consoleLineBuffer = new Map<ServerId, ServerEvent[]>();
 
 /** WebSocket + 心跳存活标记 */
 type HeartbeatWebSocket = WebSocket & { isAlive?: boolean };
@@ -154,6 +164,18 @@ class WsBroadcaster implements IBroadcaster {
                 },
                 "WS 客户端已订阅",
               );
+
+              // ★ 2026-08-14 历史回灌：按订阅的 serverIds 推 buffer 中最近的 console_line
+              // 客户端 subscribe 回调收到这批事件时按正常流程塞进 lines 数组——前端无感
+              if (ws.readyState === WebSocket.OPEN) {
+                for (const id of subs.serverIds) {
+                  const buffered = consoleLineBuffer.get(id as ServerId);
+                  if (!buffered || buffered.length === 0) continue;
+                  for (const evt of buffered) {
+                    ws.send(JSON.stringify(evt));
+                  }
+                }
+              }
             }
           } else if (msg.type === "terminal_input") {
             // ★ ADR-0004 Phase 3：xterm.js onData 的原始输入 → 写入对应 serverId 的 PTY stdin。
@@ -303,6 +325,22 @@ class WsBroadcaster implements IBroadcaster {
   }
 
   broadcast(event: ServerEvent): void {
+    // ★ 2026-08-14 历史回灌：console_line 先入 buffer（按 serverId 隔离 + 200 行上限），
+    // 然后正常广播给订阅者。
+    if (event.type === "console_line") {
+      const id = event.serverId;
+      let buf = consoleLineBuffer.get(id);
+      if (!buf) {
+        buf = [];
+        consoleLineBuffer.set(id, buf);
+      }
+      buf.push(event);
+      if (buf.length > CONSOLE_BUFFER_MAX) {
+        // 超出 N 行截断头部（先进先出）
+        buf.splice(0, buf.length - CONSOLE_BUFFER_MAX);
+      }
+    }
+
     const data = JSON.stringify(event);
 
     for (const [ws, subs] of wsSubscriptions) {
