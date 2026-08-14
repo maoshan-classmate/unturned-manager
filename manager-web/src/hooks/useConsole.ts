@@ -7,7 +7,7 @@ import {
 export interface ConsoleLine {
   id: number;
   text: string;
-  source: "stdout" | "file" | "input";
+  source: "stdout" | "file";
   timestamp: number;
 }
 
@@ -100,16 +100,8 @@ export function useConsole(serverId: string): UseConsoleReturn {
         historyRef.current.shift();
       }
 
-      // 在输出中显示输入的命令
-      setLines((prev) => [
-        ...prev,
-        {
-          id: nextId++,
-          text: `> ${command}`,
-          source: "input",
-          timestamp: Date.now(),
-        },
-      ]);
+      // ★ 2026-08-14 TERM 方案：不在前端塞 `> 命令` 标记——bash 自回显承担命令可见性，
+      // 避免「命令在屏幕上出现两次」（bash 回显 + 前端标记）。
 
       // PTY 终端：拼入 \n 让 U3DS bash 解析（U3-SDK -ThreadedConsole 的 Console.ReadLine()
       // 以 LF 为行终止符；bash 中转 + 终端模式变化时 \r 不触发行结束导致 ReadLine 阻塞。
