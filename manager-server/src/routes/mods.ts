@@ -117,29 +117,41 @@ export function createModsRouter(
     "/mods/download",
     validate(ModDownloadRequestSchema),
     asyncHandler(async (req, res) => {
-      const { fileId } = req.body as { fileId: WorkshopFileId };
+      // ★ 2026-08-14 兼容 fileId（单 mod）和 fileIds（批量）——统一转数组。
+      const body = req.body as {
+        fileId?: WorkshopFileId;
+        fileIds?: WorkshopFileId[];
+      };
+      const fileIds: WorkshopFileId[] = body.fileIds
+        ? body.fileIds
+        : body.fileId
+          ? [body.fileId]
+          : [];
+      if (fileIds.length === 0) {
+        res.status(400).json({
+          error: { code: "invalid_message", message: "缺少 fileId 或 fileIds" },
+        });
+        return;
+      }
       const serverId = req.params.id as ServerId;
       const installDir = await resolveInstallDir(serverId);
 
-      // 先查 mod 元数据（实时，不缓存）拿 modTitle
+      // 元数据补 modTitle（多个时取第一个）
       let modTitle: string | undefined;
       try {
-        const meta = await workshopMeta.getModDetails(fileId);
+        const meta = await workshopMeta.getModDetails(fileIds[0]!);
         modTitle = meta?.title;
       } catch {
         // 元数据查不到不影响下载流程
       }
 
-      // BUG-5/6 修复：下载**异步启动**（spawn 后即返回 jobId，不等待 SteamCMD 退出），
-      // HTTP 立即 202，进度/完成/失败经 WS steamcmd_progress（带 jobId）广播。
-      // 原实现同步 await 下载进程 → HTTP 挂起 → 前端 axios 10s 超时（timeout of 10000ms exceeded）。
+      // BUG-5/6 修复：下载**异步启动**——立刻返回 jobId + 队列感知。
+      // ★ 2026-08-14 队列化：同 staging 连点 N 次全部进队串行跑，不再 409。
       let jobId: string;
       try {
-        // BUG-5/6（第四版根因）：传 serverId 让 staging 落在 Servers/<id>/Workshop/staging，
-        // 与 acf 扫描 / apply 流水线路径一致——否则下载成功但列表扫不到、Mod 永不生效。
         jobId = await steamCmd.downloadWorkshopItem(
           installDir,
-          [fileId],
+          fileIds as string[],
           serverId,
         );
       } catch (err) {
@@ -155,7 +167,7 @@ export function createModsRouter(
       res.status(202).json({
         data: {
           jobId,
-          fileId,
+          fileIds,
           modTitle,
           message: "Mod 下载已启动，进度由 WS steamcmd_progress 推送",
         },

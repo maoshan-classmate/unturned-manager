@@ -8,6 +8,9 @@ import { useWebSocket } from "../contexts/WebSocketContext.js";
  * @property jobId - 任务 ID（区分多任务并发：'steamcmd-install-<dir>' | 'steamcmd-update-<dir>' | 'steamcmd-download-<dir>' | 'steamcmd-reinstall-<dir>' | 'steamcmd-check-<dir>'）
  * @property latestVersion - check-update 完成时携带的 U3DS 版本号（仅 check-update 的 completed 事件）
  * @property timestamp - 接收时间
+ * @property queuePos - ★ 2026-08-14 队列位置（≥2 表示前面还有任务）。仅 stage==='queued' 携带。
+ * @property queueTotal - 排队总长度（含当前正在跑的）
+ * @property currentFileId - 当前正在下载的 mod 的 fileId（仅 mod 下载任务携带，stdout 解析）
  */
 export interface SteamCmdProgress {
   stage: string;
@@ -20,6 +23,17 @@ export interface SteamCmdProgress {
    */
   errorMessage?: string;
   timestamp: string;
+  /**
+   * 队列位置。≥2 表示「前面还有 N 个任务在跑」。
+   * ★ 2026-08-14：mod 下载连点 N 次不再 409，全部进队串行跑。
+   */
+  queuePos?: number;
+  queueTotal?: number;
+  /**
+   * 当前正在下载的 mod 的 fileId。SteamCMD 输出「Downloading item <id>...」时携带——
+   * 前端按 fileId 各自渲染进度条。
+   */
+  currentFileId?: string;
 }
 
 interface UseSteamCmdProgressOptions {
@@ -66,6 +80,13 @@ export function useSteamCmdProgress(
           : {}),
         ...(typeof msg.errorMessage === "string"
           ? { errorMessage: msg.errorMessage }
+          : {}),
+        ...(typeof msg.queuePos === "number" ? { queuePos: msg.queuePos } : {}),
+        ...(typeof msg.queueTotal === "number"
+          ? { queueTotal: msg.queueTotal }
+          : {}),
+        ...(typeof msg.currentFileId === "string"
+          ? { currentFileId: msg.currentFileId }
           : {}),
         timestamp: new Date().toISOString(),
       });

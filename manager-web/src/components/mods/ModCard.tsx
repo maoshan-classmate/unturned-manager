@@ -1,5 +1,6 @@
 import { Star, Plus, Eye, Users, Check } from 'lucide-react';
 import { Button } from '../ui/button.js';
+import { ProgressBar } from '../shared/ProgressBar.js';
 import { cn, stripBbcode } from '@/lib/utils';
 
 /** ModCard Props（单 variant——只服务 ModsPage Steam 浏览） */
@@ -20,6 +21,16 @@ interface ModCardProps {
   loading?: boolean;
   /** ★ BUG-5 修复：是否已下载（来自 /mods/downloaded） */
   downloaded?: boolean;
+  /** ★ 2026-08-14 进度条 stage：downloading/queued/verifying/completed/failed */
+  progressStage?: string;
+  /** 进度百分比（0-100）；undefined → indeterminate */
+  progressPercent?: number;
+  /** 排队位置（≥2 显示「排队中」）；undefined → 不展示 */
+  queuePos?: number;
+  /** 排队总长度 */
+  queueTotal?: number;
+  /** 失败时的真实根因 */
+  progressErrorMessage?: string;
   /** 下载回调 */
   onDownload?: (fileId: string) => void;
   /** 详情回调 */
@@ -43,7 +54,9 @@ interface ModCardProps {
  */
 export function ModCard({
   fileId, title, description, previewUrl,
-  subscriptions, voteScore, loading, downloaded, onDownload, onDetails,
+  subscriptions, voteScore, loading, downloaded,
+  progressStage, progressPercent, queuePos, queueTotal, progressErrorMessage,
+  onDownload, onDetails,
 }: ModCardProps) {
   const cleanDescription = stripBbcode(description);
 
@@ -114,6 +127,18 @@ export function ModCard({
         <p className="text-xs text-slate-500 mt-0.5 truncate">
           {cleanDescription || '暂无描述'}
         </p>
+
+        {/* ★ 2026-08-14 进度条槽位：downloading/queued/verifying/completed/failed 时渲染 */}
+        {progressStage && (
+          <ProgressBar
+            stage={progressStage}
+            {...(progressPercent != null ? { percent: progressPercent } : {})}
+            {...(queuePos != null ? { queuePos } : {})}
+            {...(queueTotal != null ? { queueTotal } : {})}
+            {...(progressErrorMessage ? { errorMessage: progressErrorMessage } : {})}
+            className="mt-2"
+          />
+        )}
 
         {/* Action buttons — shadcn variant（问题 4）+ "订阅"→"下载"（问题 5） */}
         <div className="flex items-center gap-2 mt-3">

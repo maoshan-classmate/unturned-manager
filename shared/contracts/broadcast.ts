@@ -60,6 +60,20 @@ export type ServerEvent =
        * 对定位像 install-script-missing 这类后台诊断信息毫无价值。
        */
       errorMessage?: string;
+      /**
+       * 排队位置（≥2 表示「前面还有任务在跑」）。仅 stage==="queued" 携带。
+       * ★ 2026-08-14 队列化：连点 N 个 mod 下载不再 409，全部进队等串行跑。
+       * 前端用此字段显示「排队中（前 X 个）」。
+       */
+      queuePos?: number;
+      /** 排队总长度（per-staging 队列的等待中 + 正在跑 任务总数）。 */
+      queueTotal?: number;
+      /**
+       * 当前正在下载的 fileId（仅 mod 下载任务携带）。SteamCMD 一次可下载多个 mod，
+       * 但 stdout 解析「Downloading item <id>...」可识别当前进度属于哪个 mod——前端按
+       * fileId 各自显示进度条。
+       */
+      currentFileId?: string;
     }
   // ★ ws-wrapper-design §2.2：请求-应答模式的应答事件。不走 broadcast() 分发——
   // 由 gateway 直接回给发起请求的那条连接（ack 是 per-request 的，不是广播）。

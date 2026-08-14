@@ -276,27 +276,97 @@ export function ModsPage() {
   };
 
   // ★ BUG-5/6 修复：监听 SteamCMD 下载任务完成/失败 → 刷新已下载列表 + 恢复按钮状态
+  // ★ 2026-08-14：每 fileId 自己的 progress state（按 jobId + currentFileId 反查 fileId）——
+  // 让 ModCard 渲染各自进度条，队列中 fileId 也能显示「排队中（前 X 个）」。
   const downloadProgress = useSteamCmdProgress();
+  const [progressByFile, setProgressByFile] = useState<
+    Record<
+      string,
+      {
+        stage: string;
+        percent?: number;
+        queuePos?: number;
+        queueTotal?: number;
+        errorMessage?: string;
+      }
+    >
+  >({});
   useEffect(() => {
-    const { jobId, stage } = downloadProgress ?? {};
+    const p = downloadProgress;
+    if (!p) return;
+    const { jobId, stage, percent, queuePos, queueTotal, errorMessage } = p;
     if (!jobId || !jobId.startsWith("steamcmd-download-")) return;
-    if (stage !== "completed" && stage !== "failed") return;
-    // 用 jobId 反查 fileId（downloading 映射）
-    const entry = Object.entries(downloading).find(([, jid]) => jid === jobId);
-    if (!entry) return;
-    const [fileId] = entry;
-    setDownloading((prev) => {
-      const next = { ...prev };
-      delete next[fileId];
-      return next;
-    });
-    if (stage === "completed") {
-      toast.success("Mod 下载完成");
-      // 刷新已下载列表（staging acf 已写入）→ 卡片按钮变「已下载」（BUG-5 闭环）
-      void refetchDownloaded();
-    } else {
-      toast.error("Mod 下载失败");
+
+    // 把进度事件按 fileId 推到对应 mod——
+    //  - queued（自己）：所有 pending mod 都看到「排队中」
+    //  - active（有 currentFileId 或非 queued）：只推当前正在跑的 mod
+    if (stage === "queued") {
+      // 自己进队的瞬间，把所有 pending 下载标为「排队中」
+      setProgressByFile((prev) => {
+        const next = { ...prev };
+        for (const [fid, v] of Object.entries(downloading)) {
+          if (v === "pending" || v === jobId) {
+            next[fid] = {
+              stage: "queued",
+              ...(queuePos != null ? { queuePos } : {}),
+              ...(queueTotal != null ? { queueTotal } : {}),
+            };
+          }
+        }
+        return next;
+      });
+      return;
     }
+
+    // completed/failed：找到该 jobId 对应的 fileId 并清除
+    if (stage === "completed" || stage === "failed") {
+      const entry = Object.entries(downloading).find(
+        ([, jid]) => jid === jobId,
+      );
+      if (!entry) return;
+      const [fileId] = entry;
+      if (stage === "completed") {
+        toast.success("Mod 下载完成");
+        // 刷新已下载列表（staging acf 已写入）→ 卡片按钮变「已下载」（BUG-5 闭环）
+        void refetchDownloaded();
+      } else {
+        toast.error(errorMessage ?? "Mod 下载失败");
+      }
+      setProgressByFile((prev) => {
+        const next = { ...prev };
+        delete next[fileId];
+        return next;
+      });
+      setDownloading((prev) => {
+        const next = { ...prev };
+        delete next[fileId];
+        return next;
+      });
+      return;
+    }
+
+    // active 阶段（downloading/verifying）：优先用 currentFileId，否则 jobId 反查唯一 fileId
+    let targetFileId: string | undefined;
+    if (p.currentFileId) {
+      targetFileId = p.currentFileId;
+    } else {
+      // currentFileId 缺失（SteamCMD 输出无 Downloading item 标记）→ 找该 jobId 对应的唯一 fileId
+      const entries = Object.entries(downloading).filter(
+        ([, jid]) => jid === jobId,
+      );
+      if (entries.length === 1) targetFileId = entries[0]![0];
+    }
+    if (!targetFileId) return;
+    setProgressByFile((prev) => ({
+      ...prev,
+      [targetFileId!]: {
+        stage,
+        ...(percent != null ? { percent } : {}),
+        ...(queuePos != null ? { queuePos } : {}),
+        ...(queueTotal != null ? { queueTotal } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
+      },
+    }));
   }, [downloadProgress, downloading, refetchDownloaded]);
 
   // ── 渲染 ────────────────────────────────────────────
@@ -402,21 +472,30 @@ export function ModsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(browse?.rows ?? []).map((mod) => (
-              <ModCard
-                key={mod.fileId}
-                fileId={mod.fileId}
-                title={mod.title}
-                description={mod.description}
-                previewUrl={mod.previewUrl}
-                subscriptions={mod.subscriptions}
-                voteScore={mod.voteScore}
-                loading={!!downloading[mod.fileId]}
-                downloaded={downloadedSet.has(mod.fileId)} // ★ BUG-5 修复
-                onDownload={handleDownload}
-                onDetails={(id) => setDetailFileId(id)}
-              />
-            ))}
+            {(browse?.rows ?? []).map((mod) => {
+              const fileProgress = progressByFile[mod.fileId];
+              return (
+                <ModCard
+                  key={mod.fileId}
+                  fileId={mod.fileId}
+                  title={mod.title}
+                  description={mod.description}
+                  previewUrl={mod.previewUrl}
+                  subscriptions={mod.subscriptions}
+                  voteScore={mod.voteScore}
+                  loading={!!downloading[mod.fileId]}
+                  downloaded={downloadedSet.has(mod.fileId)} // ★ BUG-5 修复
+                  // ★ 2026-08-14：每 mod 行自己的进度条（按 fileId 维度）
+                  {...(fileProgress?.stage ? { progressStage: fileProgress.stage } : {})}
+                  {...(fileProgress?.percent != null ? { progressPercent: fileProgress.percent } : {})}
+                  {...(fileProgress?.queuePos != null ? { queuePos: fileProgress.queuePos } : {})}
+                  {...(fileProgress?.queueTotal != null ? { queueTotal: fileProgress.queueTotal } : {})}
+                  {...(fileProgress?.errorMessage ? { progressErrorMessage: fileProgress.errorMessage } : {})}
+                  onDownload={handleDownload}
+                  onDetails={(id) => setDetailFileId(id)}
+                />
+              );
+            })}
           </div>
         )}
       </div>

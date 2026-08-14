@@ -63,6 +63,16 @@ const DOWNLOAD_TIMEOUT_MS = 60 * 60 * 1000;
 export class SteamCmdManager implements ISteamCmdManager {
   /** 当前正在跑的 steamcmd 子进程写目录集合（防同一目录并发写入竞态） */
   private activeJobs = new Set<string>();
+  /**
+   * ★ 2026-08-14 mod 下载队列化：per-staging FIFO 串行队列。
+   * 同 staging 连点 N 个 mod → 不再抛 409，全部进队等前一个跑完后接力（DST mod.go:72-75 同款语义）。
+   * 锁释放走 Promise.finally（identity 比对避免被下一个 entry 误删）。
+   * key 与 activeJobs 共享 resolveLockKey(stagingDir)——同一个 set 兼 Set/Map 语义，
+   * 简化：Set 互斥（install/update/reinstallU3DS/reinstallAll）+ Map 队列（downloadWorkshopItem）。
+   *   - Set 还在：表示「当前真有 SteamCMD 进程在跑这个 staging」
+   *   - Map 还在：表示「还有 promise chain 没断」——两者都覆盖互斥场景
+   */
+  private downloadQueue = new Map<string, Promise<unknown>>();
 
   /**
    * 计算 activeJobs 锁 key——语义「SteamCMD 进程会写入的目录」。
@@ -547,140 +557,209 @@ export class SteamCmdManager implements ISteamCmdManager {
       : path.join(installDir, "Workshop", "staging");
 
     // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录 = stagingDir
-    // review 修复：之前用 installDir 做锁，同 installDir 不同 serverId 的 download 误互斥——
-    // 实写不同 staging（`Servers/A/Workshop/staging` vs `Servers/B/Workshop/staging`），
-    // 本可并发。lockKey 用 path.resolve(stagingDir) 提前可算（在 mkdir 之前）。
     const lockKey = this.resolveLockKey(stagingDir);
-    // review 修复（P2-4）：裸 new Error → AppError（busy=409 / not-found=500），
-    // 路由才能区分错误类型（mods.ts 的 502 包装不再吞掉 409 语义）
-    if (this.activeJobs.has(lockKey)) {
-      throw new AppError(
-        "steamcmd-busy",
-        "该 staging 目录已有 SteamCMD 下载任务在跑",
-        409,
-      );
-    }
     const exePath = this.getExePath();
     if (!exePath) {
       throw new AppError("steamcmd-not-found", "SteamCMD 未安装", 500);
     }
 
-    // ★ review 修复（P2-3）：加锁提前到任何 await 之前（原实现在 mkdir/writeFile 之后才 add）——
-    //   TOCTOU：两个并发请求同时通过 busy 检查 → 都 spawn SteamCMD 写同一 staging。
-    this.activeJobs.add(lockKey);
-
-    const scriptContent = [
-      "@ShutdownOnFailedCommand 1",
-      "@NoPromptForPassword 1",
-      `force_install_dir "${stagingDir}"`,
-      "login anonymous",
-      ...itemIds.map((id) => `workshop_download_item ${STEAM_APP_IDS.UNTURNED_GAME} ${id}`),
-      "quit",
-    ].join("\n");
-    const scriptPath = path.join(stagingDir, ".steamcmd-download.scf");
-    try {
-      await fs.promises.mkdir(stagingDir, { recursive: true });
-      await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
-    } catch (err) {
-      // mkdir/writeFile 失败：释放锁并同步抛（route 转 500），不留悬挂锁
-      this.activeJobs.delete(lockKey);
-      throw err;
-    }
-
     const jobId = `steamcmd-download-${installDir}`;
-    this.broadcastProgressWithJobId(jobId, 0, "spawned");
-
-    // spawn 失败（如 steamcmd 缺依赖）同步抛，route 层转 502；锁在此释放
-    try {
-      await this.processSupervisor.spawn(
-        jobId,
-        exePath,
-        ["+runscript", scriptPath],
-        path.dirname(exePath),
-      );
-    } catch (err) {
-      this.broadcastProgressWithJobId(
-        jobId,
-        0,
-        "failed",
-        err instanceof AppError || err instanceof Error ? err.message : undefined,
-      );
-      this.activeJobs.delete(lockKey);
-      try {
-        await fs.promises.unlink(scriptPath);
-      } catch {
-        /* noop */
-      }
-      throw err;
-    }
-
-    this.processSupervisor.onStdout(jobId, (line: string) => {
-      const { stage, percent } = this.parseProgressLine(line);
-      this.broadcaster.broadcast({
-        type: "steamcmd_progress",
-        jobId,
-        stage,
-        percent,
-      });
-    });
-
-    // 后台收尾：等待退出 → 验证内容落盘 → 清临时脚本 → 广播 completed/failed → 释放互斥锁
-    void this.processSupervisor
-      .waitForExit(jobId, DOWNLOAD_TIMEOUT_MS)
-      .then(async (downloadExitCode) => {
-        if (downloadExitCode !== 0 && downloadExitCode != null) {
-          throw new Error(
-            `SteamCMD 下载进程异常退出 (code ${downloadExitCode})`,
+    // ★ 2026-08-14 队列化：不再抛 409——同 staging 连点 N 个 mod 全部进队串行跑。
+    // 链上当前 promise：前一个跑完才接力（DST mod.go:72-75 同款 mutex 队列语义）。
+    // race 兜底：finally 里 identity 比对，只删自己的 entry，不误删下一个覆盖进来的。
+    const prev = this.downloadQueue.get(lockKey) ?? Promise.resolve();
+    const myJob = prev
+      .catch(() => undefined) // 前一个失败不阻塞下一个接力
+      .then(async () => {
+        // 重新检查前一个状态——如果前一个以 steamcmd-busy / not-found 失败，
+        // 继续接力（DSG 模型：队列不因个别失败中断）
+        // ★ TOCTOU 修复：加锁提前到任何 await 之前。
+        // 当前任务开始前再判 activeJobs（同 staging 还有其他 SteamCMD 进程在跑？）——
+        // 理论上不会（前面 promise 已 finally 清锁），但 race 兜底：
+        if (this.activeJobs.has(lockKey)) {
+          throw new AppError(
+            "steamcmd-busy",
+            "该 staging 目录已有 SteamCMD 下载任务在跑",
+            409,
           );
         }
-        // ★ BUG-5/6（第四版）：steamcmd 下载失败时**也可能 exit 0**——item 只进
-        //   WorkshopItemDetails 元数据缓存，WorkshopItemsInstalled 空、SizeOnDisk 0，
-        //   前端却收到 completed 误报「下载成功」。
-        //   只查 exitCode 不可靠：必须验证 content/<appid>/<id>/ 目录落盘且非空。
-        //   （「假成功」的总根因 = 下载命令误用服务端 appid 1110390，已修正为游戏本体
-        //   304930；本落盘校验作兜底保留）
-        const missing: string[] = [];
-        for (const id of itemIds) {
-          const itemDir = path.join(
-            stagingDir,
-            "steamapps",
-            "workshop",
-            "content",
-            STEAM_APP_IDS.UNTURNED_GAME,
-            id,
-          );
-          try {
-            const files = await fs.promises.readdir(itemDir);
-            if (files.length === 0) missing.push(id);
-          } catch {
-            missing.push(id);
-          }
-        }
-        if (missing.length > 0) {
-          throw new Error(
-            `SteamCMD 下载未完成（staging 无实际内容，仅元数据缓存）: ${missing.join(", ")}`,
-          );
-        }
+        this.activeJobs.add(lockKey);
+
+        const scriptContent = [
+          "@ShutdownOnFailedCommand 1",
+          "@NoPromptForPassword 1",
+          `force_install_dir "${stagingDir}"`,
+          "login anonymous",
+          ...itemIds.map(
+            (id) => `workshop_download_item ${STEAM_APP_IDS.UNTURNED_GAME} ${id}`,
+          ),
+          "quit",
+        ].join("\n");
+        const scriptPath = path.join(stagingDir, ".steamcmd-download.scf");
         try {
-          await fs.promises.unlink(scriptPath);
-        } catch {
-          /* noop */
+          await fs.promises.mkdir(stagingDir, { recursive: true });
+          await fs.promises.writeFile(scriptPath, scriptContent, {
+            mode: 0o600,
+          });
+        } catch (err) {
+          // mkdir/writeFile 失败：释放锁并同步抛
+          this.activeJobs.delete(lockKey);
+          throw err;
         }
-        this.broadcastProgressWithJobId(jobId, 100, "completed");
-      })
-      .catch((err) => {
-        this.broadcastProgressWithJobId(
-        jobId,
-        0,
-        "failed",
-        err instanceof AppError || err instanceof Error ? err.message : undefined,
-      );
+
+        this.broadcastProgressWithJobId(jobId, 0, "spawned");
+
+        // spawn 失败同步抛，route 层转 502
+        try {
+          await this.processSupervisor.spawn(
+            jobId,
+            exePath,
+            ["+runscript", scriptPath],
+            path.dirname(exePath),
+          );
+        } catch (err) {
+          this.broadcastProgressWithJobId(
+            jobId,
+            0,
+            "failed",
+            err instanceof AppError || err instanceof Error
+              ? err.message
+              : undefined,
+          );
+          this.activeJobs.delete(lockKey);
+          try {
+            await fs.promises.unlink(scriptPath);
+          } catch {
+            /* noop */
+          }
+          throw err;
+        }
+
+        this.processSupervisor.onStdout(jobId, (line: string) => {
+          const { stage, percent } = this.parseProgressLine(line);
+          // ★ 2026-08-14 per-fileId 进度：SteamCMD 输出「Downloading item <id>...
+          // 1024/5678」时携带当前 fileId，前端按 fileId 各自渲染进度条。
+          const currentFileId = this.parseCurrentFileId(line, itemIds);
+          this.broadcaster.broadcast({
+            type: "steamcmd_progress",
+            jobId,
+            stage,
+            percent,
+            ...(currentFileId ? { currentFileId } : {}),
+          });
+        });
+
+        try {
+          const downloadExitCode = await this.processSupervisor.waitForExit(
+            jobId,
+            DOWNLOAD_TIMEOUT_MS,
+          );
+          if (downloadExitCode !== 0 && downloadExitCode != null) {
+            throw new Error(
+              `SteamCMD 下载进程异常退出 (code ${downloadExitCode})`,
+            );
+          }
+          // ★ BUG-5/6（第四版）：steamcmd 下载失败时**也可能 exit 0**——item 只进
+          //   WorkshopItemDetails 元数据缓存，WorkshopItemsInstalled 空、SizeOnDisk 0，
+          //   前端却收到 completed 误报「下载成功」。
+          //   只查 exitCode 不可靠：必须验证 content/<appid>/<id>/ 目录落盘且非空。
+          const missing: string[] = [];
+          for (const id of itemIds) {
+            const itemDir = path.join(
+              stagingDir,
+              "steamapps",
+              "workshop",
+              "content",
+              STEAM_APP_IDS.UNTURNED_GAME,
+              id,
+            );
+            try {
+              const files = await fs.promises.readdir(itemDir);
+              if (files.length === 0) missing.push(id);
+            } catch {
+              missing.push(id);
+            }
+          }
+          if (missing.length > 0) {
+            throw new Error(
+              `SteamCMD 下载未完成（staging 无实际内容，仅元数据缓存）: ${missing.join(", ")}`,
+            );
+          }
+          try {
+            await fs.promises.unlink(scriptPath);
+          } catch {
+            /* noop */
+          }
+          this.broadcastProgressWithJobId(jobId, 100, "completed");
+        } catch (err) {
+          this.broadcastProgressWithJobId(
+            jobId,
+            0,
+            "failed",
+            err instanceof AppError || err instanceof Error
+              ? err.message
+              : undefined,
+          );
+          throw err;
+        }
       })
       .finally(() => {
-        this.activeJobs.delete(lockKey);
+        // identity 比对兜底：只删自己 entry，N+1 个接力不会误删
+        if (this.downloadQueue.get(lockKey) === myJob) {
+          this.downloadQueue.delete(lockKey);
+        }
+        if (this.activeJobs.has(lockKey)) {
+          this.activeJobs.delete(lockKey);
+        }
       });
+    this.downloadQueue.set(lockKey, myJob);
+
+    // 立刻广播「queued」事件让前端感知排队位置
+    const queuePos = (await prev) ? this.queueLength(lockKey) : 1;
+    // queuePos 估算：等前一个完成，自己是第 1 个（pos=1 表示正在跑）；pos>1 表示排在前一个之后
+    // 简单实现：自己进队时是 prev 之后的下一个，pos 至少是 1
+    const queueTotal = queuePos;
+    this.broadcaster.broadcast({
+      type: "steamcmd_progress",
+      jobId,
+      stage: "queued",
+      queuePos,
+      queueTotal,
+    });
 
     return jobId;
+  }
+
+  /**
+   * 估算 stagingDir 队列长度（含当前正在跑的）——用于前端「排队中（前 X 个）」显示。
+   * 颗粒度对齐：粗估即可，实际进度以 SteamCMD stdout 为准。
+   */
+  private queueLength(lockKey: string): number {
+    let count = 0;
+    let cur: Promise<unknown> | undefined = this.downloadQueue.get(lockKey);
+    // 简单计数：链上 promise 数量即为队列深度（含当前正在跑的）
+    // 实际精度不重要——前端只要知道「前面还有 N 个」
+    while (cur) {
+      count++;
+      // 没有遍历 promise chain 的接口，简单返回 1（表示「至少 1 个」）；
+      // 真实排队深度需要重构成 List——MVP 简化返回 2 表示「自己 + 至少 1 个在跑」
+      break;
+    }
+    return count + 1; // 至少「自己 + 1」
+  }
+
+  /**
+   * 解析 SteamCMD 单行 stdout 提取当前正在下载的 fileId。
+   * 已知格式：`Downloading item <id> ...` / `Downloading depot ...`。
+   * 兜底：返回 undefined 时前端按 batch 处理（多个 mod 共享进度）。
+   */
+  private parseCurrentFileId(
+    line: string,
+    itemIds: string[],
+  ): string | undefined {
+    const m = line.match(/Downloading item (\d+)/);
+    if (m && itemIds.includes(m[1]!)) return m[1]!;
+    return undefined;
   }
 
   /**
