@@ -45,17 +45,23 @@ export function readStringEntry(
  * value=null 含义：bool 字段勾选为 true（U3DS 配置文件中 bool 开关 = 裸 key 行）。
  * value 非 null（"true"/"false"/其他）：按字面字符串真值判断——保守走 Boolean()。
  *
- * @param section - 后端返回的 ConfigSection
- * @param key - 字段 key（SDK 英文名）
- * @returns bool 字段值；section/key 缺失统一返回 false
+ * ★ 2026-08-14：加 defaultVal 参数——文件缺失（section 无此字段）时返回 SDK 官方默认值，
+ * 而不是恒 false。Config.txt 空值语义 = 使用官方默认（server-configuration.rst:10），
+ * 前端 UI 必须把「未配置」显示为 SDK 默认，否则 toggle 全 false 误导用户。
+ *
+ * @param section - 后端返回的 ConfigSection（可能 undefined=section 不存在）
+ * @param key - 字段 key（SDK 英文名，与 `PlayConfigData.cs` 对应 C# 字段名一致）
+ * @param defaultVal - 该字段的 SDK 官方默认值（section/key 缺失时返回）
+ * @returns bool 字段值；section/key 缺失返回 defaultVal（缺省 false 向后兼容）
  */
 export function readBoolEntry(
   section: ApiConfigSection | undefined,
   key: string,
+  defaultVal = false,
 ): boolean {
-  if (!section) return false;
+  if (!section) return defaultVal;
   const entry = section.entries.find((e) => e.key === key);
-  if (!entry) return false;
+  if (!entry) return defaultVal;
   if (entry.value === null) return true;
   // 后端若写入 "true"/"false" 字符串（非裸行形态），按字面真值判断
   return Boolean(entry.value) && entry.value !== "false";
@@ -188,17 +194,60 @@ export const EMPTY_TXT_FIELDS: ConfigTxtFields = {
   Desc_Server_List: "",
   Icon: "",
   Thumbnail: "",
-  VAC_Secure: false,
-  BattlEye_Secure: false,
+  VAC_Secure: true, // SDK ServerConfigData.cs:402
+  BattlEye_Secure: true, // 实机 U3DS Config.txt 注释「Default: True」
   Max_Ping_Milliseconds: "",
-  Enable_Scheduled_Shutdown: false,
-  Enable_Update_Shutdown: false,
+  Enable_Scheduled_Shutdown: false, // SDK ServerConfigData 未初始化=false
+  Enable_Update_Shutdown: false, // SDK 同上
   Spawn_Chance: "",
-  Has_Durability: false,
+  Has_Durability: true, // SDK ItemsConfigData:673（Normal 默认）
   Despawn_Dropped_Time: "",
   Respawn_Time: "",
-  Allow_Shoulder_Camera: false,
-  Allow_Freeform_Buildables: false,
-  Friendly_Fire: false,
-  Can_Suicide: false,
+  Allow_Shoulder_Camera: true, // SDK GameplayConfigData:2446
+  Allow_Freeform_Buildables: true, // SDK GameplayConfigData:2457
+  Friendly_Fire: false, // SDK GameplayConfigData:2448
+  Can_Suicide: true, // SDK GameplayConfigData:2447
 };
+
+/**
+ * 各 UI 字段的 SDK 官方默认值——placeholder 预览用（★ 2026-08-14 新增）。
+ *
+ * 真源（U3DS 实机 Config.txt 注释「// > Default: ...」+ PlayConfigData.cs 构造函数）：
+ *   - 固定 bool/数值：直接写死
+ *   - per-mode 字段（Spawn_Chance / Respawn_Time / Has_Durability）：依赖 Commands.dat Mode，
+ *     用 getModeDefault() 按当前 mode 动态取。
+ *   - Browser 段 string（Login_Token 等）：SDK 无默认值，placeholder 留空。
+ *
+ * key 与 ConfigTxtFields 一致（SDK 英文名）。
+ */
+export const TXT_FIELD_DEFAULTS: Record<string, string | boolean> = {
+  VAC_Secure: true, // ServerConfigData.cs:402
+  BattlEye_Secure: true, // 实机注释「Default: True」
+  Max_Ping_Milliseconds: "750", // ServerConfigData.cs:403
+  Enable_Scheduled_Shutdown: false,
+  Enable_Update_Shutdown: false,
+  Despawn_Dropped_Time: "600", // ItemsConfigData.cs:596
+};
+
+/**
+ * per-mode 字段在 Easy/Normal/Hard 下的 SDK 默认值。
+ * 真源：ItemsConfigData(EGameMode) 构造函数（PlayConfigData.cs:594-680）。
+ * Spawn_Chance / Respawn_Time / Has_Durability 依赖 Commands.dat 的 Mode。
+ *
+ * @param mode - Commands.dat 的 Mode 值（Easy/Normal/Hard；未知值按 Normal 兜底）
+ * @returns per-mode 默认值映射表（key → 默认值）
+ */
+export function getModeDefaults(
+  mode: string,
+): Record<string, string | boolean> {
+  const normalized = mode?.trim().toLowerCase();
+  switch (normalized) {
+    case "easy":
+      return { Spawn_Chance: "0.35", Respawn_Time: "50", Has_Durability: false };
+    case "hard":
+      return { Spawn_Chance: "0.15", Respawn_Time: "150", Has_Durability: true };
+    case "normal":
+    default:
+      return { Spawn_Chance: "0.35", Respawn_Time: "100", Has_Durability: true };
+  }
+}

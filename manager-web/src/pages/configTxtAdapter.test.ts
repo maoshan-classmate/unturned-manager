@@ -19,6 +19,7 @@ import {
   boolEntry,
   stringEntry,
   buildTxtSections,
+  getModeDefaults,
   EMPTY_TXT_FIELDS,
   type ConfigTxtFields,
 } from "./configTxtAdapter.js";
@@ -170,13 +171,57 @@ describe("buildTxtSections — UI 字段 → schema", () => {
     expect(allEntries.every((e) => e.comment === null)).toBe(true);
   });
 
-  it("EMPTY_TXT_FIELDS → 所有 bool 字段 enabled=false 走 value='false' 保留", () => {
+  it("EMPTY_TXT_FIELDS → bool 字段按 SDK 默认值走（true→value=null / false→value='false'）", () => {
+    // ★ 2026-08-14：EMPTY_TXT_FIELDS 对齐 SDK 默认值后，bool 字段不再是全 false——
+    //   VAC_Secure/BattlEye_Secure/Has_Durability/Allow_Shoulder/Allow_Freeform/Can_Suicide 默认 true，
+    //   Enable_Scheduled/Enable_Update/Friendly_Fire 默认 false。
     const sections = buildTxtSections(EMPTY_TXT_FIELDS);
     const bools = sections.flatMap((s) =>
       s.entries.filter((e) => e.type === "bool"),
     );
     expect(bools.length).toBeGreaterThan(0);
-    expect(bools.every((e) => e.value === "false")).toBe(true);
+
+    // 默认 true 的字段（裸 key 行 value=null）
+    const defaultTrue = bools.filter((e) =>
+      [
+        "VAC_Secure",
+        "BattlEye_Secure",
+        "Has_Durability",
+        "Allow_Shoulder_Camera",
+        "Allow_Freeform_Buildables",
+        "Can_Suicide",
+      ].includes(e.key),
+    );
+    expect(defaultTrue.every((e) => e.value === null)).toBe(true);
+
+    // 默认 false 的字段（显式 false 保留）
+    const defaultFalse = bools.filter((e) =>
+      ["Enable_Scheduled_Shutdown", "Enable_Update_Shutdown", "Friendly_Fire"].includes(
+        e.key,
+      ),
+    );
+    expect(defaultFalse.every((e) => e.value === "false")).toBe(true);
+  });
+
+  it("getModeDefaults → per-mode 默认值（Easy/Normal/Hard/未知）", () => {
+    // ★ 2026-08-14：per-mode 字段默认值（PlayConfigData.cs ItemsConfigData 构造函数）
+    expect(getModeDefaults("Easy")).toEqual({
+      Spawn_Chance: "0.35",
+      Respawn_Time: "50",
+      Has_Durability: false,
+    });
+    expect(getModeDefaults("Normal")).toEqual({
+      Spawn_Chance: "0.35",
+      Respawn_Time: "100",
+      Has_Durability: true,
+    });
+    expect(getModeDefaults("Hard")).toEqual({
+      Spawn_Chance: "0.15",
+      Respawn_Time: "150",
+      Has_Durability: true,
+    });
+    // 未知 mode 按 Normal 兜底
+    expect(getModeDefaults("")).toEqual(getModeDefaults("Normal"));
   });
 
   it("全填值 → entries 正确回填（string 直传 / bool=true value=null）", () => {

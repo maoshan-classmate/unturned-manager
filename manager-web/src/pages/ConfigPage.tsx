@@ -33,6 +33,8 @@ import {
   buildTxtSections,
   readBoolEntry,
   readStringEntry,
+  getModeDefaults,
+  TXT_FIELD_DEFAULTS,
   EMPTY_TXT_FIELDS as EMPTY_TXT,
   type ConfigTxtFields,
 } from "./configTxtAdapter.js";
@@ -327,19 +329,20 @@ function ConfigContent({ serverId }: { serverId: string }) {
             Desc_Server_List: readStringEntry(b, "Desc_Server_List"),
             Icon: readStringEntry(b, "Icon"),
             Thumbnail: readStringEntry(b, "Thumbnail"),
-            VAC_Secure: readBoolEntry(s, "VAC_Secure"),
-            BattlEye_Secure: readBoolEntry(s, "BattlEye_Secure"),
+            // ★ 2026-08-14：readBoolEntry 传 SDK 默认值——文件缺失时显示官方默认而非恒 false
+            VAC_Secure: readBoolEntry(s, "VAC_Secure", true),
+            BattlEye_Secure: readBoolEntry(s, "BattlEye_Secure", true),
             Max_Ping_Milliseconds: readStringEntry(s, "Max_Ping_Milliseconds"),
-            Enable_Scheduled_Shutdown: readBoolEntry(s, "Enable_Scheduled_Shutdown"),
-            Enable_Update_Shutdown: readBoolEntry(s, "Enable_Update_Shutdown"),
+            Enable_Scheduled_Shutdown: readBoolEntry(s, "Enable_Scheduled_Shutdown", false),
+            Enable_Update_Shutdown: readBoolEntry(s, "Enable_Update_Shutdown", false),
             Spawn_Chance: readStringEntry(i, "Spawn_Chance"),
-            Has_Durability: readBoolEntry(i, "Has_Durability"),
+            Has_Durability: readBoolEntry(i, "Has_Durability", true),
             Despawn_Dropped_Time: readStringEntry(i, "Despawn_Dropped_Time"),
             Respawn_Time: readStringEntry(i, "Respawn_Time"),
-            Allow_Shoulder_Camera: readBoolEntry(g, "Allow_Shoulder_Camera"),
-            Allow_Freeform_Buildables: readBoolEntry(g, "Allow_Freeform_Buildables"),
-            Friendly_Fire: readBoolEntry(g, "Friendly_Fire"),
-            Can_Suicide: readBoolEntry(g, "Can_Suicide"),
+            Allow_Shoulder_Camera: readBoolEntry(g, "Allow_Shoulder_Camera", true),
+            Allow_Freeform_Buildables: readBoolEntry(g, "Allow_Freeform_Buildables", true),
+            Friendly_Fire: readBoolEntry(g, "Friendly_Fire", false),
+            Can_Suicide: readBoolEntry(g, "Can_Suicide", true),
           });
         }
       } else {
@@ -896,6 +899,7 @@ function ConfigTxtTab({
           ] as const
         }
         txtFields={fields}
+        currentMode={currentMode}
         onChange={onChange}
       />
       <TxtSection
@@ -910,6 +914,7 @@ function ConfigTxtTab({
           ] as const
         }
         txtFields={fields}
+        currentMode={currentMode}
         onChange={onChange}
       />
       <TxtSection
@@ -923,6 +928,7 @@ function ConfigTxtTab({
           ] as const
         }
         txtFields={fields}
+        currentMode={currentMode}
         onChange={onChange}
       />
       <TxtSection
@@ -936,16 +942,34 @@ function ConfigTxtTab({
           ] as const
         }
         txtFields={fields}
+        currentMode={currentMode}
         onChange={onChange}
       />
     </div>
   );
 }
 
+/**
+ * 取字段的 placeholder（SDK 官方默认值预览）。
+ * ★ 2026-08-14：未填值时显示官方默认——固定值查 TXT_FIELD_DEFAULTS，
+ * per-mode 字段（Spawn_Chance/Respawn_Time）按 currentMode 动态取。
+ * 返回 undefined 表示无默认值（Browser 段 string 字段），不渲染 placeholder。
+ */
+function getFieldPlaceholder(
+  key: string,
+  mode: string,
+): string | undefined {
+  if (key in TXT_FIELD_DEFAULTS) return String(TXT_FIELD_DEFAULTS[key]);
+  const modeDefaults = getModeDefaults(mode);
+  if (key in modeDefaults) return String(modeDefaults[key]);
+  return undefined;
+}
+
 function TxtSection({
   title,
   fields: fieldDefs,
   txtFields,
+  currentMode,
   onChange,
 }: {
   title: string;
@@ -955,6 +979,8 @@ function TxtSection({
     "text" | "toggle",
   ])[];
   txtFields: ConfigTxtFields;
+  /** 当前 Commands.dat Mode——per-mode 字段（Spawn_Chance 等）placeholder 按它动态取 */
+  currentMode: string;
   onChange: (k: keyof ConfigTxtFields, v: string | boolean) => void;
 }) {
   return (
@@ -974,6 +1000,7 @@ function TxtSection({
               label={label}
               value={String(txtFields[k] ?? "")}
               onChange={(v) => onChange(k, v)}
+              placeholder={getFieldPlaceholder(k, currentMode)}
             />
           ),
         )}
