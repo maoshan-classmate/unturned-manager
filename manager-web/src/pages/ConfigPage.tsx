@@ -558,9 +558,9 @@ function ConfigContent({ serverId }: { serverId: string }) {
         </div>
         <TabBar
           tabs={[
-            { key: "commands", label: "Commands.dat", icon: FileText },
-            { key: "txt", label: "Config.txt", icon: Cpu },
-            { key: "workshop", label: "Workshop", icon: Wrench },
+            { key: "commands", label: "基本设置", icon: FileText },
+            { key: "txt", label: "高级设置", icon: Cpu },
+            { key: "workshop", label: "Mod 列表", icon: Wrench },
           ]}
           active={tab}
           onChange={(k) => {
@@ -840,20 +840,29 @@ function CommandsTab({
           <ConfigSection title="游戏参数">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(["Chatrate", "Cycle", "GSLT"] as const).map((k) => (
-                <ConfigField
-                  key={k}
-                  label={FIELD_LABELS[k]}
-                  value={String(fields[k])}
-                  onChange={(v) => onChange(k, v)}
-                  type={k === "GSLT" ? "password" : "text"}
-                  placeholder={
-                    k === "Chatrate"
-                      ? "0.25（秒）"
-                      : k === "Cycle"
-                        ? "3600（秒/昼夜循环）"
-                        : undefined
-                  }
-                />
+                <div key={k}>
+                  <ConfigField
+                    label={FIELD_LABELS[k]}
+                    value={String(fields[k])}
+                    onChange={(v) => onChange(k, v)}
+                    type={k === "GSLT" ? "password" : "text"}
+                    placeholder={
+                      k === "Chatrate"
+                        ? "0.25（秒）"
+                        : k === "Cycle"
+                          ? "3600（秒/昼夜循环）"
+                          : undefined
+                    }
+                  />
+                  {k === "GSLT" && (
+                    <p
+                      className="text-[11px] mt-1 leading-relaxed"
+                      style={{ color: "#64748B" }}
+                    >
+                      也可在「Config.txt → 浏览器」页签的「Steam 浏览器登录令牌」处填写，两者等效；此处优先级更高。
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
           </ConfigSection>
@@ -910,11 +919,16 @@ function ConfigTxtTab({
         title="浏览器"
         fields={
           [
-            ["Login_Token", "Steam 浏览器登录令牌", "text"],
-            ["Desc_Full", "完整描述", "text"],
-            ["Desc_Server_List", "列表描述", "text"],
-            ["Icon", "图标URL", "text"],
-            ["Thumbnail", "缩略图URL", "text"],
+            [
+              "Login_Token",
+              "Steam 浏览器登录令牌",
+              "text",
+              "AppID 304930 申请的令牌；与 Commands.dat 的游戏服务器登录令牌选填其一即可",
+            ],
+            ["Desc_Full", "完整描述", "text", undefined],
+            ["Desc_Server_List", "列表描述", "text", undefined],
+            ["Icon", "图标URL", "text", undefined],
+            ["Thumbnail", "缩略图URL", "text", undefined],
           ] as const
         }
         txtFields={fields}
@@ -992,10 +1006,12 @@ function TxtSection({
   onChange,
 }: {
   title: string;
+  /** [key, label, type, hint?]——hint 是固定文本提示，优先级高于 SDK 默认 placeholder */
   fields: readonly (readonly [
     keyof ConfigTxtFields,
     string,
     "text" | "toggle",
+    string?,
   ])[];
   txtFields: ConfigTxtFields;
   /** 当前 Commands.dat Mode——per-mode 字段（Spawn_Chance 等）placeholder 按它动态取 */
@@ -1005,7 +1021,7 @@ function TxtSection({
   return (
     <ConfigSection title={title}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-        {fieldDefs.map(([k, label, type]) =>
+        {fieldDefs.map(([k, label, type, hint]) =>
           type === "toggle" ? (
             <ConfigToggle
               key={k}
@@ -1019,7 +1035,7 @@ function TxtSection({
               label={label}
               value={String(txtFields[k] ?? "")}
               onChange={(v) => onChange(k, v)}
-              placeholder={getFieldPlaceholder(k, currentMode)}
+              placeholder={hint ?? getFieldPlaceholder(k, currentMode)}
             />
           ),
         )}
