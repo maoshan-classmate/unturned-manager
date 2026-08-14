@@ -122,23 +122,31 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
   Sync: "跨服同步",
 };
 
-/** 空白初始值——除 Log 沿用 SDK 默认（Y/Y/Y/N）外其余字段从服务端文件读取 */
+/**
+ * 空白初始值——含 SDK 默认值（用于「预览 + 真实写入」）：
+ * - 公共字段（Name/Port/MaxPlayers/Map/Mode/Perspective/Chatrate/Cycle/Timeout/Queue_Size/Bind）
+ *   填入 SDK 默认值（reference_config_files.md §1.1-1.5 + Provider.cs:6615-6645），
+ *   保存时 known.set 非空字段 → commands.dat 实际写入，UI 与磁盘一致；
+ * - 私人字段（Owner/GSLT/Password）保持空串——不应自动落盘（玩家私人凭证）；
+ * - Log / Votify 复合字段填 SDK 默认值（CommandWindow.cs:49-52 / ChatManager.cs:76-81），
+ *   handleSave 硬编码 known.set 不受 if(val) 过滤。
+ */
 const EMPTY_FIELDS: CommandsFields = {
-  Name: "",
-  Port: "",
-  MaxPlayers: "",
-  Map: "",
-  Mode: "",
+  Name: "Unturned",
+  Port: "27015",
+  MaxPlayers: "8",
+  Map: "PEI",
+  Mode: "Normal",
   Owner: "",
-  Perspective: "",
-  Chatrate: "",
-  Cycle: "",
-  Timeout: "",
-  Queue_Size: "",
+  Perspective: "First",
+  Chatrate: "0.25",
+  Cycle: "3600",
+  Timeout: "750",
+  Queue_Size: "8",
   GSLT: "",
   Password: "",
   PvE: false,
-  Bind: "",
+  Bind: "0",
   LogChat: true,
   LogJoin: true,
   LogDeath: true,
@@ -435,16 +443,20 @@ function ConfigContent({ serverId }: { serverId: string }) {
           fields.LogAnticheat ? "Y" : "N",
         ].join("/");
         known.set("Log", logLine);
-        // Votify 6 字段合成单行 'Y/PassCooldown/FailCooldown/Duration/Percentage/Players'——总是写入，UI 默认 = SDK 默认（N/5/60/15/75/3，ChatManager.cs:76-81）
-        const votifyLine = [
-          fields.VotifyAllow ? "Y" : "N",
-          fields.VotifyPassCooldown || "5",
-          fields.VotifyFailCooldown || "60",
-          fields.VotifyDuration || "15",
-          fields.VotifyPercentage || "75",
-          fields.VotifyPlayers || "3",
-        ].join("/");
-        known.set("Votify", votifyLine);
+        // Votify 6 字段合成单行 'Y/PassCooldown/FailCooldown/Duration/Percentage/Players'——仅在启用投票时写入。
+        // 关闭投票 → 不写 Votify 行，U3DS 走 SDK 默认（ChatManager.cs:76-81：voteAllowed=false + 5 数字默认），
+        // 等价于「投票关闭 + 5 参数无意义」。避免面板留 5 个数字让玩家困惑。
+        if (fields.VotifyAllow) {
+          const votifyLine = [
+            "Y",
+            fields.VotifyPassCooldown || "5",
+            fields.VotifyFailCooldown || "60",
+            fields.VotifyDuration || "15",
+            fields.VotifyPercentage || "75",
+            fields.VotifyPlayers || "3",
+          ].join("/");
+          known.set("Votify", votifyLine);
+        }
         await apiClient.put(`/servers/${server.id}/config/commands`, {
           known: Object.fromEntries(known),
           // ★ BUG-4：原样回传加载时记录的未知键/注释，防止保存把面板不认识的指令行清掉
