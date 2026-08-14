@@ -386,6 +386,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     percent: number | undefined,
     label: string,
     errorMessage?: string,
+    currentFileId?: string,
   ): void {
     try {
       this.broadcaster.broadcast({
@@ -394,6 +395,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         stage: label,
         ...(percent != null ? { percent } : {}),
         ...(errorMessage ? { errorMessage } : {}),
+        ...(currentFileId ? { currentFileId } : {}),
       });
     } catch {
       /* noop */
@@ -690,7 +692,17 @@ export class SteamCmdManager implements ISteamCmdManager {
           } catch {
             /* noop */
           }
-          this.broadcastProgressWithJobId(jobId, 100, "completed");
+          // ★ 2026-08-14 修复：completed/failed 必须带 currentFileId——
+          //   N 个 mod 共享同一个 jobId（steamcmd-download-<installDir>），
+          //   前端靠 jobId 反查永远命中第一个 fileId，导致接力时删错进度条。
+          //   itemIds 单 mod = [fileId]，恒取 itemIds[0]。
+          this.broadcastProgressWithJobId(
+            jobId,
+            100,
+            "completed",
+            undefined,
+            itemIds[0],
+          );
         } catch (err) {
           this.broadcastProgressWithJobId(
             jobId,
@@ -699,6 +711,7 @@ export class SteamCmdManager implements ISteamCmdManager {
             err instanceof AppError || err instanceof Error
               ? err.message
               : undefined,
+            itemIds[0],
           );
           throw err;
         }
@@ -725,6 +738,9 @@ export class SteamCmdManager implements ISteamCmdManager {
       stage: "queued",
       queuePos,
       queueTotal,
+      // ★ 2026-08-14 修复：queued 也带 currentFileId（= itemIds[0]），
+      //   前端按 fileId 精确锁定，不靠 jobId 反查（jobId 共享导致串台）。
+      currentFileId: itemIds[0],
     });
 
     return jobId;

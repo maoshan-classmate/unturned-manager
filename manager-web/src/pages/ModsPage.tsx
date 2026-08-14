@@ -297,60 +297,65 @@ export function ModsPage() {
     const { jobId, stage, percent, queuePos, queueTotal, errorMessage } = p;
     if (!jobId || !jobId.startsWith("steamcmd-download-")) return;
 
-    // 把进度事件按 fileId 推到对应 mod——
-    //  - queued（自己）：所有 pending mod 都看到「排队中」
-    //  - active（有 currentFileId 或非 queued）：只推当前正在跑的 mod
-    if (stage === "queued") {
-      // 自己进队的瞬间，把所有 pending 下载标为「排队中」
-      setProgressByFile((prev) => {
-        const next = { ...prev };
-        for (const [fid, v] of Object.entries(downloading)) {
-          if (v === "pending" || v === jobId) {
-            next[fid] = {
-              stage: "queued",
-              ...(queuePos != null ? { queuePos } : {}),
-              ...(queueTotal != null ? { queueTotal } : {}),
-            };
-          }
-        }
-        return next;
-      });
-      return;
-    }
+    // ★ 2026-08-14 修复：所有 mod 共享同一个 jobId（steamcmd-download-<installDir>），
+    // 靠 jobId 反查 fileId 永远命中第一个 → 接力时删错进度条。
+    // 正确做法：优先用 currentFileId（后端 completed/downloading 都带）精确锁定；
+    // 退化到 jobId 唯一匹配（仅当 downloading 里该 jobId 恰好一个 fileId 时才可信）。
 
-    // completed/failed：找到该 jobId 对应的 fileId 并清除
+    // completed/failed：用 currentFileId 精确锁定 fileId
     if (stage === "completed" || stage === "failed") {
-      const entry = Object.entries(downloading).find(
-        ([, jid]) => jid === jobId,
-      );
-      if (!entry) return;
-      const [fileId] = entry;
+      let targetFileId = p.currentFileId;
+      if (!targetFileId) {
+        const entries = Object.entries(downloading).filter(
+          ([, jid]) => jid === jobId,
+        );
+        if (entries.length === 1) targetFileId = entries[0]![0];
+      }
+      if (!targetFileId) return;
+
       if (stage === "completed") {
         toast.success("Mod 下载完成");
-        // 刷新已下载列表（staging acf 已写入）→ 卡片按钮变「已下载」（BUG-5 闭环）
         void refetchDownloaded();
       } else {
         toast.error(errorMessage ?? "Mod 下载失败");
       }
       setProgressByFile((prev) => {
         const next = { ...prev };
-        delete next[fileId];
+        delete next[targetFileId!];
         return next;
       });
       setDownloading((prev) => {
         const next = { ...prev };
-        delete next[fileId];
+        delete next[targetFileId!];
         return next;
       });
       return;
     }
 
-    // active 阶段（downloading/verifying）：优先用 currentFileId，否则 jobId 反查唯一 fileId
-    let targetFileId: string | undefined;
-    if (p.currentFileId) {
-      targetFileId = p.currentFileId;
-    } else {
-      // currentFileId 缺失（SteamCMD 输出无 Downloading item 标记）→ 找该 jobId 对应的唯一 fileId
+    // queued 阶段：用 currentFileId 或 jobId 唯一匹配定位（单 mod 进队瞬间）
+    if (stage === "queued") {
+      let targetFileId = p.currentFileId;
+      if (!targetFileId) {
+        const entries = Object.entries(downloading).filter(
+          ([, jid]) => jid === jobId,
+        );
+        if (entries.length === 1) targetFileId = entries[0]![0];
+      }
+      if (!targetFileId) return;
+      setProgressByFile((prev) => ({
+        ...prev,
+        [targetFileId!]: {
+          stage: "queued",
+          ...(queuePos != null ? { queuePos } : {}),
+          ...(queueTotal != null ? { queueTotal } : {}),
+        },
+      }));
+      return;
+    }
+
+    // active 阶段（downloading/verifying）：currentFileId 精确锁定
+    let targetFileId = p.currentFileId;
+    if (!targetFileId) {
       const entries = Object.entries(downloading).filter(
         ([, jid]) => jid === jobId,
       );
