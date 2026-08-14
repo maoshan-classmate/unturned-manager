@@ -69,6 +69,20 @@ describe("LoadoutItemDialog — 物品选择", () => {
     expect(onSave).toHaveBeenCalledWith([1]);
   });
 
+  it("点击下拉项添加后保持当前视图——不清空输入、不跳回顶部（可连续添加）", async () => {
+    const user = userEvent.setup();
+    render(<LoadoutItemDialog {...baseProps()} />);
+    const input = screen.getByPlaceholderText(/搜索物品/);
+    // 输入过滤到「军刀」→ 点击添加
+    await user.type(input, "军刀");
+    await user.click(await screen.findByText("军刀"));
+    // 标签已加
+    const tags = within(screen.getByTestId("loadout-tags"));
+    expect(tags.getByText("15")).toBeInTheDocument();
+    // 输入框保持「军刀」（未清空）→ 下拉仍过滤该结果，可继续点附近条目
+    expect(input).toHaveValue("军刀");
+  });
+
   it("标签可单独删除", async () => {
     const user = userEvent.setup();
     render(<LoadoutItemDialog {...baseProps()} />);

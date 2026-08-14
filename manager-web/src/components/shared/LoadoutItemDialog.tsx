@@ -121,12 +121,19 @@ export function LoadoutItemDialog({
     el?.scrollIntoView?.({ block: "nearest" });
   }, [activeIndex]);
 
-  /** 提交一个物品 ID 为标签（重复忽略） */
-  const addTag = (id: number) => {
+  /**
+   * 提交一个物品 ID 为标签（重复忽略）。
+   * @param id - 物品 ID
+   * @param keepView - true = 点击添加：保持当前过滤/高亮/滚动，不跳回顶部（多选连续点）；
+   *   false = 键盘回车提交：清空输入框重新开始
+   */
+  const addTag = (id: number, keepView = false) => {
     setTags((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    setInputValue("");
-    setActiveIndex(0);
-    setVisibleCount(PAGE_SIZE);
+    if (!keepView) {
+      setInputValue("");
+      setActiveIndex(0);
+      setVisibleCount(PAGE_SIZE);
+    }
     inputRef.current?.focus();
   };
 
@@ -248,7 +255,7 @@ export function LoadoutItemDialog({
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => addTag(item.id)}
+                    onClick={() => addTag(item.id, true)}
                     onMouseEnter={() => setActiveIndex(idx)}
                     data-active={active}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
