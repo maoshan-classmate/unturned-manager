@@ -62,7 +62,6 @@ subagent 发现问题的处理方式：
 ## 每个功能 PR 必须带的 5 件套
 
 - [ ] 在 `shared/schemas/` 里加 Zod schema（如涉及 API 边界）
-- [ ] 做最小验证，想清楚功能完整需要什么，是否每个小功能都需要做测试等复杂繁琐的步骤，没有这些步骤，功能是否能正常运行。如果能，就去掉这个步骤。
 - [ ] PTY 命令链路（ServerManager 的 Save/Shutdown/Say 写终端）**用单测断言 PTY writes**（不是连真服务）
 - [ ] UI 组件加 Storybook 或截图测试
 - [ ] 如加了新的字段/命令，去更新 `claudedocs/` 里对应的参考文档
