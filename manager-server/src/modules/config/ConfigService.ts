@@ -314,6 +314,20 @@ export class ConfigService implements IConfigService {
       if (!hasCurrent) return;
       const raw = currentSection.rawBlocks ?? [];
       if (currentSection.entries.length > 0 || raw.length > 0) {
+        // ★ 2026-08-15 Bug 修复：合并重复 key（U3-SDK DatParser.cs:145 DatDictionary 唯一 key，
+        // 重复时后者覆盖前者）。真实 U3DS 写回的 Config.txt 每 section 有「基础裸 key + override 带值」
+        // 双份；面板若保留双份，读取/保存只碰第一条，而 U3DS 实际读最后一条 → 用户配置被旧值覆盖
+        // （启动后"变默认"）。这里与 U3DS 解析语义对齐：同 section 同 key 只保留最后一条。
+        const deduped: ConfigEntry[] = [];
+        for (const entry of currentSection.entries) {
+          const prevIdx = deduped.findIndex((e) => e.key === entry.key);
+          if (prevIdx >= 0) {
+            deduped[prevIdx] = entry;
+          } else {
+            deduped.push(entry);
+          }
+        }
+        currentSection.entries = deduped;
         sections[currentSection.name] = currentSection;
       }
     };
@@ -328,19 +342,16 @@ export class ConfigService implements IConfigService {
       // 注释——累积到 pendingComment（多行合并，用 \n 连接）。
       // U3DS 自动注释是 `// > text`（`>` 标记自动生成），剥离 `// ` 前缀后文本即为注释正文
       if (trimmed.startsWith("//")) {
-        const text = trimmed.replace(/^\/\/\s*>\s*/, "").replace(/^\/\/\s*/, "").trim();
-        pendingComment = pendingComment
-          ? `${pendingComment}\n${text}`
-          : text;
+        const text = trimmed
+          .replace(/^\/\/\s*>\s*/, "")
+          .replace(/^\/\/\s*/, "")
+          .trim();
+        pendingComment = pendingComment ? `${pendingComment}\n${text}` : text;
         continue;
       }
 
       // 待确认区块：`Section` 独占一行，遇到下一行 `{` 确认是区块开
-      if (
-        pendingSectionKey !== null &&
-        !inNestedBlock &&
-        trimmed === "{"
-      ) {
+      if (pendingSectionKey !== null && !inNestedBlock && trimmed === "{") {
         flushSection();
         currentSection = { name: pendingSectionKey, entries: [] };
         hasCurrent = true;
@@ -481,7 +492,9 @@ export class ConfigService implements IConfigService {
           if (entry.comment) {
             lines.push(`// ${entry.comment}`);
           }
-          lines.push(entry.key + (entry.value !== null ? ` ${entry.value}` : ""));
+          lines.push(
+            entry.key + (entry.value !== null ? ` ${entry.value}` : ""),
+          );
         }
         lines.push("");
         continue;
@@ -496,7 +509,9 @@ export class ConfigService implements IConfigService {
             lines.push(`\t// > ${commentLine}`);
           }
         }
-        lines.push(`\t${entry.key}${entry.value !== null ? ` ${entry.value}` : ""}`);
+        lines.push(
+          `\t${entry.key}${entry.value !== null ? ` ${entry.value}` : ""}`,
+        );
       }
       // rawBlocks：未知嵌套结构原样还原
       for (const raw of section.rawBlocks ?? []) {

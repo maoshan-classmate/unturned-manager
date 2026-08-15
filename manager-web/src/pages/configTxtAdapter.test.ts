@@ -80,7 +80,13 @@ describe("readBoolEntry — section → bool UI 字段", () => {
     const section: ConfigSection = {
       name: "Server",
       entries: [
-        { key: "VAC_Secure", value: null, comment: null, known: true, type: "bool" },
+        {
+          key: "VAC_Secure",
+          value: null,
+          comment: null,
+          known: true,
+          type: "bool",
+        },
       ],
     };
     // 默认 true 的字段 → true
@@ -93,7 +99,13 @@ describe("readBoolEntry — section → bool UI 字段", () => {
     const section: ConfigSection = {
       name: "Server",
       entries: [
-        { key: "VAC_Secure", value: "true", comment: null, known: true, type: "bool" },
+        {
+          key: "VAC_Secure",
+          value: "true",
+          comment: null,
+          known: true,
+          type: "bool",
+        },
       ],
     };
     expect(readBoolEntry(section, "VAC_Secure")).toBe(true);
@@ -103,7 +115,13 @@ describe("readBoolEntry — section → bool UI 字段", () => {
     const section: ConfigSection = {
       name: "Server",
       entries: [
-        { key: "VAC_Secure", value: "false", comment: null, known: true, type: "bool" },
+        {
+          key: "VAC_Secure",
+          value: "false",
+          comment: null,
+          known: true,
+          type: "bool",
+        },
       ],
     };
     expect(readBoolEntry(section, "VAC_Secure")).toBe(false);
@@ -200,9 +218,11 @@ describe("buildTxtSections — UI 字段 → schema", () => {
 
     // 默认 false 的字段（显式 false 保留）
     const defaultFalse = bools.filter((e) =>
-      ["Enable_Scheduled_Shutdown", "Enable_Update_Shutdown", "Friendly_Fire"].includes(
-        e.key,
-      ),
+      [
+        "Enable_Scheduled_Shutdown",
+        "Enable_Update_Shutdown",
+        "Friendly_Fire",
+      ].includes(e.key),
     );
     expect(defaultFalse.every((e) => e.value === "false")).toBe(true);
   });
@@ -298,15 +318,30 @@ describe("mergeTxtSections — 18 个 UI 字段合并进原始 sections", () => 
         name: "Server",
         entries: [
           { key: "VAC_Secure", value: null, comment: "auto", known: true },
-          { key: "Max_Ping_Milliseconds", value: "750", comment: "auto", known: true },
+          {
+            key: "Max_Ping_Milliseconds",
+            value: "750",
+            comment: "auto",
+            known: true,
+          },
         ],
       },
       // 未托管 section——保存必须原样保留
       Vehicles: {
         name: "Vehicles",
         entries: [
-          { key: "Max_Instances_Tiny", value: "4", comment: "auto", known: true },
-          { key: "Vehicle_Respawn_Time", value: null, comment: "auto", known: true },
+          {
+            key: "Max_Instances_Tiny",
+            value: "4",
+            comment: "auto",
+            known: true,
+          },
+          {
+            key: "Vehicle_Respawn_Time",
+            value: null,
+            comment: "auto",
+            known: true,
+          },
         ],
         rawBlocks: ["Links [\n{...}"],
       },
@@ -325,30 +360,78 @@ describe("mergeTxtSections — 18 个 UI 字段合并进原始 sections", () => 
     const merged = mergeTxtSections(raw, fields);
 
     // 托管字段被覆盖
-    expect(merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("new-token");
-    expect(merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.value).toBe("true");
-    expect(merged.Server!.entries.find((e) => e.key === "Max_Ping_Milliseconds")?.value).toBe("500");
+    expect(
+      merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value,
+    ).toBe("new-token");
+    expect(
+      merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.value,
+    ).toBe("true");
+    expect(
+      merged.Server!.entries.find((e) => e.key === "Max_Ping_Milliseconds")
+        ?.value,
+    ).toBe("500");
     // 注释保留
-    expect(merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.comment).toBe("auto");
+    expect(
+      merged.Server!.entries.find((e) => e.key === "VAC_Secure")?.comment,
+    ).toBe("auto");
     // 未托管 section 原样保留（含 rawBlocks）
     expect(merged.Vehicles).toBeDefined();
-    expect(merged.Vehicles!.entries.find((e) => e.key === "Max_Instances_Tiny")?.value).toBe("4");
+    expect(
+      merged.Vehicles!.entries.find((e) => e.key === "Max_Instances_Tiny")
+        ?.value,
+    ).toBe("4");
     expect(merged.Vehicles!.rawBlocks).toEqual(["Links [\n{...}"]);
     // 未托管字段不被删
-    expect(merged.Browser!.entries.find((e) => e.key === "Icon")?.value).toBeNull();
+    expect(
+      merged.Browser!.entries.find((e) => e.key === "Icon")?.value,
+    ).toBeNull();
   });
 
   it("section 不存在时新建", () => {
     const raw: Record<string, ConfigSection> = {};
     const fields: ConfigTxtFields = { ...EMPTY_TXT_FIELDS, Login_Token: "x" };
     const merged = mergeTxtSections(raw, fields);
-    expect(merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("x");
+    expect(
+      merged.Browser!.entries.find((e) => e.key === "Login_Token")?.value,
+    ).toBe("x");
   });
 
   it("原始 sections 不被修改（不可变）", () => {
     const raw = rawFixture();
     const fields: ConfigTxtFields = { ...EMPTY_TXT_FIELDS, Login_Token: "x" };
     mergeTxtSections(raw, fields);
-    expect(raw.Browser!.entries.find((e) => e.key === "Login_Token")?.value).toBe("abc123");
+    expect(
+      raw.Browser!.entries.find((e) => e.key === "Login_Token")?.value,
+    ).toBe("abc123");
+  });
+
+  it("重复 key（U3DS 双份结构）：merge 更新所有同 key entry，不留旧值", () => {
+    // 真实 U3DS 写回形态：同一 section 内同 key 出现两次（基础裸 key + override 带值）。
+    // U3-SDK DatParser.cs:145 解析重复 key 时最后一个生效——merge 若只更新第一条，
+    // 第二份残留旧值会在启动后覆盖用户配置（Bug 1）。
+    const raw: Record<string, ConfigSection> = {
+      Server: {
+        name: "Server",
+        entries: [
+          { key: "VAC_Secure", value: null, comment: "auto", known: true },
+          {
+            key: "Max_Ping_Milliseconds",
+            value: "750",
+            comment: "auto",
+            known: true,
+          },
+          { key: "VAC_Secure", value: "true", comment: "auto", known: true },
+        ],
+      },
+    };
+    const fields: ConfigTxtFields = { ...EMPTY_TXT_FIELDS, VAC_Secure: false };
+    const merged = mergeTxtSections(raw, fields);
+    const vacEntries = merged.Server!.entries.filter(
+      (e) => e.key === "VAC_Secure",
+    );
+    expect(vacEntries.length).toBe(2);
+    for (const e of vacEntries) {
+      expect(e.value).toBe("false");
+    }
   });
 });

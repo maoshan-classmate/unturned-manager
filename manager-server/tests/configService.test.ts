@@ -82,7 +82,10 @@ describe("ConfigService — 5 种格式往返", () => {
           { skillsetId: 2, itemIds: [1064] },
         ],
       }),
-    ).rejects.toMatchObject({ code: "loadout-mutually-exclusive", status: 400 });
+    ).rejects.toMatchObject({
+      code: "loadout-mutually-exclusive",
+      status: 400,
+    });
   });
 
   it("Commands.dat: 仅 255 或仅技能组 → 正常写", async () => {
@@ -186,6 +189,32 @@ describe("ConfigService — 5 种格式往返", () => {
     // rawBlocks 保存了 Links 嵌套结构（首行 `Links [`）
     const raw = second.sections.Browser?.rawBlocks ?? [];
     expect(raw.some((b) => b.includes("Links"))).toBe(true);
+  });
+
+  it("Config.txt: 重复 key（U3DS 双份结构）合并为单条，保留最后一条", async () => {
+    // 真实 U3DS 写回形态：同 section 内同 key 出现两次（基础裸 key + override 带值）。
+    // 面板必须与 U3-SDK DatParser.cs:145（DatDictionary 唯一 key，后者覆盖前者）对齐——
+    // 否则保存时只更新第一条、U3DS 读最后一条 → 用户配置被旧值覆盖（启动后"变默认"，Bug 1）。
+    const input =
+      "Version 1\n" +
+      "Zombies\n" +
+      "{\n" +
+      "\tSpawn_Chance\n" +
+      "\tLoot_Chance\n" +
+      "\tSpawn_Chance 0\n" +
+      "\tLoot_Chance 1\n" +
+      "}\n";
+    await fs.writeFile(path.join(serverDir, "Config.txt"), input);
+
+    const parsed = await svc.readConfigTxt(serverId);
+    const zombieEntries = parsed.sections.Zombies?.entries ?? [];
+    const spawn = zombieEntries.filter((e) => e.key === "Spawn_Chance");
+    const loot = zombieEntries.filter((e) => e.key === "Loot_Chance");
+    // 每条 key 只剩一条（保留文件里最后一条 = U3DS 实际生效值）
+    expect(spawn.length).toBe(1);
+    expect(spawn[0]?.value).toBe("0");
+    expect(loot.length).toBe(1);
+    expect(loot[0]?.value).toBe("1");
   });
 
   it("Workshop.json: 只写 File_IDs，其他字段不动", async () => {

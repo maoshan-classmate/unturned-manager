@@ -371,14 +371,30 @@ function ConfigContent({ serverId }: { serverId: string }) {
             VAC_Secure: readBoolEntry(s, "VAC_Secure", true),
             BattlEye_Secure: readBoolEntry(s, "BattlEye_Secure", true),
             Max_Ping_Milliseconds: readStringEntry(s, "Max_Ping_Milliseconds"),
-            Enable_Scheduled_Shutdown: readBoolEntry(s, "Enable_Scheduled_Shutdown", false),
-            Enable_Update_Shutdown: readBoolEntry(s, "Enable_Update_Shutdown", false),
+            Enable_Scheduled_Shutdown: readBoolEntry(
+              s,
+              "Enable_Scheduled_Shutdown",
+              false,
+            ),
+            Enable_Update_Shutdown: readBoolEntry(
+              s,
+              "Enable_Update_Shutdown",
+              false,
+            ),
             Spawn_Chance: readStringEntry(i, "Spawn_Chance"),
             Has_Durability: readBoolEntry(i, "Has_Durability", true),
             Despawn_Dropped_Time: readStringEntry(i, "Despawn_Dropped_Time"),
             Respawn_Time: readStringEntry(i, "Respawn_Time"),
-            Allow_Shoulder_Camera: readBoolEntry(g, "Allow_Shoulder_Camera", true),
-            Allow_Freeform_Buildables: readBoolEntry(g, "Allow_Freeform_Buildables", true),
+            Allow_Shoulder_Camera: readBoolEntry(
+              g,
+              "Allow_Shoulder_Camera",
+              true,
+            ),
+            Allow_Freeform_Buildables: readBoolEntry(
+              g,
+              "Allow_Freeform_Buildables",
+              true,
+            ),
             Friendly_Fire: readBoolEntry(g, "Friendly_Fire", false),
             Can_Suicide: readBoolEntry(g, "Can_Suicide", true),
           });
@@ -693,7 +709,10 @@ function ConfigContent({ serverId }: { serverId: string }) {
           )}
         </div>
         {/* Tips Panel — 小屏隐藏 */}
-        <div className="hidden lg:block shrink-0 self-start" style={{ width: 292 }}>
+        <div
+          className="hidden lg:block shrink-0 self-start"
+          style={{ width: 292 }}
+        >
           <InfoCard title="💡 配置提示">
             <div className="space-y-3">
               <p>修改配置后需点击「保存配置」才会生效。</p>
@@ -923,7 +942,8 @@ function CommandsTab({
                       className="text-[11px] mt-1 leading-relaxed"
                       style={{ color: "#64748B" }}
                     >
-                      也可在「Config.txt → 浏览器」页签的「Steam 浏览器登录令牌」处填写，两者等效；此处优先级更高。
+                      也可在「Config.txt → 浏览器」页签的「Steam
+                      浏览器登录令牌」处填写，两者等效；此处优先级更高。
                     </p>
                   )}
                 </div>
@@ -972,17 +992,27 @@ function ConfigTxtTab({
   /** 全部配置（13 节）可编辑副本——未托管模块卡片用 */
   allSections: Record<string, ApiConfigSection> | null;
   /** 编辑全部配置里的未托管字段 */
-  onUpdateRawEntry: (sectionName: string, key: string, value: string | null) => void;
+  onUpdateRawEntry: (
+    sectionName: string,
+    key: string,
+    value: string | null,
+  ) => void;
 }) {
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div className="rounded-md border px-3 py-2" style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}>
+      <div
+        className="rounded-md border px-3 py-2"
+        style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}
+      >
         <p className="text-xs" style={{ color: "#94A3B8" }}>
-          当前生效难度：<span style={{ color: "#22C55E" }}>{formatModeLabel(currentMode)}</span>
+          当前生效难度：
+          <span style={{ color: "#22C55E" }}>
+            {formatModeLabel(currentMode)}
+          </span>
         </p>
         <p className="mt-1 text-xs" style={{ color: "#64748B" }}>
-          此页面的物品与玩法设置会应用到当前难度。留空的项目将采用 Unturned 官方默认值。
-          如需切换难度，请到「Commands.dat」标签页修改「难度」并保存。
+          此页面的物品与玩法设置会应用到当前难度。留空的项目将采用 Unturned
+          官方默认值。 如需切换难度，请到「基本设置」标签页修改「难度」并保存。
         </p>
       </div>
       <TxtSection
@@ -1052,19 +1082,26 @@ function ConfigTxtTab({
       />
 
       {/* ★ 2026-08-14 方案 2：细节调整说明卡片（与「当前生效难度」同款）——下方为未托管模块，各自独立卡片默认收起 */}
-      <div className="rounded-md border px-3 py-2" style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}>
+      <div
+        className="rounded-md border px-3 py-2"
+        style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}
+      >
         <p className="text-xs" style={{ color: "#94A3B8" }}>
           细节调整
         </p>
         <p className="mt-1 text-xs" style={{ color: "#64748B" }}>
-          以下按模块分组，展开可编辑高级选项。不了解含义的字段请保留默认（留空 = 使用官方默认值）。
+          以下按模块分组，展开可编辑高级选项。不了解含义的字段请保留默认（留空 =
+          使用官方默认值）。
         </p>
       </div>
 
       {/* 未托管模块各自独立卡片（载具/僵尸/玩家等），默认收起可展开编辑 */}
       {allSections &&
         Object.entries(allSections)
-          .filter(([name]) => !["Browser", "Server", "Items", "Gameplay"].includes(name))
+          .filter(
+            ([name]) =>
+              !["Browser", "Server", "Items", "Gameplay"].includes(name),
+          )
           .map(([name, section]) => (
             <RawSectionBlock
               key={name}
@@ -1076,7 +1113,8 @@ function ConfigTxtTab({
           ))}
       {(!allSections ||
         Object.entries(allSections).filter(
-          ([name]) => !["Browser", "Server", "Items", "Gameplay"].includes(name),
+          ([name]) =>
+            !["Browser", "Server", "Items", "Gameplay"].includes(name),
         ).length === 0) && (
         <p className="text-xs text-slate-500">
           暂无可展开的细节模块——请先保存一次配置后再查看
@@ -1092,13 +1130,44 @@ function ConfigTxtTab({
  * per-mode 字段（Spawn_Chance/Respawn_Time）按 currentMode 动态取。
  * 返回 undefined 表示无默认值（Browser 段 string 字段），不渲染 placeholder。
  */
-function getFieldPlaceholder(
-  key: string,
-  mode: string,
-): string | undefined {
+function getFieldPlaceholder(key: string, mode: string): string | undefined {
   if (key in TXT_FIELD_DEFAULTS) return String(TXT_FIELD_DEFAULTS[key]);
   const modeDefaults = getModeDefaults(mode);
   if (key in modeDefaults) return String(modeDefaults[key]);
+  return undefined;
+}
+
+/**
+ * 从 U3DS 自动注释提取字段默认值。
+ * 真源：U3DS 写回 Config.txt 时自动生成的注释（Provider.cs:2423-2439 官方格式）——
+ * 「Default: X」固定默认 / 「Easy: X  Normal: X  Hard: X」按难度默认。
+ * per-mode 字段按当前难度取值；无法解析返回 undefined（由调用方用原始注释兜底）。
+ *
+ * @param comment - entry.comment（parseConfigTxt 剥离「// >」前缀后的注释文本）
+ * @param mode - 当前 Commands.dat 难度（easy/normal/hard；未知按 normal 兜底）
+ * @returns 具体默认值字符串（如 "604800" / "0.35"）；无默认返回 undefined
+ */
+function commentDefaultToPreview(
+  comment: string | null,
+  mode: string,
+): string | undefined {
+  if (!comment) return undefined;
+  // per-mode：Easy/Normal/Hard 三档（U3DS 固定格式，如「Easy: 0.35    Normal: 0.35    Hard: 0.15」）
+  const modeMatch = /Easy:\s*(\S+)\s*Normal:\s*(\S+)\s*Hard:\s*(\S+)/i.exec(
+    comment,
+  );
+  if (modeMatch) {
+    const byMode: Record<string, string> = {
+      easy: modeMatch[1]!,
+      normal: modeMatch[2]!,
+      hard: modeMatch[3]!,
+    };
+    const m = mode?.trim().toLowerCase();
+    return byMode[m] ?? byMode.normal;
+  }
+  // 固定默认：Default: X
+  const defaultMatch = /Default:\s*(\S+)/i.exec(comment);
+  if (defaultMatch) return defaultMatch[1]!;
   return undefined;
 }
 
@@ -1192,15 +1261,17 @@ function RawEntryField({
   const label = def?.label ?? entry.key;
   // 当前难度的默认值（PER_MODE_DEFAULTS 结构化查表，零字符串解析）
   const perMode = PER_MODE_DEFAULTS[`${sectionName}.${entry.key}`];
-  const modeKey = currentMode?.trim().toLowerCase() as "easy" | "normal" | "hard";
-  const modeDefault = perMode ? perMode[modeKey] ?? perMode.normal : undefined;
+  const modeKey = currentMode?.trim().toLowerCase() as
+    "easy" | "normal" | "hard";
+  const modeDefault = perMode
+    ? (perMode[modeKey] ?? perMode.normal)
+    : undefined;
   // bool 当前值：
   // - value 有值（"true"/"false"）→ 按字面
   // - 裸 key（null = 用默认）→ 按定义表默认（per-mode 按当前难度取）
   const boolVal =
     entry.value === "true" ||
-    (entry.value === null &&
-      (def?.def === "开" || modeDefault === true));
+    (entry.value === null && (def?.def === "开" || modeDefault === true));
 
   if (isBool) {
     return (
@@ -1215,21 +1286,28 @@ function RawEntryField({
   }
 
   // 数值/文本 placeholder：显示默认值预览
-  // - per-mode 数值 → 当前难度默认（PER_MODE_DEFAULTS 取）
+  // - per-mode 数值 → 当前难度默认（PER_MODE_DEFAULTS 结构化查表）
   // - 非 per-mode 数值 → 定义表 def（纯值，如 "604800"）
-  // - 文本 → 文件注释
+  // - 其余 → 解析 U3DS 注释「Default: X」/「Easy/Normal/Hard: X」提取具体默认值
+  // - 都无 → 原始注释兜底（如 "URL of a 64x64 image..."）
   const defaultPreview =
     perMode && typeof modeDefault === "string"
       ? modeDefault
-      : def && def.type === "number" && !def.def.includes("简单") && !def.def.includes("普通") && !def.def.includes("困难")
+      : def &&
+          def.type === "number" &&
+          !def.def.includes("简单") &&
+          !def.def.includes("普通") &&
+          !def.def.includes("困难")
         ? def.def
-        : undefined;
+        : commentDefaultToPreview(entry.comment, currentMode);
   const placeholder =
     defaultPreview !== undefined
       ? `默认 ${defaultPreview}`
-      : entry.comment ?? undefined;
+      : (entry.comment ?? undefined);
 
-  // 数值 clamp：输入时按定义表 min/max 截断（0–1 输 2 → 1）
+  // 数值 clamp：越界时按定义表 min/max 截断（0–1 输 2 → 1）；
+  // 未越界时保留原始输入字符串——"0." 中间态若被 Number() 归一成 "0" 会吃掉小数点，
+  // 继续输入 5 得 "05"→5→clamp 到 1，0–1 区间就只能输 0 或 1（Bug 2）
   const clampNumber = (raw: string): string => {
     if (def?.type !== "number" || def.min === undefined) return raw;
     const n = Number(raw);
@@ -1237,7 +1315,7 @@ function RawEntryField({
     let clamped = n;
     if (def.min !== undefined && clamped < def.min) clamped = def.min;
     if (def.max !== undefined && clamped > def.max) clamped = def.max;
-    return String(clamped);
+    return clamped === n ? raw : String(clamped);
   };
 
   return (

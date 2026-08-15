@@ -125,7 +125,10 @@ export function buildTxtSections(fields: ConfigTxtFields): ApiConfigSection[] {
         boolEntry("VAC_Secure", fields.VAC_Secure),
         boolEntry("BattlEye_Secure", fields.BattlEye_Secure),
         stringEntry("Max_Ping_Milliseconds", fields.Max_Ping_Milliseconds),
-        boolEntry("Enable_Scheduled_Shutdown", fields.Enable_Scheduled_Shutdown),
+        boolEntry(
+          "Enable_Scheduled_Shutdown",
+          fields.Enable_Scheduled_Shutdown,
+        ),
         boolEntry("Enable_Update_Shutdown", fields.Enable_Update_Shutdown),
       ],
     },
@@ -142,7 +145,10 @@ export function buildTxtSections(fields: ConfigTxtFields): ApiConfigSection[] {
       name: "Gameplay",
       entries: [
         boolEntry("Allow_Shoulder_Camera", fields.Allow_Shoulder_Camera),
-        boolEntry("Allow_Freeform_Buildables", fields.Allow_Freeform_Buildables),
+        boolEntry(
+          "Allow_Freeform_Buildables",
+          fields.Allow_Freeform_Buildables,
+        ),
         boolEntry("Friendly_Fire", fields.Friendly_Fire),
         boolEntry("Can_Suicide", fields.Can_Suicide),
       ],
@@ -181,24 +187,64 @@ export function mergeTxtSections(
     // Browser
     ["Browser", "Login_Token", stringEntry("Login_Token", fields.Login_Token)],
     ["Browser", "Desc_Full", stringEntry("Desc_Full", fields.Desc_Full)],
-    ["Browser", "Desc_Server_List", stringEntry("Desc_Server_List", fields.Desc_Server_List)],
+    [
+      "Browser",
+      "Desc_Server_List",
+      stringEntry("Desc_Server_List", fields.Desc_Server_List),
+    ],
     ["Browser", "Icon", stringEntry("Icon", fields.Icon)],
     ["Browser", "Thumbnail", stringEntry("Thumbnail", fields.Thumbnail)],
     // Server
     ["Server", "VAC_Secure", boolEntry("VAC_Secure", fields.VAC_Secure)],
-    ["Server", "BattlEye_Secure", boolEntry("BattlEye_Secure", fields.BattlEye_Secure)],
-    ["Server", "Max_Ping_Milliseconds", stringEntry("Max_Ping_Milliseconds", fields.Max_Ping_Milliseconds)],
-    ["Server", "Enable_Scheduled_Shutdown", boolEntry("Enable_Scheduled_Shutdown", fields.Enable_Scheduled_Shutdown)],
-    ["Server", "Enable_Update_Shutdown", boolEntry("Enable_Update_Shutdown", fields.Enable_Update_Shutdown)],
+    [
+      "Server",
+      "BattlEye_Secure",
+      boolEntry("BattlEye_Secure", fields.BattlEye_Secure),
+    ],
+    [
+      "Server",
+      "Max_Ping_Milliseconds",
+      stringEntry("Max_Ping_Milliseconds", fields.Max_Ping_Milliseconds),
+    ],
+    [
+      "Server",
+      "Enable_Scheduled_Shutdown",
+      boolEntry("Enable_Scheduled_Shutdown", fields.Enable_Scheduled_Shutdown),
+    ],
+    [
+      "Server",
+      "Enable_Update_Shutdown",
+      boolEntry("Enable_Update_Shutdown", fields.Enable_Update_Shutdown),
+    ],
     // Items
     ["Items", "Spawn_Chance", stringEntry("Spawn_Chance", fields.Spawn_Chance)],
-    ["Items", "Has_Durability", boolEntry("Has_Durability", fields.Has_Durability)],
-    ["Items", "Despawn_Dropped_Time", stringEntry("Despawn_Dropped_Time", fields.Despawn_Dropped_Time)],
+    [
+      "Items",
+      "Has_Durability",
+      boolEntry("Has_Durability", fields.Has_Durability),
+    ],
+    [
+      "Items",
+      "Despawn_Dropped_Time",
+      stringEntry("Despawn_Dropped_Time", fields.Despawn_Dropped_Time),
+    ],
     ["Items", "Respawn_Time", stringEntry("Respawn_Time", fields.Respawn_Time)],
     // Gameplay
-    ["Gameplay", "Allow_Shoulder_Camera", boolEntry("Allow_Shoulder_Camera", fields.Allow_Shoulder_Camera)],
-    ["Gameplay", "Allow_Freeform_Buildables", boolEntry("Allow_Freeform_Buildables", fields.Allow_Freeform_Buildables)],
-    ["Gameplay", "Friendly_Fire", boolEntry("Friendly_Fire", fields.Friendly_Fire)],
+    [
+      "Gameplay",
+      "Allow_Shoulder_Camera",
+      boolEntry("Allow_Shoulder_Camera", fields.Allow_Shoulder_Camera),
+    ],
+    [
+      "Gameplay",
+      "Allow_Freeform_Buildables",
+      boolEntry("Allow_Freeform_Buildables", fields.Allow_Freeform_Buildables),
+    ],
+    [
+      "Gameplay",
+      "Friendly_Fire",
+      boolEntry("Friendly_Fire", fields.Friendly_Fire),
+    ],
     ["Gameplay", "Can_Suicide", boolEntry("Can_Suicide", fields.Can_Suicide)],
   ];
 
@@ -206,16 +252,21 @@ export function mergeTxtSections(
     const section = merged[sectionName];
     if (!section) {
       // section 不存在（原文件可能没这个节）——新建
-      merged[sectionName] = { name: sectionName, entries: [entry], rawBlocks: undefined };
+      merged[sectionName] = {
+        name: sectionName,
+        entries: [entry],
+        rawBlocks: undefined,
+      };
       continue;
     }
-    const idx = section.entries.findIndex((e) => e.key === key);
-    if (idx >= 0) {
-      // 保留原 comment（U3DS 自动生成的 // > 默认值说明不能丢），只更新 value/type
-      section.entries[idx] = {
-        ...entry,
-        comment: section.entries[idx]!.comment ?? entry.comment,
-      };
+    const exists = section.entries.some((e) => e.key === key);
+    if (exists) {
+      // ★ 2026-08-15 Bug 修复：更新所有同 key entry（不只第一个）——U3DS 解析重复 key 时
+      // 最后一个生效（DatParser.cs:145），只更新第一个会让用户值被第二份旧值覆盖。
+      // 保留原 comment（U3DS 自动生成的 // > 默认值说明不能丢），只更新 value/type。
+      section.entries = section.entries.map((e) =>
+        e.key === key ? { ...entry, comment: e.comment ?? entry.comment } : e,
+      );
     } else {
       // key 不在原文件——追加
       section.entries.push(entry);
@@ -329,13 +380,23 @@ export function getModeDefaults(
   const normalized = mode?.trim().toLowerCase();
   switch (normalized) {
     case "easy":
-      return { Spawn_Chance: "0.35", Respawn_Time: "50", Has_Durability: false };
+      return {
+        Spawn_Chance: "0.35",
+        Respawn_Time: "50",
+        Has_Durability: false,
+      };
     case "hard":
-      return { Spawn_Chance: "0.15", Respawn_Time: "150", Has_Durability: true };
+      return {
+        Spawn_Chance: "0.15",
+        Respawn_Time: "150",
+        Has_Durability: true,
+      };
     case "normal":
     default:
-      return { Spawn_Chance: "0.35", Respawn_Time: "100", Has_Durability: true };
+      return {
+        Spawn_Chance: "0.35",
+        Respawn_Time: "100",
+        Has_Durability: true,
+      };
   }
 }
-
-
