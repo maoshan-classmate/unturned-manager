@@ -15,6 +15,7 @@ import { load as cheerioLoad } from 'cheerio';
 import type {
   ILdmPluginSourceService,
   CommunityPlugin,
+  CommunityPluginDetail,
 } from '@unturned-manager/shared';
 import { AppError } from '../../utils/AppError.js';
 import { httpClient } from '../../utils/httpClient.js';
@@ -159,6 +160,84 @@ export class LdmPluginSourceService implements ILdmPluginSourceService {
         message: '网络连接失败',
       };
     }
+  }
+
+  /**
+   * 插件详情（Phase 3）——基于缓存列表 + GitHub releases API 补 readme 预览。
+   *
+   * @param slug 仓库 slug（如 "XanderCodes/AppleAdminControl"）
+   * @param pat GitHub PAT（可选；提升限流）
+   * @returns 详情；找不到 / 不可达返回 null（上层路由转 404）
+   */
+  async getPluginDetail(
+    slug: string,
+    pat: string | null,
+  ): Promise<CommunityPluginDetail | null> {
+    // 1. 先在缓存列表中找（任意 PAT 的缓存——基本信息复用）
+    const allKeys = Array.from(cache.keys());
+    let base: CommunityPlugin | null = null;
+    for (const k of allKeys) {
+      const c = cache.get(k);
+      if (!c || c.expiresAt < Date.now()) continue;
+      const found = c.result.plugins.find((p) => p.slug === slug);
+      if (found) {
+        base = found;
+        break;
+      }
+    }
+    if (!base) {
+      // 缓存 miss——调 listCommunityPlugins 触发刷新
+      try {
+        const list = await this.listCommunityPlugins(pat);
+        base = list.plugins.find((p) => p.slug === slug) ?? null;
+      } catch (err) {
+        logger.warn({ err, slug }, 'getPluginDetail: 列表刷新失败');
+        return null;
+      }
+    }
+    if (!base) return null;
+
+    // 2. GitHub releases API 取最新 release 标签 + README 预览
+    const [owner, repo] = slug.split('/');
+    if (!owner || !repo) return null;
+    const headers: Record<string, string> = { 'User-Agent': 'unturned-manager' };
+    if (pat) headers.Authorization = `token ${pat}`;
+
+    let latestTag = base.latestVersion;
+    let readmePreview: string | null = null;
+    try {
+      const releaseRes = await fetch(
+        `${GITHUB_API_RELEASES}/${owner}/${repo}/releases/latest`,
+        { headers, signal: AbortSignal.timeout(GITHUB_FETCH_TIMEOUT_MS) },
+      );
+      if (releaseRes.ok) {
+        const release = (await releaseRes.json()) as { tag_name?: string; body?: string };
+        if (release.tag_name) latestTag = release.tag_name;
+        if (release.body) {
+          readmePreview = release.body.slice(0, 500);
+        }
+      } else if (releaseRes.status !== 404) {
+        // 404 = 无 Release（很多老插件无 Release），跳过
+        logger.warn(
+          { slug, status: releaseRes.status },
+          'getPluginDetail: GitHub releases 异常',
+        );
+      }
+    } catch (err) {
+      logger.warn({ err, slug }, 'getPluginDetail: GitHub releases 请求失败');
+    }
+
+    return {
+      slug: base.slug,
+      name: base.name,
+      author: base.author,
+      description: base.description,
+      repoUrl: base.repoUrl,
+      latestVersion: latestTag,
+      updatedAtIso: base.updatedAtIso,
+      releasesUrl: `${base.repoUrl}/releases/latest`,
+      readmePreview,
+    };
   }
 }
 

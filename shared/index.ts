@@ -81,6 +81,9 @@ export type {
   // Phase 2b 新增
   ILdmApplyService,
   LdmApplyResult,
+  // Phase 3 新增
+  LdmStatus,
+  CommunityPluginDetail,
 } from "./contracts/ldm.js";
 export type {
   IItemService,

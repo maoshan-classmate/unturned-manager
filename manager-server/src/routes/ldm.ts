@@ -69,6 +69,17 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
+  // GET /status — LDM 统一状态（Phase 3）——前端「LDM 状态」卡用
+  router.get(
+    "/status",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const status = await deps.discovery.getStatus(serverId as ServerId);
+      res.json({ data: status });
+    }),
+  );
+
   // POST /load-plugin
   router.post(
     "/load-plugin",
@@ -307,6 +318,34 @@ export function createLdmCommunityRouter(svc: ILdmPluginSourceService): Router {
       const { pat } = req.body as { pat: string };
       const result = await svc.testPat(pat);
       res.json({ data: result });
+    }),
+  );
+
+  // GET /community-plugins/:owner/:repo — 详情页（Phase 3）——前端详情抽屉用
+  // 注意：Express `:slug` 不匹配 `/`，改用 `:owner/:repo` 两段参数
+  router.get(
+    "/community-plugins/:owner/:repo",
+    asyncHandler(async (req, res) => {
+      const owner = req.params.owner as string | undefined;
+      const repo = req.params.repo as string | undefined;
+      if (!owner || !repo) {
+        throw new AppError(
+          "plugin-slug-invalid",
+          `插件 slug 格式错误（需 owner/repo）：${owner ?? ""}/${repo ?? ""}`,
+          400,
+        );
+      }
+      const slug = `${owner}/${repo}`;
+      const pat = (req.headers["x-github-pat"] as string | undefined) ?? null;
+      const detail = await svc.getPluginDetail(slug, pat);
+      if (!detail) {
+        throw new AppError(
+          "plugin-detail-not-found",
+          `未找到插件 ${slug}（LDM-Community 列表中无此条目）`,
+          404,
+        );
+      }
+      res.json({ data: detail });
     }),
   );
 

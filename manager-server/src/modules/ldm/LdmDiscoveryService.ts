@@ -19,6 +19,7 @@ import type {
   ILdmAssemblyVersionReader,
   InstalledPlugin,
   LdmRuntimeStatusReader,
+  LdmStatus,
   ServerId,
 } from '@unturned-manager/shared';
 import { AppError } from '../../utils/AppError.js';
@@ -101,6 +102,40 @@ export class LdmDiscoveryService implements ILdmDiscoveryService {
     // 排序：按插件名字母序
     plugins.sort((a, b) => a.name.localeCompare(b.name));
     return { plugins, ldmNotDetected: false };
+  }
+
+  /**
+   * LDM 统一状态（Phase 3）——轻量扫描，避免 listInstalledPlugins 的 PE 元数据开销。
+   *
+   * @param serverId 实例标识
+   * @returns ldmInstalled / rocketDirExists / pluginCount —— 前端「LDM 状态」卡用
+   */
+  async getStatus(serverId: ServerId): Promise<LdmStatus> {
+    const rocket = rocketDir(serverId);
+    const rocketDirExists = await fileExists(rocket);
+    const ldmInstalled =
+      rocketDirExists && (await fileExists(path.join(config.installDir, LDM_MODULE_MARKER)));
+
+    let pluginCount = 0;
+    if (ldmInstalled) {
+      const pluginsDir = rocketPluginsDir(serverId);
+      try {
+        const entries = await readdir(pluginsDir, { withFileTypes: true });
+        pluginCount = entries.filter(
+          (e) => e.isFile() && e.name.toLowerCase().endsWith(".dll"),
+        ).length;
+      } catch {
+        pluginCount = 0;
+      }
+    }
+
+    return {
+      serverId,
+      ldmInstalled,
+      rocketDirExists,
+      pluginCount,
+      detectedAtIso: new Date().toISOString(),
+    };
   }
 }
 

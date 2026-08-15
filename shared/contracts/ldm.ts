@@ -30,6 +30,25 @@ export interface ILdmDiscoveryService {
     plugins: InstalledPlugin[];
     ldmNotDetected: boolean;
   }>;
+
+  /**
+   * LDM 统一状态（Phase 3）——前端「LDM 状态」卡用。
+   * @param serverId - 实例标识
+   * @returns ldmInstalled (Rocket.Unturned.module 是否存在) + rocketDirExists + pluginCount
+   */
+  getStatus(serverId: ServerId): Promise<LdmStatus>;
+}
+
+/**
+ * LDM 统一状态——Phase 3 GET /api/servers/:id/ldm/status 响应。
+ */
+export interface LdmStatus {
+  serverId: string;
+  ldmInstalled: boolean;
+  rocketDirExists: boolean;
+  pluginCount: number;
+  /** 检测时间戳（ISO） */
+  detectedAtIso: string;
 }
 
 /**
@@ -130,6 +149,34 @@ export interface ILdmPluginSourceService {
     rateLimit: { limit: number; remaining: number; reset: number } | null;
     message: string | null;
   }>;
+
+  /**
+   * 插件详情（Phase 3）——前端详情抽屉用。
+   * @param slug - 仓库 slug（如 "XanderCodes/AppleAdminControl"）
+   * @param pat - GitHub PAT（可选；提升限流）
+   * @returns 详情；找不到 / 不可达返回 null
+   */
+  getPluginDetail(
+    slug: string,
+    pat: string | null,
+  ): Promise<CommunityPluginDetail | null>;
+}
+
+/**
+ * LDM 社区插件详情——Phase 3 GET /api/ldm/community-plugins/:slug 响应。
+ */
+export interface CommunityPluginDetail {
+  slug: string;
+  name: string;
+  author: string;
+  description: string;
+  repoUrl: string;
+  latestVersion: string;
+  updatedAtIso: string;
+  /** GitHub Releases URL——前端「下载 .dll」外链按钮用（由 caller 判定是否有 Release） */
+  releasesUrl: string;
+  /** README 截断预览（≤ 500 字）——详情抽屉展示 */
+  readmePreview: string | null;
 }
 
 /**
