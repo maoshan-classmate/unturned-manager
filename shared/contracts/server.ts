@@ -30,5 +30,32 @@ export interface IServerManager {
   restart(serverId: ServerId, reason: string): Promise<void>;
   forceStop(serverId: ServerId): Promise<void>;
 
+  /**
+   * 配置变更后的「保存-关-启」流水线本体——Phase 2b 抽出。
+   *
+   * 复用：`stopInternal` + `startInternal`（不重新实现停止/启动逻辑）。
+   * 钩子：preStopHook（停止前）+ postStartHook（启动后）—— 各 hook 模块独立实现业务逻辑。
+   * 重入保护：activeOperation 与 restart/stop/start 共用同一锁。
+   *
+   * @param serverId - 实例 ID
+   * @param opts.hook - 调用方身份（用于 activeOperation.type 标记 + 日志）
+   * @param opts.preStopHook - 停止前同步任务（如移动 staging 内容 / 备份当前配置）
+   * @param opts.postStartHook - 启动后同步任务（如调 /p reload 触发权限重载 / 验证配置生效）
+   * @throws AppError('operation-conflict') 已有 activeOperation 在跑
+   * @throws AppError('server-not-running') 实例不在 RUNNING 状态
+   *
+   * Phase 2b 使用方：
+   *   - LdmApplyService.apply（hook='ldm_apply'）：配置变更后应用
+   *   - 未来 modpack_apply 第三处共用
+   */
+  applyChangesCore(
+    serverId: ServerId,
+    opts: {
+      hook: "mod_apply" | "ldm_apply" | "modpack_apply";
+      preStopHook?: () => Promise<void>;
+      postStartHook?: () => Promise<void>;
+    },
+  ): Promise<void>;
+
   updateServerBinaries(installDir: string): Promise<void>;
 }

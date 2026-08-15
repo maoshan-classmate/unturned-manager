@@ -431,6 +431,79 @@ export class ServerManager implements IServerManager {
     }
   }
 
+  /**
+   * 配置变更后的「保存-关-启」流水线本体——Phase 2b 抽出（与 mod_apply / ldm_apply 共用）。
+   *
+   * 与 restart 的区别：activeOperation.type 用调用方 hook 名（mod_apply/ldm_apply/modpack_apply），
+   * 并支持 preStopHook + postStartHook 钩子（让各 hook 模块在关/启前后执行业务逻辑）。
+   *
+   * 复用 stopInternal + startInternal（与 restart 共用底层）。
+   * 重入保护：activeOperation 与 restart/stop/start 共用同一锁。
+   *
+   * @param serverId 实例 ID
+   * @param opts.hook 调用方身份（用于 activeOperation.type + 日志）
+   * @param opts.preStopHook 停止前同步任务（如移动 staging 内容 / 备份当前配置）—— 抛错则流水线 abort
+   * @param opts.postStartHook 启动后同步任务（如调 /p reload 触发权限重载）—— 抛错仅记录，不阻止（启动已完成）
+   * @throws AppError('operation-conflict') 已有 activeOperation
+   * @throws AppError('server-not-running') 实例不在 RUNNING 状态
+   */
+  async applyChangesCore(
+    serverId: ServerId,
+    opts: {
+      hook: "mod_apply" | "ldm_apply" | "modpack_apply";
+      preStopHook?: () => Promise<void>;
+      postStartHook?: () => Promise<void>;
+    },
+  ): Promise<void> {
+    const entry = this.ensureServer(serverId);
+
+    // 重入保护（与 restart/stop/start 共用锁）
+    if (entry.activeOperation.type !== "none") {
+      throw new AppError(
+        "operation-conflict",
+        `操作冲突：当前正在${formatOperationType(entry.activeOperation.type)}`,
+        409,
+      );
+    }
+    // 实例必须 RUNNING（保存后需重启）
+    if (entry.state !== ServerState.RUNNING) {
+      throw new AppError(
+        "server-not-running",
+        `实例不在 RUNNING 状态（当前：${entry.state}），无法应用配置变更`,
+        409,
+      );
+    }
+
+    entry.activeOperation = {
+      type: opts.hook,
+      startedAt: new Date().toISOString(),
+    };
+
+    try {
+      // 1. preStopHook（抛错则流水线 abort，不进入 stop）
+      if (opts.preStopHook) {
+        await opts.preStopHook();
+      }
+      // 2. 内部 stop（与 restart 共用底层）
+      await this.stopInternal(serverId, "配置变更");
+      // 3. postStartHook（启动后任务；抛错仅记录——实例已启动不能让其崩溃）
+      if (opts.postStartHook) {
+        try {
+          await opts.postStartHook();
+        } catch (postErr) {
+          logger.error(
+            { err: postErr, serverId, hook: opts.hook },
+            "applyChangesCore postStartHook 失败——实例已启动，仅记录",
+          );
+        }
+      }
+      // 4. 内部 start
+      await this.startInternal(serverId);
+    } finally {
+      entry.activeOperation = { type: "none" };
+    }
+  }
+
   /** 内部 stop——不检查 activeOperation（由 restart / removeServer 统一管理）。 */
   private async stopInternal(
     serverId: ServerId,

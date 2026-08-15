@@ -62,6 +62,15 @@ const mockConfigWriter = {
     writtenAtIso: "2026-08-15T06:00:00.000Z",
   }),
 };
+const mockApplyService = {
+  apply: vi.fn().mockResolvedValue({
+    serverId: "S1",
+    success: true,
+    stage: "ready",
+    startedAtIso: "2026-08-15T06:00:00.000Z",
+    completedAtIso: "2026-08-15T06:00:05.000Z",
+  }),
+};
 
 // 构造 app（authenticateToken 中间件由 setAuthService 全局 stub 放行）
 function makeApp() {
@@ -73,6 +82,7 @@ function makeApp() {
       discovery: mockDiscovery,
       commands: mockCommands,
       configWriter: mockConfigWriter,
+      applyService: mockApplyService,
     }),
   );
   // 全局错误 handler——把 AppError 序列化为 { error: { code, message } }
@@ -207,5 +217,45 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
       .get("/api/servers/S1/ldm/plugins//config")
       .set("Authorization", "Bearer test-token");
     expect([400, 404]).toContain(res.status);
+  });
+
+  // ─── Phase 2b POST /apply 端点 ─────────────────────────────────────
+
+  it("POST /apply happy path: 调 applyService.apply 透传 body.changedPlugins", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/apply")
+      .set("Authorization", "Bearer test-token")
+      .send({ changedPlugins: ["Uconomy", "Vip"] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe("ready");
+    expect(mockApplyService.apply).toHaveBeenCalledWith("S1", {
+      changedPlugins: ["Uconomy", "Vip"],
+    });
+  });
+
+  it("POST /apply 无 body → applyService.apply 调无 changedPlugins", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/apply")
+      .set("Authorization", "Bearer test-token")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(mockApplyService.apply).toHaveBeenCalledWith("S1", undefined);
+  });
+
+  it("POST /apply 错误码：applyService 抛 operation-conflict → 409", async () => {
+    const { AppError } = await import("../src/utils/AppError.js");
+    mockApplyService.apply.mockRejectedValueOnce(
+      new AppError("operation-conflict", "操作冲突：当前正在 manual_restart", 409),
+    );
+
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/apply")
+      .set("Authorization", "Bearer test-token")
+      .send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("operation-conflict");
   });
 });

@@ -65,6 +65,39 @@ export interface ILdmPluginCommandsService {
     serverId: ServerId,
     pluginName: string,
   ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }>;
+
+  /**
+   * PTY 写 `/p reload`——重载 Permissions.config.xml（Phase 2b D4）。
+   * 不停服，不触发状态机转换——Permissions.config.xml 变更后由 LdmApplyService 在 postStartHook 触发。
+   * @param serverId - 实例标识
+   * @returns outcome + LDM stdout 末尾（≤ 256 字）
+   * @throws AppError('server-not-running') 实例未运行
+   * @throws AppError('pty-write-failed') PTY 写入失败
+   * @throws AppError('pty-timeout') 10s 内未收到 LDM 响应
+   */
+  reloadPermissions(
+    serverId: ServerId,
+  ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }>;
+
+  /**
+   * 读 LDM 主框架版本（D2）——PTY 写空 `/rocket` 解析 stdout 中的 `Rocket v<ver> for Unturned v<gameVer>`。
+   * @param serverId - 实例标识
+   * @returns ldmVersion + gameVersion + 原文；解析失败返回 null/null
+   * @throws AppError('server-not-running') 实例未运行
+   */
+  readLdmVersion(
+    serverId: ServerId,
+  ): Promise<{ ldmVersion: string | null; gameVersion: string | null; raw: string }>;
+
+  /**
+   * 读 Rocket.Unturned 模块加载状态（D3）——PTY 写 `/modules` 解析 stdout。
+   * @param serverId - 实例标识
+   * @returns rocketUnturnedLoaded + 原文（前端「LDM 状态」卡用）
+   * @throws AppError('server-not-running') 实例未运行
+   */
+  readModulesState(
+    serverId: ServerId,
+  ): Promise<{ rocketUnturnedLoaded: boolean; raw: string }>;
 }
 
 /**
@@ -260,6 +293,44 @@ export interface LdmConfigWriteResult {
   success: boolean;
   backupPath: string;
   writtenAtIso: string;
+}
+
+/**
+ * LDM 应用变更结果（POST /apply 响应）。
+ */
+export interface LdmApplyResult {
+  serverId: string;
+  success: boolean;
+  stage: "preparing" | "stopping" | "starting" | "verifying" | "ready" | "failed";
+  message?: string;
+  startedAtIso: string;
+  completedAtIso: string;
+}
+
+/**
+ * LDM 应用变更服务（Phase 2b）——薄业务层，调 ServerManager.applyChangesCore。
+ *
+ * 行为契约（用户 2026-08-15 拍板）：
+ *   - 「保存配置」与「应用变更」是两独立动作——前者走 LdmConfigWriter（写文件），
+ *     后者由本服务触发（调 ServerManager.applyChangesCore 重启流水线）
+ *   - 应用变更由用户主动触发——写配置时不自动
+ *   - preStopHook 推 WS ldm_apply_progress 'preparing'
+ *   - postStartHook PTY 写 /p reload（LDM 权限重载——D4）+ 推 'verifying' → 'ready'
+ */
+export interface ILdmApplyService {
+  /**
+   * 应用 LDM 配置变更（走 PTY 重启流水线）
+   * @param serverId 实例标识
+   * @param opts.changedPlugins 受影响的插件名列表（可选；用于日志/未来细粒度 hook）
+   * @returns 应用结果（最终 stage）
+   * @throws AppError('operation-conflict') 已有 activeOperation
+   * @throws AppError('server-not-running') 实例未运行
+   * @throws AppError('pty-write-failed') PTY 写 /p reload 失败
+   */
+  apply(
+    serverId: ServerId,
+    opts?: { changedPlugins?: string[] },
+  ): Promise<LdmApplyResult>;
 }
 
 /**

@@ -64,6 +64,120 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
     return this.run(serverId, pluginName, "unload", UNLOAD_SUCCESS_MARKERS);
   }
 
+  /**
+   * PTY 写 `/p reload` 重载 Permissions.config.xml（Phase 2b D4）。
+   * 不停服，不触发状态机转换——Permissions.config.xml 变更后由 LdmApplyService 在 postStartHook 触发。
+   *
+   * 成功锚点（LDM 源码 RocketPermissions 加载完成）：`Reloaded permissions from 'Permissions.config.xml'`
+   * 失败锚点：权限文件不存在 / XML 损坏
+   *
+   * @param serverId - 实例标识
+   * @returns outcome + LDM stdout 末尾（≤ 256 字）
+   * @throws AppError('server-not-running') 实例未运行
+   * @throws AppError('pty-write-failed') PTY 写入失败
+   * @throws AppError('pty-timeout') 10s 内未收到 LDM 响应
+   */
+  async reloadPermissions(
+    serverId: ServerId,
+  ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }> {
+    return this.runMarkerless(serverId, "/p reload", [
+      /^Reloaded permissions/i,
+      /Reloaded\s+permissions\s+from/i,
+    ]);
+  }
+
+  /**
+   * 读LDM 主框架版本（D2）——PTY 写空 `/rocket`（U.cs:88-118 输出 Rocket v<ver> for Unturned v<gameVer>）。
+   *
+   * @param serverId - 实例标识
+   * @returns LDM 版本字符串（如 `"Rocket v4.0.0.0 for Unturned v3.25.0.0"`）—— 解析失败返回 null
+   * @throws AppError('server-not-running') 实例未运行
+   */
+  async readLdmVersion(
+    serverId: ServerId,
+  ): Promise<{ ldmVersion: string | null; gameVersion: string | null; raw: string }> {
+    const state = this.serverManager.getState(serverId);
+    if (state !== ServerState.RUNNING) {
+      throw new AppError("server-not-running", "实例未运行，无法读 LDM 版本", 409);
+    }
+    const result = await this.runMarkerless(serverId, "/rocket", [
+      /^Rocket\s+v[\d.]+\s+for\s+Unturned\s+v[\d.]+/i,
+    ]);
+    const match = result.ldmOutput.match(
+      /Rocket\s+v(?<ldm>[\d.]+)\s+for\s+Unturned\s+v(?<game>[\d.]+)/,
+    );
+    return {
+      ldmVersion: match?.groups?.ldm ?? null,
+      gameVersion: match?.groups?.game ?? null,
+      raw: result.ldmOutput,
+    };
+  }
+
+  /**
+   * 读 Rocket.Unturned 模块加载状态（D3）——PTY 写 `/modules` 解析 stdout。
+   *
+   * @param serverId - 实例标识
+   * @returns rocketUnturnedLoaded - 是否加载了 Rocket.Unturned 模块；raw - 完整 stdout
+   * @throws AppError('server-not-running') 实例未运行
+   */
+  async readModulesState(
+    serverId: ServerId,
+  ): Promise<{ rocketUnturnedLoaded: boolean; raw: string }> {
+    const state = this.serverManager.getState(serverId);
+    if (state !== ServerState.RUNNING) {
+      throw new AppError("server-not-running", "实例未运行，无法读模块状态", 409);
+    }
+    const result = await this.runMarkerless(serverId, "/modules", []);
+    const loaded = /Rocket\.Unturned/i.test(result.ldmOutput);
+    return { rocketUnturnedLoaded: loaded, raw: result.ldmOutput };
+  }
+
+  /**
+   * 通用「写命令 + 收 stdout」内部方法——无插件名（reloadPermissions / /rocket / /modules 用）。
+   *
+   * @param serverId 实例标识
+   * @param cmd 待写入的命令字符串（不含 \n，自动加）
+   * @param successMarkers 成功锚点正则数组（命中即视为 success）
+   * @returns outcome + 末尾 stdout（≤ 256 字）
+   */
+  private async runMarkerless(
+    serverId: ServerId,
+    cmd: string,
+    successMarkers: RegExp[],
+  ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }> {
+    const state = this.serverManager.getState(serverId);
+    if (state !== ServerState.RUNNING) {
+      throw new AppError("server-not-running", `实例未运行，无法执行 ${cmd}`, 409);
+    }
+    const collector: string[] = [];
+    let markerHit: "success" | "failure" | null = null;
+    const offData = this.pty.onData(serverId, (line) => {
+      if (markerHit) return;
+      collector.push(line);
+      if (successMarkers.some((rx) => rx.test(line))) {
+        markerHit = "success";
+      }
+    });
+    try {
+      try {
+        this.pty.write(serverId, `${cmd}\n`);
+      } catch {
+        throw new AppError("pty-write-failed", "PTY 写入失败", 500);
+      }
+      await Promise.race([
+        pollForMarker(collector, () => markerHit, COMMAND_TIMEOUT_MS),
+        this.pty
+          .waitForMarker(serverId, /Reloaded|Rocket\.Unturned|Rocket\s+v/, COMMAND_TIMEOUT_MS)
+          .then(() => markerHit),
+      ]);
+      const outcome = markerHit ?? "failure";
+      const tail = collector.slice(-8).join("\n").slice(-256);
+      return { outcome, ldmOutput: tail };
+    } finally {
+      offData();
+    }
+  }
+
   // ─── 内部 ─────────────────────────────────────────────
 
   private async run(

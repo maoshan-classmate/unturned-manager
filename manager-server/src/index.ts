@@ -145,6 +145,7 @@ app.use("/api/servers/:id/ldm", createLdmServerRouter({
   discovery: container.ldmDiscovery,
   commands: container.ldmCommands,
   configWriter: container.ldmConfigWriter,
+  applyService: container.ldmApplyService,
 }));
 app.use("/api/ldm", createLdmCommunityRouter(container.ldmSource));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));

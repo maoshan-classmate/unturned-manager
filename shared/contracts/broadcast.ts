@@ -45,6 +45,16 @@ export type ServerEvent =
       remainingSeconds?: number;
     }
   | { type: "file_changed"; serverId: ServerId; path: string }
+  // Phase 2b：LDM 应用变更进度（与 mod_apply_progress 同模式，分开类型便于前端过滤）
+  | {
+      type: "ldm_apply_progress";
+      serverId: ServerId;
+      stage: "preparing" | "stopping" | "starting" | "verifying" | "ready" | "failed";
+      /** 0-100 进度估算（前端显示进度条；stopping/starting 阶段可用） */
+      percent?: number;
+      /** 失败时的根因描述（仅 failed 事件携带）——前端 toast 显示 */
+      errorMessage?: string;
+    }
   // Phase 0 异步化：jobId 关联单个 SteamCMD 长任务（前端按 jobId 过滤订阅）；
   // latestVersion 是 check-update completed 事件携带的 U3DS buildid。此前缺失导致
   // SteamCmdManager 被迫 `as never`——契约补齐后删掉全部类型强转（P1-3 review 修复）。

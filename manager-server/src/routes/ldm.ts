@@ -15,6 +15,7 @@ import {
   PluginConfigWriteSchema,
   RocketConfigWriteSchema,
   PermissionsConfigWriteSchema,
+  type ILdmApplyService,
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
@@ -45,6 +46,7 @@ export function createLdmServerRouter(deps: {
   discovery: ILdmDiscoveryService;
   commands: ILdmPluginCommandsService;
   configWriter: ILdmConfigWriter;
+  applyService: ILdmApplyService;
 }): Router {
   const router = Router({ mergeParams: true });
   router.use(authenticateToken);
@@ -249,6 +251,26 @@ export function createLdmServerRouter(deps: {
           writtenAtIso: result.writtenAtIso,
         },
       });
+    }),
+  );
+
+  // ─── Phase 2b 应用变更端点 ─────────────────────────────────────
+
+  // POST /apply — 应用 LDM 配置变更（走 PTY 重启流水线）
+  router.post(
+    "/apply",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const { changedPlugins } = (req.body ?? {}) as {
+        changedPlugins?: string[];
+      };
+
+      const result = await deps.applyService.apply(
+        serverId as ServerId,
+        changedPlugins ? { changedPlugins } : undefined,
+      );
+      res.json({ data: result });
     }),
   );
 

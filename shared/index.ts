@@ -78,6 +78,9 @@ export type {
   XmlNode,
   XmlNodeType,
   LdmConfigWriteResult,
+  // Phase 2b 新增
+  ILdmApplyService,
+  LdmApplyResult,
 } from "./contracts/ldm.js";
 export type {
   IItemService,

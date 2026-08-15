@@ -20,6 +20,7 @@ import {
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
   type ILdmConfigWriter,
+  type ILdmApplyService,
   type IItemService,
 } from "@unturned-manager/shared";
 
@@ -44,6 +45,7 @@ import { SessionManager } from "./modules/sessions/SessionManager.js";
 import { U3dsStatusProvider } from "./modules/u3ds/U3dsStatusProvider.js";
 import { ItemService } from "./modules/items/ItemService.js";
 import { AtomicFileWriter } from "./modules/filelock/AtomicFileWriter.js";
+import { LdmApplyService } from "./modules/ldm/LdmApplyService.js";
 import { LdmAssemblyVersionReader } from "./modules/ldm/LdmAssemblyVersionReader.js";
 import { LdmConfigWriter } from "./modules/ldm/LdmConfigWriter.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
@@ -77,6 +79,8 @@ export interface AppContainer {
   ldmSource: ILdmPluginSourceService;
   // Phase 2a：LDM 配置写入服务（依赖共享 AtomicFileWriter + RocketConfigXmlParser）
   ldmConfigWriter: ILdmConfigWriter;
+  // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送）
+  ldmApplyService: ILdmApplyService;
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
   itemService: IItemService;
 }
@@ -163,6 +167,13 @@ export function buildContainer(db: Database.Database): AppContainer {
   const atomicFileWriter = new AtomicFileWriter(fileLock);
   const rocketConfigXmlParser = new RocketConfigXmlParser();
   const ldmConfigWriter = new LdmConfigWriter(atomicFileWriter, rocketConfigXmlParser);
+
+  // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送 ldm_apply_progress）
+  const ldmApplyService = new LdmApplyService(
+    serverManager,
+    ldmCommands,
+    wsBroadcaster,
+  );
 
   // ── WS 请求-应答处理器注册（ws-wrapper-design §2.4）────────────────
   // 三个 ACK 语义的终端操作：关控制台 / 存档 / 关服。ack 经 gateway 回给请求方，
@@ -305,6 +316,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmCommands,
     ldmSource,
     ldmConfigWriter,
+    ldmApplyService,
     itemService,
   };
 }
