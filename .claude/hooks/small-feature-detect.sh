@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 小功能判定——读 git diff 累计改动，超阈值时 systemMessage 提醒
+# 小功能判定——读 git diff 累计改动，属于小功能（未超阈值）时 stderr 提醒最小验证 + exit 2 喂给 Claude
 # stdin：PostToolUse 事件 JSON（含 tool_name）
-# stdout：超阈值时输出 {systemMessage} JSON；否则 silent
+# stderr + exit 2：PostToolUse 场景 exit 2 不阻断工具，仅把提醒文本喂给 Claude 上下文；超阈值时静默
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THRESHOLD="$SCRIPT_DIR/md/threshold.json"
 
-# 读 stdin → 拿 tool_name（参考 check-doc-outdated.sh 风格）
+# 读 stdin → 拿 tool_name
 TOOL_NAME=$(cat | node -e "process.stdin.on('data', d => { try { process.stdout.write(JSON.parse(d).tool_name || ''); } catch (e) {} })")
 
 # 只追踪 Edit/Write/MultiEdit
@@ -34,7 +34,7 @@ fi
 # 合并 modified + untracked
 ALL_NUMSTAT="${MODIFIED_NUMSTAT}"$'\n'"${UNTRACKED_NUMSTAT}"
 
-# 用 node 解析阈值 + 过滤 numstat + 判定 + 拼 JSON
+# 用 node 解析阈值 + 过滤 numstat + 判定；小功能（未超阈值）stderr 提醒最小验证 + exit 2，超阈值静默
 node -e "
   const fs = require('fs');
   const threshold = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
@@ -68,11 +68,11 @@ node -e "
     if (total > maxChanged) maxChanged = total;
   }
 
-  if (codeFiles.length > threshold.max_files) {
-    const msg = '⚠️ 本次累计改动超出小功能阈值：代码文件数 ' + codeFiles.length + ' > ' + threshold.max_files + '。建议走完整验证（typecheck + 单测 + e2e）';
-    process.stdout.write(JSON.stringify({ systemMessage: msg }));
-  } else if (maxChanged > threshold.max_lines_per_file) {
-    const msg = '⚠️ 本次累计改动超出小功能阈值：单文件改动 ' + maxChanged + ' 行 > ' + threshold.max_lines_per_file + '。建议走完整验证（typecheck + 单测 + e2e）';
-    process.stdout.write(JSON.stringify({ systemMessage: msg }));
+  // 判定小功能：代码文件数 ≤ 阈值 且 单文件改动 ≤ 阈值 → 提醒最小验证；任一超出 → 静默
+  const isSmall = codeFiles.length <= threshold.max_files && maxChanged <= threshold.max_lines_per_file;
+  if (isSmall) {
+    const msg = '✅ 当前累计改动属于小功能（' + codeFiles.length + ' 个代码文件，单文件最多 ' + maxChanged + ' 行）。走最小验证即可：跑 typecheck 通过即可，不跑单测/e2e。';
+    process.stderr.write(msg + '\n');
+    process.exit(2);
   }
 " "$THRESHOLD" "$ALL_NUMSTAT"

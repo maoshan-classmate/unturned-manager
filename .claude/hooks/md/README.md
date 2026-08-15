@@ -149,7 +149,7 @@ echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh; echo "
 
 期望：无输出（hook 看到工作区干净，silent），`exit=0`。
 
-**超阈值场景**（应该报警）：
+**超阈值场景**（应该 silent）——超阈值时静默，让 Claude 自行按铁律走完整验证：
 
 ```bash
 # 临时建 4 个 .ts 文件
@@ -159,7 +159,16 @@ for n in a b c d; do echo "// test" > /tmp/test-$n.ts; done
 echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh
 ```
 
-期望：`{"systemMessage":"⚠️ ...代码文件数 4 > 3..."}`。
+期望：无输出（超阈值时静默，不打断），`exit=0`。
+
+**小功能场景**（应该提醒最小验证）：
+
+```bash
+# 临时改 1 个 .ts 文件 +1 行
+echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh
+```
+
+期望：stderr 输出 `✅ 当前累计改动属于小功能（...）...走最小验证即可`，`exit=2`（exit 2 把提醒喂给 Claude，不阻断工具执行）。
 
 **Read 工具跳过**：
 
@@ -176,8 +185,8 @@ echo '{"tool_name":"Read"}' | bash .claude/hooks/small-feature-detect.sh
 | 现象 | 原因 | 修复 |
 |---|---|---|
 | 铁律没注入 | `index.json` 路径错或格式坏 | `node -e "JSON.parse(require('fs').readFileSync('.claude/hooks/md/index.json'))"` 验证 |
-| 每次都说超阈值 | 阈值设太低 / 工作区有遗留改动 | 跑 `git status --short` 看当前改动文件数 |
-| PostToolUse 没报警 | 工具名不匹配 / git diff 空 | 确认 `tool_name` 是 `Edit`/`Write`/`MultiEdit` |
+| 小功能没被提醒 | 超阈值（静默是正常）或工具名不匹配 / git diff 空 | 确认 `tool_name` 是 `Edit`/`Write`/`MultiEdit`，且改动确实 ≤3 文件×50 行 |
+| PostToolUse 该静默却报警 | 阈值设太低 / 工作区有遗留改动 | 跑 `git status --short` 看当前改动文件数 |
 | hook 报错 | 脚本无执行权限 | `chmod +x .claude/hooks/*.sh` |
 | 注入的是整段 JSON 而非纯文本 | hook 运行子进程 stdout 被 profile/环境污染，首字符非 `{` | 已改纯文本输出绕开该路径；若复现，检查 Git Bash profile 是否输出内容 |
 

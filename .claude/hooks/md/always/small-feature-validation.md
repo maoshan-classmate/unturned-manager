@@ -40,13 +40,12 @@
 - 错误做法：只跑 typecheck 就完事
 - 正确做法：跑 typecheck + 单测 + e2e，确认控制台输出正常
 
-## 自动检测机制（给人看，不注入）
+## 自动检测机制（不注入）
 
-`PostToolUse` hook（`.claude/hooks/small-feature-detect.sh`）会在每次 Edit/Write/MultiEdit 之后跑 `git diff HEAD --numstat`，自动判定累计改动是否超阈值。超阈值时输出 `systemMessage` 警告。
+`PostToolUse` hook（`.claude/hooks/small-feature-detect.sh`）会在每次 Edit/Write/MultiEdit 之后跑 `git diff HEAD --numstat`，自动判定累计改动是否属于小功能。属于小功能时通过 stderr + exit 2 提醒 Claude 走最小验证；超阈值时静默。
 
 <!-- INJECT -->
 做功能修复/开发时做**最小验证**——只跑必需的步骤，跑完确认无误即完成。无法判定是否小功能时询问用户。
-
 小功能量化标准（git diff HEAD 累计）：
 - 代码文件数 ≤ {max_files} 且 单文件改动 ≤ {max_lines_per_file} 行 → 最小验证（跑 typecheck 通过即可）
 - 任一超出 → 完整验证（typecheck + 单测 + e2e）

@@ -22,8 +22,6 @@ node -e "
   const index = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
   const mdDir = process.argv[2];
   const threshold = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
-
-  // 占位符替换 map——改 threshold.json 后注入文案自动同步，不用改脚本
   const replacements = {
     '{max_files}': String(threshold.max_files),
     '{max_lines_per_file}': String(threshold.max_lines_per_file),
@@ -33,7 +31,6 @@ node -e "
     .reduce((acc, [k, v]) => acc.split(k).join(v), s);
 
   // 提取每个规则的 INJECT 标签段（标签外内容不注入）
-  // 用 indexOf 定位字面标签——比正则稳，文档里若再出现标签文本不会误匹配
   const startMarker = '<!-- INJECT -->';
   const endMarker = '<!-- /INJECT -->';
   const parts = [];
@@ -47,7 +44,7 @@ node -e "
     parts.push('【' + r.title + '】\n\n' + replaceAll(inject));
   }
 
-  // pua 风格：<EXTREMELY_IMPORTANT> 强调标签 + 极简引导框架
+  // <EXTREMELY_IMPORTANT> 强调标签 + 极简引导框架
   const intro = '以下铁律必须严格遵守：';
   const ctx = '<EXTREMELY_IMPORTANT>\n' + intro + '\n\n' + parts.join('\n\n') + '\n</EXTREMELY_IMPORTANT>';
   // 直接输出纯文本——UserPromptSubmit 官方支持纯文本 stdout 注入上下文
