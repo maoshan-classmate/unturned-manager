@@ -120,10 +120,10 @@ EOF
 ### 测 UserPromptSubmit（铁律注入）
 
 ```bash
-echo '{"prompt":"test"}' | bash .claude/hooks/iron-rules-inject.sh | jq
+echo '{"prompt":"test"}' | bash .claude/hooks/iron-rules-inject.sh
 ```
 
-期望看到 JSON 里有 `hookSpecificOutput.additionalContext` 字段，含所有 always 规则的内容。
+期望看到**纯文本**铁律内容直接输出（引导框架 + 两条铁律正文）。输出**不以 `{` 开头**——UserPromptSubmit 支持纯文本 stdout 注入，直接输出文本最稳，绕开 JSON 解析路径。
 
 ### 测 PostToolUse（小功能判定）
 
@@ -165,7 +165,7 @@ echo '{"tool_name":"Read"}' | bash .claude/hooks/small-feature-detect.sh
 | 每次都说超阈值 | 阈值设太低 / 工作区有遗留改动 | 跑 `git status --short` 看当前改动文件数 |
 | PostToolUse 没报警 | 工具名不匹配 / git diff 空 | 确认 `tool_name` 是 `Edit`/`Write`/`MultiEdit` |
 | hook 报错 | 脚本无执行权限 | `chmod +x .claude/hooks/*.sh` |
-| JSON 输出被截断 | `.md` 文件有未转义字符 | 用 `JSON.stringify` 拼装（脚本已经这样做，不会有这问题） |
+| 注入的是整段 JSON 而非纯文本 | hook 运行子进程 stdout 被 profile/环境污染，首字符非 `{` | 已改纯文本输出绕开该路径；若复现，检查 Git Bash profile 是否输出内容 |
 
 ---
 
