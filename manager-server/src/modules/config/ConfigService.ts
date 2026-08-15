@@ -425,7 +425,8 @@ export class ConfigService implements IConfigService {
       // 区块收 `}`
       if (trimmed === "}") {
         flushSection();
-        hasCurrent = false;
+        // 保持 hasCurrent=true：区块闭合后 root 层紧跟的散落字段（如 `VAC_Secure false`）
+        // 继续归入刚结束的区块，由下一次 flush 一起 dedup 落盘；重复 flush 幂等。
         pendingKey = null;
         pendingSectionKey = null;
         pendingSectionKeyComment = null;
@@ -475,7 +476,7 @@ export class ConfigService implements IConfigService {
   /**
    * 序列化 Config.txt 为 U3-SDK 原生格式（真源 DatWriter.cs）：
    * - `Version 1` 头（首次写时；round-trip 时保留原文件版本号）
-   * - 区块 `Section {` 大括号 + Tab 缩进
+   * - 区块 `Section\n{` 名字独占一行 + 大括号另起一行（U3-SDK DatTokenizer/DatWriter 原生格式）+ Tab 缩进
    * - 裸 key（value null）= 字段名独占一行；覆盖 key = `key value`（空格分隔）
    * - entry.comment（// 注释文本）写回 `// > ...` 前缀
    * - rawBlocks（未知嵌套结构）原样还原
@@ -500,7 +501,10 @@ export class ConfigService implements IConfigService {
         continue;
       }
 
-      lines.push(section.name + " {");
+      // 区块头 = 名字独占一行 + `{` 另起一行（U3-SDK DatTokenizer/DatWriter 原生格式）。
+      // `Section {` 同行会让 DatTokenizer 把 `{` 当字段值、区块不打开。
+      lines.push(section.name);
+      lines.push("{");
       // entries：面板认识的字段
       for (const entry of section.entries) {
         if (entry.comment) {

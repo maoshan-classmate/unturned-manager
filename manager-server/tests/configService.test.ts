@@ -217,6 +217,60 @@ describe("ConfigService — 5 种格式往返", () => {
     expect(loot[0]?.value).toBe("1");
   });
 
+  it("Config.txt: 区块外散落覆盖字段归位到刚结束的区块，round-trip 不丢覆盖值", async () => {
+    // U3DS 双份结构：区块内是默认裸 key，区块闭合后 root 层紧跟同一批字段的覆盖值。
+    // 面板必须把散落覆盖值归位到对应区块并 dedup，否则保存后覆盖值丢失 → 配置变默认。
+    const input =
+      "Version 1\n" +
+      "Server\n" +
+      "{\n" +
+      "\tVAC_Secure\n" +
+      "\tMax_Ping_Milliseconds\n" +
+      "}\n" +
+      "VAC_Secure false\n" +
+      "Max_Ping_Milliseconds\n" +
+      "\n" +
+      "Items\n" +
+      "{\n" +
+      "\tSpawn_Chance\n" +
+      "}\n" +
+      "Spawn_Chance 0.8\n";
+    await fs.writeFile(path.join(serverDir, "Config.txt"), input);
+
+    const parsed = await svc.readConfigTxt(serverId);
+    // 覆盖值归位到区块：VAC_Secure 取散落层的 false（区块内裸 key 被覆盖）
+    const serverEntries = parsed.sections.Server?.entries ?? [];
+    const vac = serverEntries.filter((e) => e.key === "VAC_Secure");
+    expect(vac.length).toBe(1);
+    expect(vac[0]?.value).toBe("false");
+    // Items 同样归位覆盖值
+    const itemEntries = parsed.sections.Items?.entries ?? [];
+    const spawn = itemEntries.filter((e) => e.key === "Spawn_Chance");
+    expect(spawn.length).toBe(1);
+    expect(spawn[0]?.value).toBe("0.8");
+
+    // round-trip 写回：区块头 = 名字独占一行 + `{` 下一行（U3-SDK DatTokenizer 兼容格式）
+    await svc.writeConfigTxt(serverId, parsed);
+    const written = await fs.readFile(
+      path.join(serverDir, "Config.txt"),
+      "utf-8",
+    );
+    expect(written).toContain("Server\n{\n\tVAC_Secure false");
+    expect(written).toContain("Items\n{\n\tSpawn_Chance 0.8");
+    // 不残留 root 散落字段（区块外不再有带值的散落行，如裸的 `VAC_Secure false`）
+    const scatteredValues = written
+      .split("\n")
+      .filter(
+        (l) =>
+          l.trim() &&
+          !l.startsWith("\t") &&
+          !l.startsWith("//") &&
+          /\s+\S/.test(l.trim()) &&
+          l.trim() !== "Version 1",
+      );
+    expect(scatteredValues).toEqual([]);
+  });
+
   it("Workshop.json: 只写 File_IDs，其他字段不动", async () => {
     const input = JSON.stringify({
       File_IDs: ["1", "2"],
