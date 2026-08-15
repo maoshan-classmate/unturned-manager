@@ -2,8 +2,8 @@
  * LdmPluginCommandsService 测试（8 用例）。
  * 覆盖：
  *   1. 服务实例 STOPPED → server-not-running
- *   2. PTY 写命令格式 `/rocket load <name>\r`
- *   3. PTY 写命令格式 `/rocket unload <name>\r`
+ *   2. PTY 写命令格式 `/rocket load <name>\n`
+ *   3. PTY 写命令格式 `/rocket unload <name>\n`
  *   4. 成功：收到 "Loading Uconomy" → outcome=success
  *   5. 失败：收到 "Unable to load plugin" → outcome=failure
  *   6. 超时：10s 内无响应 → outcome=failure（timeout 路径）
@@ -76,23 +76,23 @@ describe('LdmPluginCommandsService', () => {
     });
   });
 
-  it('2. PTY 写命令格式 `/rocket load <name>\\r`', async () => {
+  it('2. PTY 写命令格式 `/rocket load <name>\\n`', async () => {
     const { pty, serverManager, runtimeStatusReader, written } = mockDeps({
       lines: ['Loading Uconomy'],
     });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
     const result = await svc.loadPlugin('S1' as never, 'Uconomy');
-    expect(written).toContain('/rocket load Uconomy\r');
+    expect(written).toContain('/rocket load Uconomy\n');
     expect(result.outcome).toBe('success');
   });
 
-  it('3. PTY 写命令格式 `/rocket unload <name>\\r`', async () => {
+  it('3. PTY 写命令格式 `/rocket unload <name>\\n`', async () => {
     const { pty, serverManager, runtimeStatusReader, written } = mockDeps({
       lines: ['Unloading Uconomy'],
     });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
     const result = await svc.unloadPlugin('S1' as never, 'Uconomy');
-    expect(written).toContain('/rocket unload Uconomy\r');
+    expect(written).toContain('/rocket unload Uconomy\n');
     expect(result.outcome).toBe('success');
   });
 

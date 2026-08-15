@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +13,12 @@ vi.mock("../../api/items.js", () => ({
   updateItem: vi.fn(),
   deleteItem: vi.fn(),
 }));
+
+// 历史教训（2026-08-15 backlog 修复）：mock 全局共享，每个 test 之前必须清空，
+// 否则前一个测试的 mock.calls 会污染下一个测试的断言（特别影响「不调 createItem」类断言）。
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const ITEMS: ItemRecord[] = [
   { id: 1, name: "手枪", source: "builtin" },

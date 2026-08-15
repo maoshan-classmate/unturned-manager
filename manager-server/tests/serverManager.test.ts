@@ -210,7 +210,7 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(pty.write).toHaveBeenCalledWith(
       "S1" as ServerId,
       // BUG-1：+InternetServer 必须在末位（U3-SDK tryGetServer 取到行末）
-      "./ServerHelper.sh -ThreadedConsole +InternetServer/S1\r",
+      "./ServerHelper.sh -ThreadedConsole +InternetServer/S1\n",
     );
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.RUNNING);
     const states = bcast.events
@@ -260,10 +260,10 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STOPPED);
     // ★ ADR-0004 Phase 6：Save + Shutdown 改为 PTY 拼字符串写入（owner-trust 模型）
     const writes = pty.writeCalls.map(([, d]) => d);
-    expect(writes).toContain("Save\r");
-    expect(writes).toContain('Shutdown 30 "unit-test"\r');
+    expect(writes).toContain("Save\n");
+    expect(writes).toContain('Shutdown 30 "unit-test"\n');
     expect(writes).toContain(""); // ctrl+c
-    expect(writes).toContain("exit\r"); // 关永驻 bash
+    expect(writes).toContain("exit\n"); // 关永驻 bash
     expect(pty.waitExit).toHaveBeenCalledWith("S1" as ServerId, 30_000);
     expect(pty.forceKill).not.toHaveBeenCalled();
   });
@@ -532,7 +532,7 @@ describe("ServerManager — PTY 崩溃检测 + 5s 硬重启（ADR-0004 Phase 2�
     expect(pty.write).toHaveBeenLastCalledWith(
       "T5" as ServerId,
       // BUG-1：+InternetServer 必须在末位
-      "./ServerHelper.sh -ThreadedConsole +InternetServer/T5\r",
+      "./ServerHelper.sh -ThreadedConsole +InternetServer/T5\n",
     );
     expect(mgr.getState("T5" as ServerId)).toBe(ServerState.RUNNING);
   });

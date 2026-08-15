@@ -326,7 +326,7 @@ export function LoadoutItemDialog({
           </button>
           <button
             type="button"
-            onClick={() => onSave(tags)}
+            onClick={() => onSave(Array.from(new Set(tags)))}
             className="flex items-center gap-1 px-3 h-7 rounded text-xs text-white bg-emerald-500 hover:bg-emerald-600"
           >
             <Plus size={12} />
