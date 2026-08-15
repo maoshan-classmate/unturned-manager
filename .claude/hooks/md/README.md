@@ -1,6 +1,6 @@
 # 铁律与小功能判定配置教程
 
-> 本目录是 `UserPromptSubmit` 和 `PostToolUse` 两个 hook 的数据层。所有可调参数都在这里，**改配置不需要动 `.claude/hooks/*.sh` 脚本**。
+> 本目录是 `UserPromptSubmit` 和 `Stop` 两个 hook 的数据层。所有可调参数都在这里，**改配置不需要动 `.claude/hooks/*.sh` 脚本**。
 
 ---
 
@@ -10,7 +10,7 @@
 md/
 ├── README.md                       ← 你正在读这个
 ├── index.json                      ← 铁律清单（每轮 UserPromptSubmit 注入哪些）
-├── threshold.json                  ← 小功能判定阈值（PostToolUse 用 git diff 累计检测）
+├── threshold.json                  ← 小功能判定阈值（Stop 用 git diff 累计检测）
 └── always/
     ├── no-code-name-jargon.md      ← 铁律 1：禁止代码名+中文描述
     └── small-feature-validation.md ← 铁律 2：小功能走最小验证（量化版）
@@ -33,7 +33,7 @@ md/
 }
 ```
 
-改完即时生效——下次 `PostToolUse` 触发就用新阈值。
+改完即时生效——下次 `Stop`（本轮工作收尾）触发就用新阈值。
 
 ### ② 加新铁律（每轮对话都注入的规则）
 
@@ -114,14 +114,13 @@ EOF
 - **临时**：在 `index.json` 里把那条规则的整段注释掉（JSON 不支持注释，可以临时删掉那一项，或加 `"_disabled": true` 字段等后续支持）
 - **永久**：从 `always/` 删掉对应 `.md` + 从 `index.json` 的 `always` 数组里删掉对应项
 
-### ⑥ 临时关闭 PostToolUse 报警
+### ⑥ 临时关闭小功能判定报警
 
-直接注释掉 `.claude/settings.local.json` 里 `PostToolUse` 那段：
+直接注释掉 `.claude/settings.local.json` 里 `Stop` 那段：
 
 ```jsonc
-"PostToolUse": [
+"Stop": [
   // {
-  //   "matcher": "Edit|Write|MultiEdit",
   //   "hooks": [{ "type": "command", "command": ".../small-feature-detect.sh" }]
   // }
 ]
@@ -139,44 +138,44 @@ echo '{"prompt":"test"}' | bash .claude/hooks/iron-rules-inject.sh
 
 期望看到 **`<EXTREMELY_IMPORTANT>` 包裹的纯文本**铁律：精简引导框架 + 各铁律的 INJECT 标签段（含反例/正例、动态阈值数值）。输出**不以 `{` 开头**——UserPromptSubmit 支持纯文本 stdout 注入，直接输出文本最稳，绕开 JSON 解析路径。
 
-### 测 PostToolUse（小功能判定）
+### 测 Stop（小功能判定）
+
+> Stop hook 在**本轮工作收尾**时触发一次；脚本从 stdin 读事件 JSON，属小功能时经 `hookSpecificOutput.additionalContext` 提醒（非阻塞反馈，不阻止收尾，界面显示 "Stop hook feedback"）。手动测试时模拟 Stop 事件 JSON 即可。
 
 **无改动场景**（应该 silent）：
 
 ```bash
-echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh; echo "[EXIT=$?]"
+echo '{"hook_event_name":"Stop","prompt_id":"test-1"}' | bash .claude/hooks/small-feature-detect.sh
 ```
 
-期望：无输出（hook 看到工作区干净，silent），`exit=0`。
+期望：无输出（工作区无代码改动，silent），`exit=0`。
 
 **超阈值场景**（应该 silent）——超阈值时静默，让 Claude 自行按铁律走完整验证：
 
 ```bash
-# 临时建 4 个 .ts 文件
-for n in a b c d; do echo "// test" > /tmp/test-$n.ts; done
-# 模拟改动（写文件到 git 仓库内，让 git diff HEAD 能看到）
-# 然后触发 hook
-echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh
+# 临时在 git 仓库内改 4 个 .ts 文件（让 git diff HEAD 看到超阈值）
+for n in a b c d; do echo "// test" > a$n.ts; done
+echo '{"hook_event_name":"Stop","prompt_id":"test-1"}' | bash .claude/hooks/small-feature-detect.sh
 ```
 
-期望：无输出（超阈值时静默，不打断），`exit=0`。
+期望：无输出（超阈值时静默），`exit=0`。
 
 **小功能场景**（应该提醒最小验证）：
 
 ```bash
 # 临时改 1 个 .ts 文件 +1 行
-echo '{"tool_name":"Edit"}' | bash .claude/hooks/small-feature-detect.sh
+echo '{"hook_event_name":"Stop","prompt_id":"test-1"}' | bash .claude/hooks/small-feature-detect.sh
 ```
 
-期望：stderr 输出 `✅ 当前累计改动属于小功能（...）...走最小验证即可`，`exit=2`（exit 2 把提醒喂给 Claude，不阻断工具执行）。
+期望：stdout 输出 JSON `{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"本轮改动属小功能（...）...跑 typecheck 通过即可"}}`，`exit=0`。
 
-**Read 工具跳过**：
+**同轮去重**（同一 prompt_id 第二次触发，应该 silent）：
 
 ```bash
-echo '{"tool_name":"Read"}' | bash .claude/hooks/small-feature-detect.sh
+echo '{"hook_event_name":"Stop","prompt_id":"test-1"}' | bash .claude/hooks/small-feature-detect.sh
 ```
 
-期望：silent（不追踪非编辑类工具）。
+期望：无输出（同轮已提醒过，去重生效）。
 
 ---
 
@@ -185,8 +184,8 @@ echo '{"tool_name":"Read"}' | bash .claude/hooks/small-feature-detect.sh
 | 现象 | 原因 | 修复 |
 |---|---|---|
 | 铁律没注入 | `index.json` 路径错或格式坏 | `node -e "JSON.parse(require('fs').readFileSync('.claude/hooks/md/index.json'))"` 验证 |
-| 小功能没被提醒 | 超阈值（静默是正常）或工具名不匹配 / git diff 空 | 确认 `tool_name` 是 `Edit`/`Write`/`MultiEdit`，且改动确实 ≤3 文件×50 行 |
-| PostToolUse 该静默却报警 | 阈值设太低 / 工作区有遗留改动 | 跑 `git status --short` 看当前改动文件数 |
+| 小功能没被提醒 | 超阈值（静默是正常）或同轮已提醒过 / git diff 空 | 确认当前累计改动 ≤3 文件×50 行，且本轮 `prompt_id` 未被提醒过（state 文件） |
+| Stop 该静默却提醒 | 阈值设太低 / 工作区有遗留改动 | 跑 `git status --short` 看当前改动文件数 |
 | hook 报错 | 脚本无执行权限 | `chmod +x .claude/hooks/*.sh` |
 | 注入的是整段 JSON 而非纯文本 | hook 运行子进程 stdout 被 profile/环境污染，首字符非 `{` | 已改纯文本输出绕开该路径；若复现，检查 Git Bash profile 是否输出内容 |
 
