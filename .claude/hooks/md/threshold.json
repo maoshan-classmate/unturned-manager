@@ -1,0 +1,23 @@
+{
+  "$schema": "small-feature-threshold-v1",
+  "version": "1.0",
+  "max_files": 3,
+  "max_lines_per_file": 50,
+  "code_extensions": [
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".sh",
+    ".bash",
+    ".py"
+  ],
+  "exclude_paths": [
+    "docs/",
+    "claudedocs/",
+    ".claude/rules/",
+    ".research/"
+  ]
+}

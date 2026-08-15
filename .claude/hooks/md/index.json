@@ -1,0 +1,18 @@
+{
+  "$schema": "iron-rules-v1",
+  "version": "1.0",
+  "always": [
+    {
+      "id": "no-code-name-jargon",
+      "title": "禁止代码名+中文描述",
+      "file": "always/no-code-name-jargon.md",
+      "tags": ["output-style", "communication"]
+    },
+    {
+      "id": "small-feature-validation",
+      "title": "小功能走最小验证（量化版）",
+      "file": "always/small-feature-validation.md",
+      "tags": ["validation", "testing"]
+    }
+  ]
+}
