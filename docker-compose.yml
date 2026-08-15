@@ -44,10 +44,10 @@ services:
       STEAMCMD_DIR: ${STEAMCMD_DIR:-/opt/steamcmd}
     ports:
       # 面板 HTTP
-      - "3001:3001"
+      - "3020:3001"
       # U3DS 默认端口（实际以各实例 Commands.dat 的 Port 为准；多实例再追加端口映射）
-      - "27015:27015/udp"
-      - "27016:27016/udp"
+      - "28015:27015/udp"
+      - "28016:27016/udp"
       # OpenMod Valve Source RCON
       - "25545:25545"
     volumes:

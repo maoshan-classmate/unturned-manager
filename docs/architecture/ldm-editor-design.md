@@ -38,7 +38,7 @@
 
 1. 后端补 3 个 GET 读端点（rocket-config / rocket-unturned-config / permissions-config）
 2. 修 2 个旧账（P0 已修待补 + P2 backlog）：
-   - P0：`：serializePermissionsConfig` 未知键保留（Phase 2 审计遗留）
+   - P0：`serializePermissionsConfig` 未知键保留（Phase 2 审计遗留）
    - P2：writer 内 Zod 校验（绕过路由可写非法字段）
 3. 前端做 3 个编辑器（Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml）
 4. 前端做全局「应用变更」按钮 + 流程

@@ -45,7 +45,7 @@ node -e "
   }
 
   // <EXTREMELY_IMPORTANT> 强调标签 + 极简引导框架
-  const intro = '以下铁律必须严格遵守：';
+  const intro = '在输出内容时，检查是否严格遵守以下铁律：';
   const ctx = '<EXTREMELY_IMPORTANT>\n' + intro + '\n\n' + parts.join('\n\n') + '\n</EXTREMELY_IMPORTANT>';
   // 直接输出纯文本——UserPromptSubmit 官方支持纯文本 stdout 注入上下文
   process.stdout.write(ctx);
