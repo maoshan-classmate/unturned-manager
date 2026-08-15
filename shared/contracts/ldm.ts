@@ -111,3 +111,202 @@ export interface ILdmAssemblyVersionReader {
    */
   readVersion(dllPath: string): Promise<string | null>;
 }
+
+// ─── Phase 2 ───────────────────────────────────────────
+
+/**
+ * XML 节点类型——保留原始字节偏移（写回时定位）。
+ * RocketConfigXmlParser 内部数据结构；通用 XML 解析用。
+ */
+export type XmlNodeType = "element" | "text" | "comment" | "cdata";
+
+/**
+ * XML 节点（自写解析器保留注释 / CDATA / 属性顺序 / 嵌套 / 未知键）。
+ * RocketConfigXmlParser.parseGeneric 返回此类型。
+ *
+ * @field type 节点类型
+ * @field name 元素名（仅 element）
+ * @field attrs 属性集合（仅 element；属性顺序保留在原始 XML 中）
+ * @field children 子节点数组（仅 element）
+ * @field value 文本值（text / cdata）
+ * @field rawStart 原始字节偏移起点（parseGeneric 时填充，serializeGeneric 时使用）
+ * @field rawEnd 原始字节偏移终点（parseGeneric 时填充，serializeGeneric 时使用）
+ */
+export interface XmlNode {
+  type: XmlNodeType;
+  name?: string;
+  attrs?: Record<string, string>;
+  children?: XmlNode[];
+  value?: string;
+  rawStart?: number;
+  rawEnd?: number;
+}
+
+/**
+ * Rocket.config.xml 结构化字段——LDM 仓 RocketSettings.cs 16 字段真源。
+ * UI 编辑器 / 序列化往返用。
+ */
+export interface RocketConfigFields {
+  languageCode: string;
+  maxFrames: number;
+  automaticShutdownEnabled: boolean;
+  automaticShutdownInterval: number;
+  webPermissionsEnabled: boolean;
+  webPermissionsUrl: string;
+  webPermissionsInterval: number;
+  webConfigurationsEnabled: boolean;
+  webConfigurationsUrl: string;
+}
+
+/**
+ * Rocket.Unturned.config.xml 结构化字段——LDM 仓 UnturnedSettings.cs 9 字段真源。
+ */
+export interface RocketUnturnedConfigFields {
+  automaticSaveEnabled: boolean;
+  automaticSaveInterval: number;
+  characterNameValidation: boolean;
+  characterNameValidationRule: string;
+  logSuspiciousPlayerMovement: boolean;
+  enableItemBlacklist: boolean;
+  enableItemSpawnLimit: boolean;
+  maxSpawnAmount: number;
+  enableVehicleBlacklist: boolean;
+}
+
+/**
+ * Permissions.config.xml 树形——LDM RocketPermissions XML 结构。
+ */
+export interface PermissionsGroup {
+  id: string;
+  displayName: string;
+  color: string;
+  members: string[];
+  parentGroup?: string;
+  priority: number;
+  permissions: string[];
+}
+
+export interface PermissionsConfigFields {
+  defaultGroup: string;
+  groups: PermissionsGroup[];
+}
+
+/**
+ * RocketConfigXmlParser——自写 XML 解析器（保留注释/属性顺序/CDATA/嵌套/未知键，零依赖）。
+ * Phase 2a 核心模块：parseRocketConfig / parseRocketUnturnedConfig / parsePermissionsConfig
+ * 各自从 XML 字符串提取结构化字段；序列化用 **字段合并** 策略——不改原文未在 fields 中的部分。
+ */
+export interface IRocketConfigXmlParser {
+  /**
+   * Rocket.config.xml 字符串 → 结构化字段 + 原文（高级视图用）
+   * @param xml 原始 XML 字符串（首次启动 U3DS 自动生成）
+   * @returns 16 字段结构化 + 原文（不变）
+   */
+  parseRocketConfig(xml: string): { fields: RocketConfigFields; raw: string };
+
+  /**
+   * Rocket.Unturned.config.xml 字符串 → 9 字段结构化 + 原文
+   * @param xml 原始 XML 字符串
+   */
+  parseRocketUnturnedConfig(xml: string): { fields: RocketUnturnedConfigFields; raw: string };
+
+  /**
+   * Permissions.config.xml 字符串 → 树形结构 + 原文
+   * @param xml 原始 XML 字符串
+   */
+  parsePermissionsConfig(xml: string): { fields: PermissionsConfigFields; raw: string };
+
+  /**
+   * 结构化字段 → XML 字符串——**字段合并**（不整体重写）。
+   * 在原 XML 树中查找对应子元素/属性更新值；fields 中未提及的元素原样保留（注释/CDATA/未知键）。
+   *
+   * @param fields 16 字段结构化（待写入）
+   * @param originalXml 原 XML 字符串（parseRocketConfig 返回的 raw 字段）
+   * @returns 新 XML 字符串——保证 round-trip = 等价（结构化字段值正确 + 未提及节点不变）
+   */
+  serializeRocketConfig(fields: RocketConfigFields, originalXml: string): string;
+
+  /** 同 serializeRocketConfig 语义——9 字段结构化 + 原 XML */
+  serializeRocketUnturnedConfig(
+    fields: RocketUnturnedConfigFields,
+    originalXml: string,
+  ): string;
+
+  /** 同上——树形结构 + 原 XML */
+  serializePermissionsConfig(
+    fields: PermissionsConfigFields,
+    originalXml: string,
+  ): string;
+
+  /**
+   * 通用 XML 字符串 → 树（保留注释/CDATA）——插件 Configuration.xml 原文读写用。
+   * @param xml 原始 XML
+   * @returns XmlNode 树（包含 rawStart / rawEnd 字节偏移，serializeGeneric 写回时定位）
+   */
+  parseGeneric(xml: string): XmlNode;
+
+  /**
+   * XmlNode 树 → XML 字符串（保留原始字节偏移处的注释/CDATA/未知元素）。
+   * @param node parseGeneric 返回的树
+   * @returns XML 字符串
+   */
+  serializeGeneric(node: XmlNode): string;
+}
+
+/**
+ * LdmConfigWriter 写入结果——返回备份路径 + 时间戳。
+ */
+export interface LdmConfigWriteResult {
+  success: boolean;
+  backupPath: string;
+  writtenAtIso: string;
+}
+
+/**
+ * LDM 配置写入服务——3 XML + 各 Configuration.xml 原子写 + 备份 + 回滚。
+ * 写配置运行时允许（文件 I/O 不阻断 ServerManager 状态）；
+ * 生效需用户主动触发「应用变更」走 PTY 重启流水线（不自动）。
+ */
+export interface ILdmConfigWriter {
+  /**
+   * 写 Rocket.config.xml（结构化字段 → XML 字符串 → 原子写）
+   * @param serverId 实例标识
+   * @param fields 16 字段结构化
+   * @returns 写入结果（含备份路径）
+   * @throws AppError('ldm-config-corrupted') 原 XML 解析失败
+   * @throws AppError('ldm-config-write-failed') atomic write 失败（已自动回滚）
+   */
+  writeRocketConfig(
+    serverId: ServerId,
+    fields: RocketConfigFields,
+  ): Promise<LdmConfigWriteResult>;
+
+  /** 写 Rocket.Unturned.config.xml */
+  writeRocketUnturnedConfig(
+    serverId: ServerId,
+    fields: RocketUnturnedConfigFields,
+  ): Promise<LdmConfigWriteResult>;
+
+  /** 写 Permissions.config.xml */
+  writePermissionsConfig(
+    serverId: ServerId,
+    fields: PermissionsConfigFields,
+  ): Promise<LdmConfigWriteResult>;
+
+  /**
+   * 写单个插件 Configuration.xml（通用 XML 原文）。
+   * 不强解 schema——面板用 Monaco XML 编辑器直接传字符串。
+   *
+   * @param serverId 实例标识
+   * @param pluginName 插件名（Linux 大小写敏感；用作子目录名）
+   * @param rawXml 完整 XML 字符串（parseGeneric 校验合法性）
+   * @returns 写入结果
+   * @throws AppError('plugin-name-invalid') pluginName 含非法字符
+   * @throws AppError('plugin-config-invalid') XML 解析失败
+   */
+  writePluginConfig(
+    serverId: ServerId,
+    pluginName: string,
+    rawXml: string,
+  ): Promise<LdmConfigWriteResult>;
+}

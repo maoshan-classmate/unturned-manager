@@ -86,3 +86,72 @@ export const TestPatRequestSchema = z.object({
   pat: z.string().optional().default(''),
 });
 export type TestPatRequest = z.infer<typeof TestPatRequestSchema>;
+
+// ─── LDM Phase 2a 契约 ─────────────────────────────────
+
+/**
+ * @phase2a Rocket.config.xml 16 字段结构化写请求
+ * 字段真源：LDM 仓 Rocket.Core/Serialization/RocketSettings.cs
+ * 范围：RCON 节点不暴露（UI 隐藏，ADR-0004 Phase 6 已删 RCON 通道）
+ */
+export const RocketConfigWriteSchema = z.object({
+  languageCode: z.string().min(1).default('en'),
+  maxFrames: z.number().int().min(60).default(60),
+  automaticShutdownEnabled: z.boolean().default(false),
+  automaticShutdownInterval: z.number().int().min(60).default(86400),
+  webPermissionsEnabled: z.boolean().default(false),
+  webPermissionsUrl: z.string().default(''),
+  webPermissionsInterval: z.number().int().min(1).default(180),
+  webConfigurationsEnabled: z.boolean().default(false),
+  webConfigurationsUrl: z.string().default(''),
+});
+export type RocketConfigWriteRequest = z.infer<typeof RocketConfigWriteSchema>;
+
+/**
+ * @phase2a Rocket.Unturned.config.xml 9 字段结构化写请求
+ * 字段真源：LDM 仓 Rocket.Unturned/Serialisation/UnturnedSettings.cs
+ */
+export const RocketUnturnedConfigWriteSchema = z.object({
+  automaticSaveEnabled: z.boolean().default(true),
+  automaticSaveInterval: z.number().int().min(60).default(1800),
+  characterNameValidation: z.boolean().default(false),
+  characterNameValidationRule: z.string().default('([\\x00-\\AA]|[\\w_\\ \\.\\+\\-])+'),
+  logSuspiciousPlayerMovement: z.boolean().default(true),
+  enableItemBlacklist: z.boolean().default(false),
+  enableItemSpawnLimit: z.boolean().default(false),
+  maxSpawnAmount: z.number().int().min(1).default(10),
+  enableVehicleBlacklist: z.boolean().default(false),
+});
+export type RocketUnturnedConfigWriteRequest = z.infer<typeof RocketUnturnedConfigWriteSchema>;
+
+/**
+ * @phase2a Permissions.config.xml 树形写请求
+ * Color 枚举（black/blue/clear/cyan/gray/green/grey/magenta/red/white/yellow/rocket）+ hex #RRGGBB
+ * Members SteamID64 17 位数字
+ */
+const PERMISSIONS_COLOR_RE = /^(black|blue|clear|cyan|gray|green|grey|magenta|red|white|yellow|rocket|#[0-9A-Fa-f]{6})$/;
+const STEAMID64_RE = /^7656119\d{10}$/;
+
+export const PermissionsConfigWriteSchema = z.object({
+  defaultGroup: z.string().min(1).default('default'),
+  groups: z.array(
+    z.object({
+      id: z.string().regex(/^[A-Za-z0-9._-]+$/, '组 ID 只能含字母数字 . _ -'),
+      displayName: z.string().min(1),
+      color: z.string().regex(PERMISSIONS_COLOR_RE, '颜色必须是 LDM Color 枚举或 #RRGGBB').default('white'),
+      members: z.array(z.string().regex(STEAMID64_RE, '成员必须是 17 位 SteamID64')).default([]),
+      parentGroup: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
+      priority: z.number().int().default(100),
+      permissions: z.array(z.string()).default([]),
+    }),
+  ),
+});
+export type PermissionsConfigWriteRequest = z.infer<typeof PermissionsConfigWriteSchema>;
+
+/**
+ * @phase2a 插件 Configuration.xml 原文写请求（通用 XML，不强解 schema）
+ */
+export const PluginConfigWriteSchema = z.object({
+  raw: z.string().min(1),
+});
+export type PluginConfigWriteRequest = z.infer<typeof PluginConfigWriteSchema>;

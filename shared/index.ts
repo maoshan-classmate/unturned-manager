@@ -68,6 +68,16 @@ export type {
   ILdmPluginSourceService,
   ILdmAssemblyVersionReader,
   LdmRuntimeStatusReader,
+  // Phase 2a 新增
+  IRocketConfigXmlParser,
+  ILdmConfigWriter,
+  RocketConfigFields,
+  RocketUnturnedConfigFields,
+  PermissionsConfigFields,
+  PermissionsGroup,
+  XmlNode,
+  XmlNodeType,
+  LdmConfigWriteResult,
 } from "./contracts/ldm.js";
 export type {
   IItemService,
