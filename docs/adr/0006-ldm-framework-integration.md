@@ -127,7 +127,7 @@ POST   /api/servers/:id/ldm/apply             → ILdmApplyService.applyChanges�
 GET    /api/ldm/community-plugins             → ILdmPluginSourceService（LDM-Community 列表，本地缓存）
 POST   /api/ldm/community-plugins/test-pat    → ILdmPluginSourceService（PAT 测连通性，Phase 1）
 GET    /api/servers/:id/ldm/status            → ILdmDiscoveryService.getLdmStatus（Phase 3）
-GET    /api/ldm/community-plugins/:slug       → ILdmPluginSourceService.getCommunityPlugin（Phase 3）
+GET    /api/ldm/community-plugins/:owner/:repo → ILdmPluginSourceService.getCommunityPlugin（Phase 3；`:slug` 不匹配 `/`，改两段参数）
 POST   /api/servers/:id/ldm/reload-plugin     → LdmPluginCommandsService.reloadPlugin（Phase 4，二次确认）
 GET    /api/servers/:id/ldm/plugins/search    → LdmDiscoveryService.searchPlugins（Phase 4）
 POST   /api/servers/:id/files                 → FilesService 复用（.dll 上传）
