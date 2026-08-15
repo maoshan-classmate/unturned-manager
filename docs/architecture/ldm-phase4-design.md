@@ -1,8 +1,17 @@
 # LDM Phase 4 高级能力 — 实施契约层
 
 > **承接**：`docs/architecture/ldm-integration-design.md` §11.1 B4 + F4 + §12.5 Phase 4 简略规格
-> **状态**：2026-08-15 设计稿；Phase 4 启动前评审
+> **状态**：2026-08-15 已实施（commit `e6f12b4` + `15e233a` 错误码语义修正）
 > **真源**：LDM 仓 `SmartlyDressedGames/Legally-Distinct-Missile` `Rocket.Unturned/Commands/CommandRocket.cs`（`/rocket reload <plugin>` 行为）
+>
+> **实施修订（2026-08-15 审计后）**：
+> - **错误码语义**：选项 A（代码真抛）——reload/load/unload 时插件不存在/未加载 → 抛 `plugin-not-found`(404)；10s 无响应 → 抛 `pty-timeout`(500)；同 server 并发重入 → 抛 `operation-conflict`(409)
+> - **互斥锁**：排队串行 → 拒绝式（有任务在跑即抛 409，不再排队）
+> - **失败锚点**：`The plugin X is not loaded`（真源 U.cs:98）加入插件不存在检测，避免白等 10s
+> - **成功加速**：waitForMarker 正则补 `Reloading`（真源 U.cs:97 `command_rocket_reload_plugin`）
+> - **搜索空态**：筛选中 0 匹配显示「无匹配插件」（非「当前未安装任何插件」）
+> - **版本匹配**：`startsWith` 前缀（设计 §4.1 原案，非 includes 子串）
+> - **错误码命名**：search 端点统一 `status-invalid`（设计稿原案）
 
 ---
 
@@ -75,9 +84,9 @@ Phase 1-3 后用户已能 **装、卸、配置**，但还有 2 个高频场景�
  * @param pluginName 插件名（Linux 大小写敏感）
  * @returns outcome + LDM stdout 末尾（≤ 256 字）
  *   success = 命令已接受（reload 已触发，非 reload 最终成功——成功零日志）
- *   failure = LDM 拒绝（插件未加载 `Plugin X not loaded` / 不存在 / 加载执行失败）
+ *   failure = LDM 拒绝（加载执行失败 `Failed to load`）
  * @throws AppError('server-not-running') 实例未运行
- * @throws AppError('plugin-not-found') 插件未安装
+ * @throws AppError('plugin-not-found') 插件未安装/未加载
  * @throws AppError('pty-write-failed') PTY 写入失败
  * @throws AppError('pty-timeout') 10s 内未收到 LDM 响应
  * @throws AppError('operation-conflict') 已有同 server 的 plugin command 在跑
@@ -110,11 +119,12 @@ async reloadPlugin(serverId: ServerId, pluginName: string) {
 **单测（≥ 6 用例）**：
 
 1. success 路径：mock `/rocket reload <name>` 写命令，PTY stdout 含「Reloading」→ outcome=success
-2. failure：插件不存在 → stdout 含「Plugin X not found」→ outcome=failure
-3. failure：插件未加载 → stdout 含「Plugin X not loaded」→ outcome=failure
+2. 插件不存在 → stdout 含「Plugin X not found」→ 抛 AppError('plugin-not-found', 404)
+3. 插件未加载 → stdout 含「The plugin X is not loaded」→ 抛 AppError('plugin-not-found', 404)
 4. failure：reload 抛错 → stdout 含「Failed to load」→ outcome=failure
 5. server-not-running → 抛 AppError('server-not-running', 409)
-6. 并发 reload 同 server → 第二个抛 AppError('operation-conflict', 409)（复用现有锁）
+6. 并发 reload 同 server → 第二个抛 AppError('operation-conflict', 409)（拒绝式锁）
+7. 超时 10s 无响应 → 抛 AppError('pty-timeout', 500)
 
 ### 3.2 API 端点
 
@@ -143,10 +153,11 @@ export type ReloadPluginRequest = z.infer<typeof ReloadPluginSchema>;
 **错误码**：
 - `plugin-name-missing` 400
 - `plugin-name-invalid` 400
+- `plugin-not-found` 404（插件不存在/未加载，reload/load/unload 共用）
 - `server-not-running` 409（PTY 未运行）
 - `pty-write-failed` 500
-- `pty-timeout` 500
-- `operation-conflict` 409（同 server 已有 plugin command 在跑）
+- `pty-timeout` 500（10s 无响应）
+- `operation-conflict` 409（同 server 已有 plugin command 在跑，拒绝式锁）
 
 ### 3.3 前端 UX
 
