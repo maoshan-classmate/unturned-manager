@@ -4,13 +4,13 @@
   "always": [
     {
       "id": "no-code-name-jargon",
-      "title": "禁止代码名+中文描述",
+      "title": "Claude Code输出内容规则",
       "file": "always/no-code-name-jargon.md",
       "tags": ["output-style", "communication"]
     },
     {
       "id": "small-feature-validation",
-      "title": "小功能走最小验证（量化版）",
+      "title": "小功能走最小验证",
       "file": "always/small-feature-validation.md",
       "tags": ["validation", "testing"]
     }
