@@ -280,7 +280,8 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
     originalXml: string,
   ): string {
     const tree = this.parseGeneric(originalXml);
-    const root = this.findElement(tree, PERMISSIONS_ROOT);
+    // tree 即根元素（wrapRoot 在单根情况下返回根元素本身）
+    const root = tree;
     if (!root) return originalXml;
     this.setElementText(root, "DefaultGroup", undefined, fields.defaultGroup);
     // Groups 整体替换（groups 列表是动态结构，字段合并复杂；保持简单——直接替换）

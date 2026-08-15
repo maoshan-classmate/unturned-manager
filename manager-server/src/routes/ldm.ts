@@ -1,47 +1,60 @@
 /**
- * LDM Mod 框架 Phase 1 路由——5 端点。
+ * LDM Mod 框架路由——Phase 1 + Phase 2a 端点。
  *
  * 挂载：
- *   - /api/servers/:id/ldm/...   →  createLdmServerRouter（discovery + commands）
+ *   - /api/servers/:id/ldm/...   →  createLdmServerRouter（discovery + commands + config writer）
  *   - /api/ldm/...               →  createLdmCommunityRouter（community + PAT test）
  *
  * 依赖通过 composition-root 注入（DI 容器）。
  */
-import { Router } from 'express';
+import fs from "fs/promises";
+import { Router } from "express";
+import path from "path";
 import {
   PluginCommandRequestSchema,
+  PluginConfigWriteSchema,
+  RocketConfigWriteSchema,
+  PermissionsConfigWriteSchema,
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
+  type ILdmConfigWriter,
   type ServerId,
-} from '@unturned-manager/shared';
-import { authenticateToken } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
-import { asyncHandler } from '../middleware/asyncHandler.js';
-import { AppError } from '../utils/AppError.js';
+} from "@unturned-manager/shared";
+import { authenticateToken } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import { AppError } from "../utils/AppError.js";
+import { resolveServerPath } from "../modules/server/pathResolver.js";
+import { logger } from "../utils/logger.js";
 
 // ─── 服务端路由（per-server）───────────────────────────────
 
 /**
  * 服务端 LDM 路由：/api/servers/:id/ldm ...
  *
- * - GET  /installed     列出已装插件（LdmDiscoveryService）
- * - POST /load-plugin   加载插件（PTY 写 /rocket load）
- * - POST /unload-plugin 卸载插件（PTY 写 /rocket unload）
+ * - GET    /installed                                  列出已装插件
+ * - POST   /load-plugin                                加载插件（PTY 写 /rocket load）
+ * - POST   /unload-plugin                              卸载插件（PTY 写 /rocket unload）
+ * - GET    /plugins/:name/config                       读单个 Configuration.xml
+ * - PUT    /plugins/:name/config                       写 Configuration.xml
+ * - PUT    /rocket-config                              写 Rocket.config.xml（结构化）
+ * - PUT    /permissions-config                         写 Permissions.config.xml（树形）
  */
 export function createLdmServerRouter(deps: {
   discovery: ILdmDiscoveryService;
   commands: ILdmPluginCommandsService;
+  configWriter: ILdmConfigWriter;
 }): Router {
   const router = Router({ mergeParams: true });
   router.use(authenticateToken);
 
   // GET /installed
   router.get(
-    '/installed',
+    "/installed",
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as string;
-      if (!serverId) throw new AppError('server-id-missing', '实例 ID 缺失', 400);
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
       const result = await deps.discovery.listInstalledPlugins(serverId as ServerId);
       res.json({
         data: {
@@ -56,11 +69,11 @@ export function createLdmServerRouter(deps: {
 
   // POST /load-plugin
   router.post(
-    '/load-plugin',
-    validate(PluginCommandRequestSchema, 'body'),
+    "/load-plugin",
+    validate(PluginCommandRequestSchema, "body"),
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as string;
-      if (!serverId) throw new AppError('server-id-missing', '实例 ID 缺失', 400);
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
       const { pluginName } = req.body as { pluginName: string };
       const result = await deps.commands.loadPlugin(serverId as ServerId, pluginName);
       res.json({
@@ -76,11 +89,11 @@ export function createLdmServerRouter(deps: {
 
   // POST /unload-plugin
   router.post(
-    '/unload-plugin',
-    validate(PluginCommandRequestSchema, 'body'),
+    "/unload-plugin",
+    validate(PluginCommandRequestSchema, "body"),
     asyncHandler(async (req, res) => {
       const serverId = req.params.id as string;
-      if (!serverId) throw new AppError('server-id-missing', '实例 ID 缺失', 400);
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
       const { pluginName } = req.body as { pluginName: string };
       const result = await deps.commands.unloadPlugin(serverId as ServerId, pluginName);
       res.json({
@@ -89,6 +102,151 @@ export function createLdmServerRouter(deps: {
           pluginName,
           outcome: result.outcome,
           ldmOutput: result.ldmOutput,
+        },
+      });
+    }),
+  );
+
+  // ─── Phase 2a 配置写入端点 ─────────────────────────────────
+
+  // GET /plugins/:name/config — 读单个 Configuration.xml 原文
+  router.get(
+    "/plugins/:name/config",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const pluginName = (req.params.name as string | undefined) ?? "";
+      if (!pluginName)
+        throw new AppError("plugin-name-missing", "插件名缺失", 400);
+
+      // 插件名合法字符校验（与 writer 一致）
+      if (!/^[A-Za-z0-9._-]+$/.test(pluginName)) {
+        throw new AppError(
+          "plugin-name-invalid",
+          `插件名含非法字符：${pluginName}`,
+          400,
+        );
+      }
+
+      const filePath = resolveServerPath(
+        serverId as ServerId,
+        path.join("Rocket", "Plugins", pluginName, `${pluginName}.configuration.xml`),
+      );
+
+      try {
+        const raw = await fs.readFile(filePath, "utf-8");
+        const stat = await fs.stat(filePath);
+        res.json({
+          data: {
+            name: pluginName,
+            raw,
+            sizeBytes: stat.size,
+            modifiedAtIso: stat.mtime.toISOString(),
+          },
+        });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new AppError(
+            "plugin-config-not-found",
+            `插件 ${pluginName} 配置不存在（${pluginName}.configuration.xml 未找到）`,
+            404,
+          );
+        }
+        throw new AppError(
+          "ldm-config-read-failed",
+          `读取插件配置失败：${err instanceof Error ? err.message : String(err)}`,
+          500,
+        );
+      }
+    }),
+  );
+
+  // PUT /plugins/:name/config — 写 Configuration.xml（通用 XML 原文）
+  router.put(
+    "/plugins/:name/config",
+    validate(PluginConfigWriteSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const pluginName = (req.params.name as string | undefined) ?? "";
+      if (!pluginName) throw new AppError("plugin-name-missing", "插件名缺失", 400);
+      const { raw } = req.body as { raw: string };
+
+      try {
+        const result = await deps.configWriter.writePluginConfig(
+          serverId as ServerId,
+          pluginName,
+          raw,
+        );
+        logger.info(
+          { serverId, pluginName, sizeBytes: result.backupPath.length },
+          "PUT /plugins/:name/config 成功",
+        );
+        res.json({
+          data: {
+            serverId,
+            pluginName,
+            success: result.success,
+            backupPath: result.backupPath,
+            writtenAtIso: result.writtenAtIso,
+          },
+        });
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        throw new AppError(
+          "ldm-config-write-failed",
+          `写插件配置失败：${err instanceof Error ? err.message : String(err)}`,
+          500,
+        );
+      }
+    }),
+  );
+
+  // PUT /rocket-config — 写 Rocket.config.xml（结构化字段）
+  router.put(
+    "/rocket-config",
+    validate(RocketConfigWriteSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const fields = req.body as Parameters<ILdmConfigWriter["writeRocketConfig"]>[1];
+
+      const result = await deps.configWriter.writeRocketConfig(
+        serverId as ServerId,
+        fields,
+      );
+      res.json({
+        data: {
+          serverId,
+          file: "Rocket.config.xml",
+          success: result.success,
+          backupPath: result.backupPath,
+          writtenAtIso: result.writtenAtIso,
+        },
+      });
+    }),
+  );
+
+  // PUT /permissions-config — 写 Permissions.config.xml（树形）
+  router.put(
+    "/permissions-config",
+    validate(PermissionsConfigWriteSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const fields = req.body as Parameters<ILdmConfigWriter["writePermissionsConfig"]>[1];
+
+      const result = await deps.configWriter.writePermissionsConfig(
+        serverId as ServerId,
+        fields,
+      );
+      res.json({
+        data: {
+          serverId,
+          file: "Permissions.config.xml",
+          success: result.success,
+          backupPath: result.backupPath,
+          writtenAtIso: result.writtenAtIso,
         },
       });
     }),
@@ -111,10 +269,10 @@ export function createLdmCommunityRouter(svc: ILdmPluginSourceService): Router {
 
   // GET /community-plugins
   router.get(
-    '/community-plugins',
+    "/community-plugins",
     asyncHandler(async (req, res) => {
       // PAT 从 header 读（X-Github-Pat）—— 不入 store，仅当前请求使用
-      const pat = (req.headers['x-github-pat'] as string | undefined) ?? null;
+      const pat = (req.headers["x-github-pat"] as string | undefined) ?? null;
       const result = await svc.listCommunityPlugins(pat);
       res.json({ data: result });
     }),
@@ -122,7 +280,7 @@ export function createLdmCommunityRouter(svc: ILdmPluginSourceService): Router {
 
   // POST /community-plugins/test-pat
   router.post(
-    '/community-plugins/test-pat',
+    "/community-plugins/test-pat",
     asyncHandler(async (req, res) => {
       const { pat } = req.body as { pat: string };
       const result = await svc.testPat(pat);

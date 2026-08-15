@@ -19,6 +19,7 @@ import {
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
+  type ILdmConfigWriter,
   type IItemService,
 } from "@unturned-manager/shared";
 
@@ -42,10 +43,13 @@ import { LogStreamer } from "./modules/logs/LogStreamer.js";
 import { SessionManager } from "./modules/sessions/SessionManager.js";
 import { U3dsStatusProvider } from "./modules/u3ds/U3dsStatusProvider.js";
 import { ItemService } from "./modules/items/ItemService.js";
+import { AtomicFileWriter } from "./modules/filelock/AtomicFileWriter.js";
 import { LdmAssemblyVersionReader } from "./modules/ldm/LdmAssemblyVersionReader.js";
+import { LdmConfigWriter } from "./modules/ldm/LdmConfigWriter.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
 import { LdmPluginSourceService } from "./modules/ldm/LdmPluginSourceService.js";
+import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -71,6 +75,8 @@ export interface AppContainer {
   ldmDiscovery: ILdmDiscoveryService;
   ldmCommands: ILdmPluginCommandsService;
   ldmSource: ILdmPluginSourceService;
+  // Phase 2a：LDM 配置写入服务（依赖共享 AtomicFileWriter + RocketConfigXmlParser）
+  ldmConfigWriter: ILdmConfigWriter;
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
   itemService: IItemService;
 }
@@ -152,6 +158,11 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmRuntimeStatusReader,
   );
   const ldmSource = new LdmPluginSourceService();
+
+  // Phase 2a：LDM 配置写入服务（共享 AtomicFileWriter + RocketConfigXmlParser）
+  const atomicFileWriter = new AtomicFileWriter(fileLock);
+  const rocketConfigXmlParser = new RocketConfigXmlParser();
+  const ldmConfigWriter = new LdmConfigWriter(atomicFileWriter, rocketConfigXmlParser);
 
   // ── WS 请求-应答处理器注册（ws-wrapper-design §2.4）────────────────
   // 三个 ACK 语义的终端操作：关控制台 / 存档 / 关服。ack 经 gateway 回给请求方，
@@ -293,6 +304,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmDiscovery,
     ldmCommands,
     ldmSource,
+    ldmConfigWriter,
     itemService,
   };
 }
