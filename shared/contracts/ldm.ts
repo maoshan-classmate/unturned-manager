@@ -467,3 +467,58 @@ export interface ILdmConfigWriter {
     rawXml: string,
   ): Promise<LdmConfigWriteResult>;
 }
+
+// ─── Phase 5（编辑器配套） ──────────────────────────────────
+
+/**
+ * LDM 配置读取响应——3 文件共用，fields 类型由 file 字段判别（discriminated union）。
+ * 前端拿到 result 后 TypeScript 自动按 file narrow fields 类型。
+ */
+export type LdmConfigReadResult =
+  | {
+      serverId: ServerId;
+      file: "Rocket.config.xml";
+      raw: string;
+      fields: RocketConfigFields;
+      sizeBytes: number;
+      modifiedAtIso: string;
+    }
+  | {
+      serverId: ServerId;
+      file: "Rocket.Unturned.config.xml";
+      raw: string;
+      fields: RocketUnturnedConfigFields;
+      sizeBytes: number;
+      modifiedAtIso: string;
+    }
+  | {
+      serverId: ServerId;
+      file: "Permissions.config.xml";
+      raw: string;
+      fields: PermissionsConfigFields;
+      sizeBytes: number;
+      modifiedAtIso: string;
+    };
+
+/**
+ * LDM 配置读取服务——3 XML 文件读 + 解析 + 返回结构化字段 + 原文 + 文件元数据。
+ * 与 LdmConfigWriter 配对（编辑器配套）。
+ *
+ * 不要求实例 RUNNING（纯文件 I/O）。
+ */
+export interface ILdmConfigReader {
+  /**
+   * 读 Rocket.config.xml——16 字段结构化。
+   * @param serverId 实例标识
+   * @returns 读响应（含结构化字段 + 原文 XML）
+   * @throws AppError('ldm-config-not-found') 404 文件不存在（实例首次启动前）
+   * @throws AppError('ldm-config-read-failed') 500 读盘 / 解析失败
+   */
+  readRocketConfig(serverId: ServerId): Promise<LdmConfigReadResult>;
+
+  /** 读 Rocket.Unturned.config.xml——9 字段结构化 */
+  readRocketUnturnedConfig(serverId: ServerId): Promise<LdmConfigReadResult>;
+
+  /** 读 Permissions.config.xml——树形结构 */
+  readPermissionsConfig(serverId: ServerId): Promise<LdmConfigReadResult>;
+}

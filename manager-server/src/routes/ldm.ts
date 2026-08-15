@@ -23,6 +23,7 @@ import {
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
   type ILdmConfigWriter,
+  type ILdmConfigReader,
   type ServerId,
   type PluginRuntimeStatus,
 } from "@unturned-manager/shared";
@@ -50,6 +51,7 @@ export function createLdmServerRouter(deps: {
   discovery: ILdmDiscoveryService;
   commands: ILdmPluginCommandsService;
   configWriter: ILdmConfigWriter;
+  configReader: ILdmConfigReader;
   applyService: ILdmApplyService;
 }): Router {
   const router = Router({ mergeParams: true });
@@ -364,6 +366,41 @@ export function createLdmServerRouter(deps: {
           writtenAtIso: result.writtenAtIso,
         },
       });
+    }),
+  );
+
+  // ─── Phase 5（编辑器配套）配置读取端点 ─────────────────────
+
+  // GET /rocket-config — 读 Rocket.config.xml（16 字段结构化 + 原文）
+  router.get(
+    "/rocket-config",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const result = await deps.configReader.readRocketConfig(serverId as ServerId);
+      res.json({ data: result });
+    }),
+  );
+
+  // GET /rocket-unturned-config — 读 Rocket.Unturned.config.xml（9 字段结构化 + 原文）
+  router.get(
+    "/rocket-unturned-config",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const result = await deps.configReader.readRocketUnturnedConfig(serverId as ServerId);
+      res.json({ data: result });
+    }),
+  );
+
+  // GET /permissions-config — 读 Permissions.config.xml（树形结构 + 原文）
+  router.get(
+    "/permissions-config",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const result = await deps.configReader.readPermissionsConfig(serverId as ServerId);
+      res.json({ data: result });
     }),
   );
 

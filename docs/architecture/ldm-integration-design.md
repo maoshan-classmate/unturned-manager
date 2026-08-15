@@ -126,7 +126,7 @@
 | `Servers/<ID>/Rocket/Logs/`                                   | LDM 框架日志                                 | 文本                          | ❌ 不写（pino tail）       | —                                                                                                                                                                        |
 | `Servers/<ID>/Rocket/Libraries/`                              | 共享依赖 .dll                                | .NET DLL                      | ⚠️ 文件级上传（Files API） | —                                                                                                                                                                        |
 | `Servers/<ID>/Rocket/Plugins/<Name>.dll`                      | 插件二进制                                   | .NET DLL                      | ⚠️ Web 上传 + 大小写校验   | GitHub Releases / LDM-Community                                                                                                                                          |
-| `Servers/<ID>/Rocket/Plugins/<Name>/<Name>.configuration.xml` | 插件私有配置                                 | XML（**每插件 schema 不同**） | ✅ 通用 XML 编辑器         | 插件开发者文档                                                                                                                                                           |
+| `Servers/<ID>/Rocket/Plugins/<Name>/<Name>.configuration.xml` | 插件私有配置                                 | XML（**每插件 schema 不同**） | ⏸ 推迟：通用 XML 编辑器    | 插件开发者文档（每插件 schema 不同，独立 Phase 设计；详见 `ldm-editor-design.md` §2）                                                                                                                                                            |
 | `Servers/<ID>/Rocket/Plugins/<Name>/Libraries/*.dll`          | 插件私有依赖                                 | .NET DLL                      | ⚠️ 文件级上传              | —                                                                                                                                                                        |
 
 ---
@@ -994,6 +994,9 @@ export interface ILdmApplyService {
 | 插件不存在/未加载   | `plugin-not-found`        | 404    | LDM stdout `not found` / `is not loaded`  | 「插件 {{name}} 不存在或未加载」（load/unload/reload 统一抛——审计修订）                              |
 | 配置文件损坏        | `ldm-config-corrupted`    | 500    | XML 解析失败                              | 「配置文件损坏，已自动回滚到上次正确状态」                                                           |
 | 写失败              | `ldm-config-write-failed` | 500    | atomic write 失败                         | 「配置文件写入失败：{{reason}}」                                                                     |
+| 配置读取—文件不存在 | `ldm-config-not-found`    | 404    | Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml 文件不存在（首次启动前） | 「配置文件不存在，请先启动一次服务端让 Rocket 目录自动生成」                                         |
+| 配置读取—读盘/解析失败 | `ldm-config-read-failed` | 500    | fs.readFile / RocketConfigXmlParser.parse* 失败 | 「配置文件读取失败：{{reason}}」                                                                     |
+| 配置字段非法        | `ldm-config-invalid`      | 400    | 绕过路由直调 LdmConfigWriter 写非法字段   | 「配置字段非法：{{fields}}」                                                                         |
 | PTY 响应超时        | `pty-timeout`             | 500    | 10s 未收到 LDM 响应                       | 「操作超时，实例未响应」（load/unload/reload 统一抛——审计修订）                                      |
 | 操作冲突            | `operation-conflict`      | 409    | 同 server 并发插件命令（拒绝式锁）         | 「该实例已有插件命令在跑，请稍后再试」（审计修订）                                                   |
 
@@ -1181,7 +1184,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | A1                                | `Rocket.config.xml` 结构化读写（16 字段）                                                                                         | LDM `Rocket.Core/Serialization/RocketSettings.cs`                          | ✅                    | XML 解析自写（保留注释/属性顺序/CDATA）                                           |
 | A2                                | `Rocket.Unturned.config.xml` 结构化读写（9 字段）                                                                                 | LDM `Rocket.Unturned/Serialisation/UnturnedSettings.cs`                    | ✅                    | 同上，独立文件但同 schema 风格                                                    |
 | A3                                | `Permissions.config.xml` 树形读写（Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown） | wasabihosting + LDM `Permissions.config.xml` 模板                          | ✅                    | 嵌套结构 + 通配符权限（`rocket.*`、`*`）；写入前必须备份                          |
-| A4                                | 各插件 `<Plugin>.configuration.xml` 通用 XML 编辑器                                                                               | LDM `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate`         | ✅                    | **不强解 schema**——每插件自定义，面板只做 Monaco XML 原文编辑器                   |
+| A4                                | 各插件 `<Plugin>.configuration.xml` 通用 XML 编辑器                                                                               | LDM `Rocket.Core/Environment.cs` `PluginConfigurationFileTemplate`         | ⏸ 推迟               | **不强解 schema**——每插件自定义，延后到独立 Phase 设计（详见 `ldm-editor-design.md` §2）                       |
 | **B. 插件生命周期**               |                                                                                                                                   |                                                                            |                       |                                                                                   |
 | B1                                | `Plugins/<Name>.dll` 文件级上传 / 替换 / 删除                                                                                     | Files API（已存在）                                                        | ✅                    | Linux 大小写校验——`.dll` 名必须与 `<Name>/` 子目录同名                            |
 | B2                                | `Libraries/` 共享依赖 .dll 上传                                                                                                   | Files API（已存在）                                                        | ✅                    | 同上                                                                              |
@@ -1232,7 +1235,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 ### 11.2 可接入能力合计
 
-- ✅ **必须做**：A1–A4 / B1–B3 / C1–C4 / D1–D5 / E1 / F1–F3 / G1–G3 / H1–H2 / I1 = **19 项**
+- ✅ **必须做**：A1–A3 / B1–B3 / C1–C4 / D1–D5 / E1 / F1–F3 / G1–G3 / H1–H2 / I1 = **18 项**（A4 推迟到独立 Phase）
 - ⚠️ **加警告暴露**：B4 / I2 / F4 = **3 项**
 - ❌ **明确不做**：B5 / E2 / G4 / G5 / H3 / J1–J8 = **13 项**
 

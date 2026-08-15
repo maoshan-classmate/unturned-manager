@@ -145,6 +145,7 @@ app.use("/api/servers/:id/ldm", createLdmServerRouter({
   discovery: container.ldmDiscovery,
   commands: container.ldmCommands,
   configWriter: container.ldmConfigWriter,
+  configReader: container.ldmConfigReader,
   applyService: container.ldmApplyService,
 }));
 app.use("/api/ldm", createLdmCommunityRouter(container.ldmSource));

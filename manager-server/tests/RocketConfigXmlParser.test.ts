@@ -135,6 +135,72 @@ describe("RocketConfigXmlParser", () => {
       expect(fields.groups[1]?.parentGroup).toBe("default");
       expect(fields.groups[1]?.color).toBe("yellow");
     });
+
+    // ─── Phase 5 §4.1：未知子元素 + 未知属性保留 ───
+
+    it("未知子元素 <Notes> 保留（不在 7 个已知字段中）", () => {
+      const xml = `<?xml version="1.0"?>
+<RocketPermissions>
+  <DefaultGroup>default</DefaultGroup>
+  <Groups>
+    <Group>
+      <Id>default</Id>
+      <DisplayName>Player</DisplayName>
+      <Color>white</Color>
+      <Priority>100</Priority>
+      <Notes>原始注释：默认组</Notes>
+    </Group>
+  </Groups>
+</RocketPermissions>`;
+      const fields = parser.parsePermissionsConfig(xml).fields;
+      const modified = parser.serializePermissionsConfig(fields, xml);
+      expect(modified).toContain("<Notes>原始注释：默认组</Notes>");
+    });
+
+    it("未知属性 IsHidden=\"true\" 保留", () => {
+      const xml = `<?xml version="1.0"?>
+<RocketPermissions>
+  <Groups>
+    <Group IsHidden="true" CustomFlag="legacy">
+      <Id>default</Id>
+      <DisplayName>Player</DisplayName>
+      <Color>white</Color>
+      <Priority>100</Priority>
+    </Group>
+  </Groups>
+</RocketPermissions>`;
+      const fields = parser.parsePermissionsConfig(xml).fields;
+      const modified = parser.serializePermissionsConfig(fields, xml);
+      expect(modified).toContain('IsHidden="true"');
+      expect(modified).toContain('CustomFlag="legacy"');
+    });
+
+    it("改已知字段（color）+ 未知键同时保留", () => {
+      const xml = `<?xml version="1.0"?>
+<RocketPermissions>
+  <Groups>
+    <Group>
+      <Id>vip</Id>
+      <DisplayName>VIP</DisplayName>
+      <Color>white</Color>
+      <Priority>50</Priority>
+      <Notes>VIP 备注</Notes>
+    </Group>
+  </Groups>
+</RocketPermissions>`;
+      const fields = parser.parsePermissionsConfig(xml).fields;
+      // 改 color
+      const modified = parser.serializePermissionsConfig(
+        { ...fields, groups: [{ ...fields.groups[0], color: "yellow" }] },
+        xml,
+      );
+      // 已知字段更新生效
+      expect(modified).toContain("<Color>yellow</Color>");
+      // 未知子元素保留
+      expect(modified).toContain("<Notes>VIP 备注</Notes>");
+      // 其他已知字段保留
+      expect(modified).toContain("<Priority>50</Priority>");
+    });
   });
 
   describe("parseRocketUnturnedConfig / serializeRocketUnturnedConfig（9 字段）", () => {

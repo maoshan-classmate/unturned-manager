@@ -296,80 +296,82 @@ export function InstalledTab({ serverId }: { serverId: string }) {
   });
 
   return (
-    <PageState
-      loading={isLoading}
-      error={error ? errorMessage(error) : null}
-      empty={!data || data.plugins.length === 0}
-      emptyText={
-        searchEnabled
-          ? "无匹配插件"
-          : data?.ldmNotDetected
-            ? "LDM 主框架未安装"
-            : "当前未安装任何插件"
-      }
-      emptyAction={data?.ldmNotDetected ? (
-        <div className="text-xs space-y-2 text-left max-w-md mx-auto" style={{ color: "#94A3B8" }}>
-          <p>请按以下步骤激活 Mod 框架：</p>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>确保 Unturned 服务端已安装（Steam AppID 1110390）</li>
-            <li>从游戏目录的 Extras/Rocket.Unturned 复制到 Modules/</li>
-            <li>启动一次服务端让 Rocket 目录自动生成</li>
-          </ol>
-        </div>
-      ) : null}
-    >
-      {data && (
-        <div className="space-y-3">
-          <LdmStatusCard serverId={serverId} />
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-xs" style={{ color: "#64748B" }}>
-              {searchEnabled
-                ? `匹配 ${data.plugins.length} 个插件（筛选中）`
-                : `共 ${data.plugins.length} 个插件 · 检测于 ${formatDate(data.detectedAtIso)}`}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <SearchInput
-                value={queryInput}
-                onChange={setQueryInput}
-                placeholder="搜索 .dll 名或版本"
-                width={220}
-              />
-              <div className="flex items-center gap-1">
-                {RUNTIME_STATUS_OPTIONS.map((opt) => {
-                  const active = statusFilter === opt.value;
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setStatusFilter(opt.value)}
-                      className="px-2 h-7 rounded text-xs transition-colors"
-                      style={{
-                        backgroundColor: active ? "#22C55E" : "#0F172A",
-                        color: active ? "#F1F5FB" : "#94A3B8",
-                        border: "1px solid #334059",
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <UploadButton
-                disabled={uploadMutation.isPending}
-                onSelect={(file) => uploadMutation.mutate(file)}
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => refetch()}
-                disabled={isRefetching}
-              >
-                <RefreshCw size={14} className={isRefetching ? "animate-spin" : ""} />
-                刷新
-              </Button>
-            </div>
+    <div className="space-y-3">
+      <LdmStatusCard serverId={serverId} />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs" style={{ color: "#64748B" }}>
+          {searchEnabled
+            ? `匹配 ${data?.plugins.length ?? 0} 个插件（筛选中）`
+            : data
+              ? `共 ${data.plugins.length} 个插件 · 检测于 ${formatDate(data.detectedAtIso)}`
+              : "加载中…"}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <SearchInput
+            value={queryInput}
+            onChange={setQueryInput}
+            placeholder="搜索 .dll 名或版本"
+            width={220}
+          />
+          <div className="flex items-center gap-1">
+            {RUNTIME_STATUS_OPTIONS.map((opt) => {
+              const active = statusFilter === opt.value;
+              return (
+                <button
+                  key={opt.label}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className="px-2 h-7 rounded text-xs transition-colors"
+                  style={{
+                    backgroundColor: active ? "#22C55E" : "#0F172A",
+                    color: active ? "#F1F5FB" : "#94A3B8",
+                    border: "1px solid #334059",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
+          <UploadButton
+            disabled={uploadMutation.isPending}
+            onSelect={(file) => uploadMutation.mutate(file)}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+          >
+            <RefreshCw size={14} className={isRefetching ? "animate-spin" : ""} />
+            刷新
+          </Button>
+        </div>
+      </div>
+      <PageState
+        loading={isLoading}
+        error={error ? errorMessage(error) : null}
+        empty={!data || data.plugins.length === 0}
+        emptyText={
+          searchEnabled
+            ? "无匹配插件"
+            : data?.ldmNotDetected
+              ? "LDM 主框架未安装"
+              : "当前未安装任何插件"
+        }
+        emptyAction={data?.ldmNotDetected ? (
+          <div className="text-xs space-y-2 text-left max-w-md mx-auto" style={{ color: "#94A3B8" }}>
+            <p>请按以下步骤激活 Mod 框架：</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>确保 Unturned 服务端已安装（Steam AppID 1110390）</li>
+              <li>从游戏目录的 Extras/Rocket.Unturned 复制到 Modules/</li>
+              <li>启动一次服务端让 Rocket 目录自动生成</li>
+            </ol>
+          </div>
+        ) : null}
+      >
+        {data && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {data.plugins.map((p) => (
               <PluginCard
@@ -382,9 +384,9 @@ export function InstalledTab({ serverId }: { serverId: string }) {
               />
             ))}
           </div>
-        </div>
-      )}
-    </PageState>
+        )}
+      </PageState>
+    </div>
   );
 }
 

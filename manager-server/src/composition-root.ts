@@ -20,6 +20,7 @@ import {
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
   type ILdmConfigWriter,
+  type ILdmConfigReader,
   type ILdmApplyService,
   type IItemService,
 } from "@unturned-manager/shared";
@@ -47,6 +48,7 @@ import { ItemService } from "./modules/items/ItemService.js";
 import { AtomicFileWriter } from "./modules/filelock/AtomicFileWriter.js";
 import { LdmApplyService } from "./modules/ldm/LdmApplyService.js";
 import { LdmAssemblyVersionReader } from "./modules/ldm/LdmAssemblyVersionReader.js";
+import { LdmConfigReader } from "./modules/ldm/LdmConfigReader.js";
 import { LdmConfigWriter } from "./modules/ldm/LdmConfigWriter.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
@@ -79,6 +81,8 @@ export interface AppContainer {
   ldmSource: ILdmPluginSourceService;
   // Phase 2a：LDM 配置写入服务（依赖共享 AtomicFileWriter + RocketConfigXmlParser）
   ldmConfigWriter: ILdmConfigWriter;
+  // Phase 5：LDM 配置读取服务（编辑器配套，复用 RocketConfigXmlParser）
+  ldmConfigReader: ILdmConfigReader;
   // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送）
   ldmApplyService: ILdmApplyService;
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
@@ -167,6 +171,9 @@ export function buildContainer(db: Database.Database): AppContainer {
   const atomicFileWriter = new AtomicFileWriter(fileLock);
   const rocketConfigXmlParser = new RocketConfigXmlParser();
   const ldmConfigWriter = new LdmConfigWriter(atomicFileWriter, rocketConfigXmlParser);
+
+  // Phase 5：LDM 配置读取服务（编辑器配套，复用同一个 parser）
+  const ldmConfigReader = new LdmConfigReader(rocketConfigXmlParser);
 
   // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送 ldm_apply_progress）
   const ldmApplyService = new LdmApplyService(
@@ -316,6 +323,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmCommands,
     ldmSource,
     ldmConfigWriter,
+    ldmConfigReader,
     ldmApplyService,
     itemService,
   };

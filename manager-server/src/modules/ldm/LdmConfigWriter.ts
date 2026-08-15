@@ -22,6 +22,11 @@ import {
   type PermissionsConfigFields,
   type LdmConfigWriteResult,
 } from "@unturned-manager/shared";
+import {
+  RocketConfigWriteSchema,
+  RocketUnturnedConfigWriteSchema,
+  PermissionsConfigWriteSchema,
+} from "@unturned-manager/shared";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../utils/logger.js";
 import { AtomicFileWriter } from "../filelock/AtomicFileWriter.js";
@@ -60,6 +65,11 @@ export class LdmConfigWriter implements ILdmConfigWriter {
     serverId: ServerId,
     fields: RocketConfigFields,
   ): Promise<LdmConfigWriteResult> {
+    this.validateFields(
+      "Rocket.config.xml",
+      RocketConfigWriteSchema,
+      fields,
+    );
     const targetPath = resolveServerPath(
       serverId,
       path.join(ROCKET_DIR, ROCKET_CONFIG_FILE),
@@ -75,6 +85,11 @@ export class LdmConfigWriter implements ILdmConfigWriter {
     serverId: ServerId,
     fields: RocketUnturnedConfigFields,
   ): Promise<LdmConfigWriteResult> {
+    this.validateFields(
+      "Rocket.Unturned.config.xml",
+      RocketUnturnedConfigWriteSchema,
+      fields,
+    );
     const targetPath = resolveServerPath(
       serverId,
       path.join(ROCKET_DIR, ROCKET_UNTURNED_CONFIG_FILE),
@@ -95,6 +110,11 @@ export class LdmConfigWriter implements ILdmConfigWriter {
     serverId: ServerId,
     fields: PermissionsConfigFields,
   ): Promise<LdmConfigWriteResult> {
+    this.validateFields(
+      "Permissions.config.xml",
+      PermissionsConfigWriteSchema,
+      fields,
+    );
     const targetPath = resolveServerPath(
       serverId,
       path.join(ROCKET_DIR, PERMISSIONS_CONFIG_FILE),
@@ -142,6 +162,33 @@ export class LdmConfigWriter implements ILdmConfigWriter {
   }
 
   // ─── 私有辅助 ──────────────────────────────────────────
+
+  /**
+   * Zod 字段校验入口（Phase 5 设计稿 §4.2）——堵「绕过路由直调 writer 可写非法字段」漏洞。
+   * 失败抛 ldm-config-invalid 400，与路由层 validate 中间件行为对齐。
+   *
+   * @param label 文件标签（用于错误信息）
+   * @param schema Zod schema（与目标文件对应）
+   * @param fields 待校验字段
+   * @throws AppError('ldm-config-invalid') 字段类型/范围非法
+   */
+  private validateFields(
+    label: string,
+    schema: import("zod").ZodTypeAny,
+    fields: unknown,
+  ): void {
+    const parsed = schema.safeParse(fields);
+    if (!parsed.success) {
+      const details = parsed.error.issues
+        .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+        .join("; ");
+      throw new AppError(
+        "ldm-config-invalid",
+        `${label} 字段非法：${details}`,
+        400,
+      );
+    }
+  }
 
   /**
    * 读原 XML（如文件不存在返回空串——首次启动 U3DS 未生成时调用方会构造空结构）。

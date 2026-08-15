@@ -66,6 +66,21 @@ export function LdmAboutCard({ serverId }: { serverId: string }) {
     retry: false,
   });
 
+  // /status 端点不依赖 PTY——可在 RUNNING 守卫前给出「主框架未装」fallback
+  // 区分「根本没装」与「装了但未运行」两种情况（仅靠 PTY 数据无法区分）
+  const statusQuery = useQuery({
+    queryKey: ["ldm", "status", serverId],
+    queryFn: async () => {
+      const res = await apiClient.get<{
+        data: { ldmInstalled: boolean };
+      }>(`/servers/${serverId}/ldm/status`);
+      return res.data.data;
+    },
+    enabled: !!serverId,
+    staleTime: 60_000,
+    retry: false,
+  });
+
   const versionError = versionQuery.error;
   const modulesError = modulesQuery.error;
   // axios 错误码路径：err.response.data.error.code（与 LaunchCommandsDialog 等组件惯例一致）
@@ -77,8 +92,20 @@ export function LdmAboutCard({ serverId }: { serverId: string }) {
     errorCodeOf(versionError) === "server-not-running" ||
     errorCodeOf(modulesError) === "server-not-running";
 
+  // /status 不依赖 PTY——作为「主框架未装」fallback 信号
+  const ldmInstalled = statusQuery.data?.ldmInstalled;
+
   return (
     <Card title="关于 LDM">
+      {ldmInstalled === false && (
+        <div
+          className="flex items-center gap-1.5 text-xs mb-3"
+          style={{ color: "#F59E0B" }}
+        >
+          <AlertTriangle size={12} />
+          Mod 框架主框架未安装（先激活：cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/）
+        </div>
+      )}
       {isServerNotRunning && (
         <div
           className="flex items-center gap-1.5 text-xs mb-3"

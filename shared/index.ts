@@ -84,6 +84,9 @@ export type {
   // Phase 3 新增
   LdmStatus,
   CommunityPluginDetail,
+  // Phase 5（编辑器配套）新增
+  ILdmConfigReader,
+  LdmConfigReadResult,
 } from "./contracts/ldm.js";
 export type {
   IItemService,

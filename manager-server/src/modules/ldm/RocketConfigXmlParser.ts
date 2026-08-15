@@ -276,6 +276,21 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
 
   // ── serializePermissionsConfig ──
 
+  /**
+   * Permissions.config.xml 已知 Group 子元素名。
+   * 用于在重建 Group 时识别「未知 children」并保留（如用户手写的 `<Notes>...</Notes>`）。
+   */
+  private static readonly PERMISSIONS_GROUP_KNOWN_CHILDREN: ReadonlySet<string> =
+    new Set([
+      "Id",
+      "DisplayName",
+      "Color",
+      "ParentGroup",
+      "Priority",
+      "Members",
+      "Permissions",
+    ]);
+
   serializePermissionsConfig(
     fields: PermissionsConfigFields,
     originalXml: string,
@@ -285,9 +300,30 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
     const root = tree;
     if (!root) return originalXml;
     this.setElementText(root, "DefaultGroup", undefined, fields.defaultGroup);
-    // Groups 整体替换（groups 列表是动态结构，字段合并复杂；保持简单——直接替换）
     const groupsContainer = this.findElement(root, "Groups");
     if (groupsContainer) {
+      // ★ Phase 5 §4.1：先按 ID 缓存原 Group 节点的未知 children + 属性——重建时合并回来
+      // 用户手写的 `<Group><UnknownField>x</UnknownField></Group>` 或 `UnknownAttr="y"` 必须保留
+      const extrasById = new Map<
+        string,
+        { attrs: Record<string, string>; unknownChildren: XmlNode[] }
+      >();
+      for (const c of groupsContainer.children ?? []) {
+        if (c.type !== "element" || c.name !== "Group") continue;
+        const id = this.elementText(c, "Id") ?? "";
+        const unknownChildren = (c.children ?? []).filter(
+          (ch: XmlNode): ch is XmlNode & { name: string } =>
+            ch.type === "element" &&
+            typeof ch.name === "string" &&
+            !RocketConfigXmlParser.PERMISSIONS_GROUP_KNOWN_CHILDREN.has(ch.name),
+        );
+        const attrs: Record<string, string> = {};
+        for (const [k, v] of Object.entries(c.attrs ?? {})) {
+          attrs[k] = v;
+        }
+        extrasById.set(id, { attrs, unknownChildren });
+      }
+
       groupsContainer.children = fields.groups.map(
         (g: {
           id: string;
@@ -297,10 +333,9 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
           parentGroup?: string;
           priority: number;
           permissions: string[];
-        }): XmlNode => ({
-          type: "element",
-          name: "Group",
-          children: [
+        }): XmlNode => {
+          const extras = extrasById.get(g.id);
+          const children: XmlNode[] = [
             this.textElement("Id", g.id),
             this.textElement("DisplayName", g.displayName),
             this.textElement("Color", g.color),
@@ -326,8 +361,22 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
                 value: p,
               })),
             },
-          ].filter((c): c is XmlNode => c !== undefined),
-        }),
+          ].filter((c): c is XmlNode => c !== undefined);
+          // 合并原未知子元素
+          if (extras) {
+            children.push(...extras.unknownChildren);
+          }
+          const node: XmlNode = {
+            type: "element",
+            name: "Group",
+            children,
+          };
+          // 合并原属性
+          if (extras && Object.keys(extras.attrs).length > 0) {
+            node.attrs = extras.attrs;
+          }
+          return node;
+        },
       );
     }
     return this.serializeGeneric(tree);

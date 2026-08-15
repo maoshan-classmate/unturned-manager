@@ -190,4 +190,81 @@ describe("LdmConfigWriter", () => {
     expect(thrown).toBeInstanceOf(AppError);
     expect((thrown as AppError).code).toBe("plugin-config-invalid");
   });
+
+  // ─── Phase 5 §4.2：writer 入口 Zod 校验（堵绕过路由的非法字段路径） ──
+
+  it("writeRocketConfig maxFrames 类型非法 → 抛 ldm-config-invalid 400", async () => {
+    // 绕过 TS 类型检查模拟「绕过路由直调 writer」的非法输入路径
+    const illegal = {
+      languageCode: "en",
+      maxFrames: "not-a-number", // 应为 number
+      automaticShutdownEnabled: false,
+      automaticShutdownInterval: 86400,
+      webPermissionsEnabled: false,
+      webPermissionsUrl: "",
+      webPermissionsInterval: 180,
+      webConfigurationsEnabled: false,
+      webConfigurationsUrl: "",
+    } as unknown as Parameters<typeof writer.writeRocketConfig>[1];
+
+    let thrown: unknown = null;
+    try {
+      await writer.writeRocketConfig(serverId, illegal);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(AppError);
+    expect((thrown as AppError).code).toBe("ldm-config-invalid");
+    expect((thrown as AppError).status).toBe(400);
+  });
+
+  it("writePermissionsConfig color 不在枚举 → 抛 ldm-config-invalid 400", async () => {
+    const illegal = {
+      defaultGroup: "default",
+      groups: [
+        {
+          id: "default",
+          displayName: "Player",
+          color: "not-a-real-color", // 应在 LDM Color 枚举
+          members: [],
+          priority: 100,
+          permissions: [],
+        },
+      ],
+    } as unknown as Parameters<typeof writer.writePermissionsConfig>[1];
+
+    let thrown: unknown = null;
+    try {
+      await writer.writePermissionsConfig(serverId, illegal);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(AppError);
+    expect((thrown as AppError).code).toBe("ldm-config-invalid");
+    expect((thrown as AppError).status).toBe(400);
+  });
+
+  it("writeRocketUnturnedConfig maxSpawnAmount 超出范围 → 抛 ldm-config-invalid 400", async () => {
+    const illegal = {
+      automaticSaveEnabled: true,
+      automaticSaveInterval: 1800,
+      characterNameValidation: false,
+      characterNameValidationRule: "",
+      logSuspiciousPlayerMovement: true,
+      enableItemBlacklist: false,
+      enableItemSpawnLimit: true,
+      maxSpawnAmount: 0, // Zod min(1)
+      enableVehicleBlacklist: false,
+    } as unknown as Parameters<typeof writer.writeRocketUnturnedConfig>[1];
+
+    let thrown: unknown = null;
+    try {
+      await writer.writeRocketUnturnedConfig(serverId, illegal);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(AppError);
+    expect((thrown as AppError).code).toBe("ldm-config-invalid");
+    expect((thrown as AppError).status).toBe(400);
+  });
 });
