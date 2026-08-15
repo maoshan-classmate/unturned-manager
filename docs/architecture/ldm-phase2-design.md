@@ -2,7 +2,15 @@
 
 > **承接**：`docs/architecture/ldm-integration-design.md` §5 后端模块设计 + §6 API 契约 + §12.3 Phase 2 简略规格
 > **真源**：`.research/U3-SDK`（U3DS）+ LDM 仓 `SmartlyDressedGames/Legally-Distinct-Missile`（LDM）
-> **状态**：2026-08-15 设计稿；Phase 2 启动前评审
+> **状态**：2026-08-15 已实施（后端 65e24c9 / 1f3f2c8 / 5cb7080；前端骨架 f944bc8 + 4 Tab e6f12b4）· **审计修订见下**
+
+> **实施修订（2026-08-15 审计后）**：
+> - **applyChangesCore 时序**：`postStartHook` 在 `startInternal` 后等 RUNNING 再执行（`waitForState` 15s 超时）——P0-1 修复（原在 STARTING 执行导致 LDM `/p reload` 权限重载永远不执行）
+> - **serializeRocketUnturnedConfig**：P0-2 修复——`root = tree`（原 `findElement` 找根元素永远找不到 → 9 字段修改不写回）
+> - **PUT /rocket-unturned-config 路由**：P0-3 补充——原缺路由，`writeRocketUnturnedConfig` 是死代码
+> - **错误码**：`plugin-not-found`(404) / `pty-timeout`(500) / `operation-conflict`(409) 三码在 load/unload/reload 统一真的抛（设计 §3.2 错误码表以此为准）
+> - **Rocket.Unturned 测试**：round-trip 用例已补（原 0 覆盖）
+> - **mod_apply 共用未兑现**：`applyChangesCore` 唯一调用方是 `LdmApplyService`（hook='ldm_apply'）；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑（ServerManager.ts:558），`modpack_apply` 不存在。§5.6「与 mod_apply 共用」是评审稿预期，现状是单调用方——正文多处「与 mod_apply 共用」表述以本修订为准
 
 ## 0. 一句话结论
 
@@ -286,8 +294,8 @@ async apply(serverId, opts) {
 - **入参**：`LdmApplyRequestSchema { changedPlugins?: string[] }`
 - **响应**：`OperationResponseSchema`（异步任务 ID）
 - **错误码**：
-  - `server-busy` 409 — activeOperation 锁
-  - `apply-failed` 500 — 流水线失败
+  - `operation-conflict` 409 — activeOperation 锁（审计修订：代码实际抛此码，非 `server-busy`）
+  - `ldm-apply-failed` 500 — 流水线失败（审计修订：代码实际抛此码，非 `apply-failed`）
 
 #### 4.3.2 WS `ldm_apply_progress`
 
@@ -491,7 +499,7 @@ export const LdmApplyRequestSchema = z.object({
 - ADR：`docs/adr/0006-ldm-framework-integration.md`
 - 资源包：`docs/architecture/mod-management-design.md` v2.5（共用 `applyChangesCore`）
 - SOP：`.claude/rules/unturned-sop.md` §LDM
-- 上一期：`claudedocs/workflow_sprint5_ldm_phase1.md`（Phase 1 实施契约模板参考）
+- 上一期：Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）
 - 本期记忆：`.serena/memories/session-checkpoint-2026-08-15-ldm-b1-upload.md`
 
 ---

@@ -1,7 +1,7 @@
 # LDM-Community pluginlist 源调研
 
 > **状态**：调研报告 · **日期**：2026-08-12
-> **驱动**：`claudedocs/workflow_sprint5_ldm_phase1.md` §5.2「上游 API 假设」调研前置
+> **驱动**：Phase 1 实施前置调研（上游 API 假设）——原驱动工作流 `workflow_sprint5_ldm_phase1.md` 已按 Sprint 生命周期删除
 > **Phase 1 范围**：`LdmPluginSourceService.listCommunityPlugins()` 上游契约
 
 ---
@@ -480,7 +480,7 @@ export function __resetCommunityCacheForTest(): void {
 ## 10. 关联文档
 
 - **设计文档**：`docs/architecture/ldm-integration-design.md` §11.1 G1 + §12.2 Phase 1
-- **详细规格**：`claudedocs/workflow_sprint5_ldm_phase1.md` §5（`LdmPluginSourceService` 详细规格）
+- **详细规格**：Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）
 - **活参考（HTTP 客户端）**：`claudedocs/reference_api_spec.md`（查 `httpClient.get` 用法）
 - **上游 URL**：`https://ldm-community.github.io/pluginlist/`
 - **HTML 真源**：GitHub `LDM-Community/pluginlist` 仓（具体路径待核实）

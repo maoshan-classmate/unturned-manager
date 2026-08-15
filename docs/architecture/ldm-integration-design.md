@@ -7,6 +7,16 @@
 > **核心参考**：LDM 仓库 https://github.com/SmartlyDressedGames/Legally-Distinct-Missile + 本地只读源码 `.research/Legally-Distinct-Missile`（master `c5f8062`，2025-10-23）
 > **源码版本核对（2026-08-12）**：本地 master 源码与游戏自带 `Extras/Rocket.Unturned/`（`Rocket.API/Core.dll=4.9.3.16` + `Rocket.Unturned.dll=4.9.3.18`）的 schema 字段 + `/rocket` 命令行为**零差异**（git diff v4.9.3.15/18 vs master 验证）——本设计文档所有真源引用对实际运行版本成立
 
+> **实施与审计修订（2026-08-15，Phase 1-4 全部落地）**：
+> - **applyChangesCore**：从零抽取（v2.6 已删 applyModChanges），现**单调用方** = `LdmApplyService`（hook='ldm_apply'）；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑，未接入 applyChangesCore；`modpack_apply` 为预留第三处（当前不存在）。§5.6「mod_apply / ldm_apply 共用」承诺**未兑现**——文档标注待后续接入
+> - **applyChangesCore 时序**：`postStartHook` 在 `startInternal` 后**等实例 RUNNING** 再执行（新增 `waitForState`，15s 超时降级）——审计 P0-1 修复（此前 STARTING 执行导致 LDM `/p reload` 永远不执行）
+> - **PUT /rocket-unturned-config**：Phase 2 P0-3 已补路由（此前 `writeRocketUnturnedConfig` 是死代码，9 字段编辑器前端无法保存）
+> - **serializeRocketUnturnedConfig**：Phase 2 P0-2 已修（此前 `findElement` 找根元素永远找不到 → 字段修改不写回）
+> - **端点形态**：详情端点是 `GET /api/ldm/community-plugins/:owner/:repo`（**非 `:slug`**——Express `:slug` 不匹配 `/`，设计 §6.1 表第 13 行需按此为准）
+> - **readmePreview 语义**：实际截断的是 GitHub **release body**（非仓库 README）——老插件无 Release 时恒 null；§12.4「README 截断预览」表述待修正
+> - **状态卡「是否有更新」字段**：未落地（`LdmStatus` 只含 3 字段）；「模块加载状态」拆到 `/modules-state`（LdmAboutCard）——§12.4 范围缩减标注
+> - **错误码命名**：搜索端点统一 `status-invalid`（设计稿原案）
+
 ---
 
 ## 0. 一句话结论
@@ -289,7 +299,7 @@
 | **插件配置编辑**（Configuration.xml）      | ✅ 做                              | 各插件字段由插件 schema 决定；面板做**通用 Monaco XML 编辑器**（不做字段 schema 自动发现——schema 演进跟插件版本走，维护成本高）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **Rocket.config.xml 结构化编辑**           | ✅ 做                              | 字段表已确认（16 字段），逐字段控件                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **Permissions.config.xml 树形编辑**        | ✅ 做                              | Groups / Members / Permissions / Color / ParentGroup / Priority 全字段结构化                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **LDM 插件来源浏览**                       | ⚠️ 外链 + 列表展示                 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览。<br>**双源融合**（2026-08-12 用户拍板）：LDM-Community 上游**无公开 JSON API**（静态 HTML 主页），**Phase 1 走 HTML 解析 + GitHub API 批量补充**——HTML 解析拿 `slug` / `name` / `author` / `description` / `repoUrl`；GitHub API 拿 `tag_name`（`latestVersion`）+ `pushed_at`（`updatedAtIso`）。**GitHub PAT 配置位置在 LdmPage「插件来源」Tab 顶部**（不是 SettingsPage）。详细规格见 `claudedocs/workflow_sprint5_ldm_phase1.md` §5 + 调研报告 `claudedocs/research_ldm_community_source_2026-08-12.md` |
+| **LDM 插件来源浏览**                       | ⚠️ 外链 + 列表展示                 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览。<br>**双源融合**（2026-08-12 用户拍板）：LDM-Community 上游**无公开 JSON API**（静态 HTML 主页），**Phase 1 走 HTML 解析 + GitHub API 批量补充**——HTML 解析拿 `slug` / `name` / `author` / `description` / `repoUrl`；GitHub API 拿 `tag_name`（`latestVersion`）+ `pushed_at`（`updatedAtIso`）。**GitHub PAT 配置位置在 LdmPage「插件来源」Tab 顶部**（不是 SettingsPage）。调研报告：`claudedocs/research_ldm_community_source_2026-08-12.md` |
 | **改 LDM 配置生效方式**                    | ✅ PTY 终端 owner-trust 重启流水线 | `Say "保存 LDM 变更"` + `Save` + `Shutdown 10 "LDM 变更重启"` → spawn 新进程；**不调 `/rocket reload` 全局**（Issue #1794 + prohibitions 钉死）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **日志观察 LDM 启动加载/错误**             | ✅ 复用现有 PTY 控制台             | 真源锚点（2026-08-12 源码核对）：模块启动 banner = `CommandWindow.Log("Rocket Unturned v... for Unturned v...")`（`U.cs:151`）；插件加载失败日志 = `RocketPlugin.cs:132` `Logger.LogError("Failed to load X, unloading now...")`（主要路径）+ `U.cs:200` `Logger.LogException(ex, "Failed to load plugin X.")`（次要路径）；**插件加载成功无 stdout 行**——不存在 `[LDM] Loaded plugin X.Y.Z`（该字符串无源码）。前端 xterm.js 实时渲染                                                                                                                                                                                                                             |
 | **`/rocket` 命令输出解析**（插件状态列表） | ✅ 做                              | 解析 `Loaded` / `Unloaded` / `Failure` / `Cancelled` 4 状态                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -522,7 +532,7 @@ export interface ILdmAssemblyVersionReader {
 **实现要点**（`LdmAssemblyVersionReader.ts`）：
 
 ```typescript
-/** 自写 PE 流式解析（拍板：pe-library 已 archived 否决）——方案细节与单测见 workflow_sprint5_ldm_phase1.md §3 */
+/** 自写 PE 流式解析（拍板：pe-library 已 archived 否决）——方案细节与单测见 ldm-phase4-design.md §3 */
 export class LdmAssemblyVersionReader implements ILdmAssemblyVersionReader {
   /**
    * 读 .dll 的 AssemblyVersion。
@@ -602,7 +612,7 @@ async listInstalledPlugins(serverId: ServerId): Promise<InstalledPlugin[]> {
 
 ### 5.5 `LdmAssemblyVersionReader`（.dll 版本号读取 — A1 准确方案）
 
-> **拍板**：**自写 PE 元数据流式解析**（零依赖，仅 Node 内置 `fs` + `Buffer`），**不走 mono CLI、不用 `pe-library`**（pe-library 已 archived）。方案细节与单测见 `claudedocs/workflow_sprint5_ldm_phase1.md` §3。
+> **拍板**：**自写 PE 元数据流式解析**（零依赖，仅 Node 内置 `fs` + `Buffer`），**不走 mono CLI、不用 `pe-library`**（pe-library 已 archived）。方案细节与单测见 Phase 1 实施落档（`LdmAssemblyVersionReader.ts` + 测试）。
 
 **调研结论（关键）**：LDM 插件走 **GitHub Releases + LDM-Community 列表**分发，**不上 Steam Workshop**（[Steam Workshop 主站](https://steamcommunity.com/app/304930/workshop/) Asset Type 清单里没有 Plugin 类）。前端 `ModsPage` 现有的 Workshop 浏览与 LDM 插件无关。
 
@@ -676,14 +686,12 @@ export class LdmApplyService implements ILdmApplyService {
     changedPlugins: string[],
   ): Promise<void> {
     await this.serverManager.applyChangesCore(serverId, {
-      kind: "ldm_apply",
-      eventType: "ldm_apply_progress",
-      activeOpType: "ldm_apply",
-      preShutdownHook: async () => {
+      hook: "ldm_apply",
+      preStopHook: async () => {
         // LDM 应用前无额外操作（配置已写入完成才调 apply，hook 仅做日志）
         logger.info({ serverId, changedPlugins }, "LDM 变更应用开始");
       },
-      postReadyHook: async () => {
+      postStartHook: async () => {
         logger.info({ serverId, changedPlugins }, "LDM 变更应用完成");
       },
     });
@@ -698,11 +706,9 @@ export class LdmApplyService implements ILdmApplyService {
  * 应用变更核心流水线——mod_apply / ldm_apply / 未来 modpack_apply 共用。
  * 不在路由层直接调——必须经 Service 层包装。
  *
- * @param opts.kind - 'mod_apply' | 'ldm_apply' | 'modpack_apply'（预留第三处）
- * @param opts.eventType - WS 广播事件名（mod_apply_progress / ldm_apply_progress / modpack_apply_progress）
- * @param opts.activeOpType - activeOperation.type（防竞态互斥）
- * @param opts.preShutdownHook - 关服前回调（业务层日志/校验）
- * @param opts.postReadyHook - 启动就绪后回调（业务层后处理）
+ * @param opts.hook - 'mod_apply' | 'ldm_apply' | 'modpack_apply'（预留第三处）
+ * @param opts.preStopHook - 停止前回调（业务层日志/校验）——抛错则流水线 abort
+ * @param opts.postStartHook - 启动后回调（等实例 RUNNING 后执行——审计修订 P0-1）
  */
 async applyChangesCore(
   serverId: ServerId,
@@ -719,10 +725,10 @@ export type ApplyProgressEvent =
   | { type: 'ldm_apply_progress'; serverId: string; stage: LdmApplyStage; ... };
 ```
 
-**重构影响**：
+**重构影响**（审计修订：**未兑现**——v2.6 已删 `applyModChanges`，`applyChangesCore` 从零抽取，现唯一调用方 = `LdmApplyService`；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑，`modpack_apply` 不存在）：
 
-- `ServerManager.applyModChanges` → 改为薄壳（20 行）调 `applyChangesCore` + `kind: 'mod_apply'`
-- `WorkshopApplyService` 内的任何调用方同步改
+- ~~`ServerManager.applyModChanges` → 改为薄壳调 `applyChangesCore` + `kind: 'mod_apply'`~~（已失效——applyModChanges 已删）
+- `LdmApplyService` 调 `applyChangesCore`（hook='ldm_apply'）
 - 兼容性：API 端点 8 `/api/servers/:id/ldm/apply` 不变（路由层只调 `ILdmApplyService.applyChanges`）
 
 **单测**（≥ 4 用例）：
@@ -730,14 +736,15 @@ export type ApplyProgressEvent =
 1. `applyChanges` 正常路径 → activeOperation='ldm_apply' → 流水线跑完 → 释放
 2. 已有 activeOperation → 抛 `operation-conflict`
 3. 实例非 RUNNING → 抛 `server-not-running`
-4. `preShutdownHook` 抛错 → 流水线仍走 finally 清理 activeOperation
+4. `preStopHook` 抛错 → 流水线仍走 finally 清理 activeOperation
 
-**完成定义**：
+**完成定义**（审计修订：标记实际落地情况）：
 
-- [ ] `applyChangesCore` 从 `applyModChanges` 抽出，原方法变薄壳
-- [ ] `LdmApplyService` 实现 + 单测
-- [ ] WS 事件类型扩展为联合
-- [ ] `composition-root.ts` 注入 `LdmApplyService`
+- [x] `applyChangesCore` 从零抽取（v2.6 已删 applyModChanges，非从旧方法抽出）
+- [x] `LdmApplyService` 实现 + 单测
+- [x] WS 事件类型扩展为联合
+- [x] `composition-root.ts` 注入 `LdmApplyService`
+- [ ] ~~mod_apply 接入~~（未兑现——applyStaged 仍在 startInternal 内，非 applyChangesCore）
 
 ---
 
@@ -759,7 +766,7 @@ export type ApplyProgressEvent =
 | 10  | POST | `/api/servers/:id/files`                    | 插件 .dll 上传（Files API 复用）                          | multipart                                             | `FileUploadResponseSchema`              | **复用** FilesService；Linux 大小写校验 |
 | 11  | POST | `/api/ldm/community-plugins/test-pat`       | PAT 测连通性                                              | `X-GitHub-PAT` 请求头                                 | `OperationResponseSchema`               | Phase 1                                 |
 | 12  | GET  | `/api/servers/:id/ldm/status`               | 统一状态（LDM 主框架装没装 / Rocket/ 存在 / 插件总数）    | —                                                     | `LdmStatusSchema`                       | Phase 3                                 |
-| 13  | GET  | `/api/ldm/community-plugins/:slug`          | 插件详情（GitHub Releases 外链 + 最近版本）               | path: slug                                            | `CommunityPluginDetailSchema`           | Phase 3                                 |
+| 13  | GET  | `/api/ldm/community-plugins/:owner/:repo`   | 插件详情（GitHub Releases 外链 + 最近版本）               | path: owner/repo                                       | `CommunityPluginDetailSchema`           | Phase 3                                 |
 | 14  | POST | `/api/servers/:id/ldm/reload-plugin`        | 单插件 reload（二次确认）                                 | `ReloadPluginSchema`                                  | `OperationResponseSchema`               | Phase 4                                 |
 | 15  | GET  | `/api/servers/:id/ldm/plugins/search`       | 按 .dll 名 / 版本筛选                                     | query: q                                              | `InstalledPlugin[]`                     | Phase 4                                 |
 | 16  | WS   | `ldm_apply_progress`                        | 重启进度事件                                              | —                                                     | 见 §6.4                                 | —                                       |
@@ -984,10 +991,11 @@ export interface ILdmApplyService {
 | 错误                | code                      | status | 触发                                      | UI 提示（中文）                                                                                      |
 | ------------------- | ------------------------- | ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | LDM 主框架未装      | `ldm-not-installed`       | 404    | `Rocket/` 目录不存在                      | 「未检测到 Mod 框架。请复制 U3DS 装包自带的 Extras 到 Modules 目录并重启实例（见「关于 LDM」指引）」 |
-| 插件不存在          | `ldm-plugin-not-found`    | 404    | `Plugins/<Name>/` 不存在                  | 「插件 {{name}} 不存在。请从 GitHub Releases 下载 .dll 并上传到插件目录」                            |
+| 插件不存在/未加载   | `plugin-not-found`        | 404    | LDM stdout `not found` / `is not loaded`  | 「插件 {{name}} 不存在或未加载」（load/unload/reload 统一抛——审计修订）                              |
 | 配置文件损坏        | `ldm-config-corrupted`    | 500    | XML 解析失败                              | 「配置文件损坏，已自动回滚到上次正确状态」                                                           |
 | 写失败              | `ldm-config-write-failed` | 500    | atomic write 失败                         | 「配置文件写入失败：{{reason}}」                                                                     |
-| PTY 关闭超时        | `server-shutdown-timeout` | 504    | waitExit 30s 超时                         | 「实例关闭超时，已强制停止」                                                                         |
+| PTY 响应超时        | `pty-timeout`             | 500    | 10s 未收到 LDM 响应                       | 「操作超时，实例未响应」（load/unload/reload 统一抛——审计修订）                                      |
+| 操作冲突            | `operation-conflict`      | 409    | 同 server 并发插件命令（拒绝式锁）         | 「该实例已有插件命令在跑，请稍后再试」（审计修订）                                                   |
 
 ---
 
@@ -1072,7 +1080,7 @@ LdmPage
 - **Tab 顶部固定 GitHub PAT 配置卡**——用于「提升 GitHub API 限流（60/h → 5000/h）」。PAT 只服务 LDM 社区插件列表，不属于「系统级设置」，**不放在 SettingsPage**（避免污染 Steam WebAPI Key 域）
 - **后端透传**：PAT 由前端 localStorage 持有 + 每次请求通过请求头 `X-GitHub-PAT` 透传，**后端不持久化**——用户改 PAT 立即生效，无需重启面板
 - **双源融合**：列表展示走 HTML 解析 + GitHub API 批量（25 仓库 × 2 端点 = 50 调用/全量，5min 进程内缓存复用，匿名 60/h 限流恰好够 1 次全量刷新；配 PAT 后 5000/h 零压力）
-- 详细规格（控件 / 字段 / 错误码 / 单测用例）见 `claudedocs/workflow_sprint5_ldm_phase1.md` §7.8
+- 详细规格（控件 / 字段 / 错误码 / 单测用例）见 Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）
 
 ### 7.6 操作流（端到端）
 
@@ -1279,7 +1287,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（PE 元数据流式解析，零依赖） / `LdmPluginSourceService`（HTML 解析 + GitHub API 批量补充 + 5min 进程内缓存）                                                                            |
 | **不做**     | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3）                                                                                                                                                                                                                                       |
 | **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 8 用例 / `LdmPluginSourceService` ≥ 13 用例含双源融合 + 限流处理 / `LdmPluginCommandsService` ≥ 8 用例 / `LdmDiscoveryService` ≥ 7 用例 = 36 用例）；E2E「上传 .dll → 列表出现 → load → 状态徽章变更 → unload → 状态徽章变更」+ E2E「配 PAT → 拉双源列表 → 限流显示 5000/h」 |
-| **详细规格** | `claudedocs/workflow_sprint5_ldm_phase1.md`（单期实施契约层）<br>调研证据：`claudedocs/research_ldm_community_source_2026-08-12.md`                                                                                                                                                                                                |
+| **详细规格** | Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）<br>调研证据：`claudedocs/research_ldm_community_source_2026-08-12.md`                                                                                                                                                                                                |
 
 ### 12.3 Phase 2 — 完整配置（+12–15 人天）
 
@@ -1302,7 +1310,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | 维度         | 内容                                                                                                                                                                                                               |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **能力**     | G2（外链 GitHub Releases）+ G3（详情页跳转）+ I1（5 步 SOP 引导卡片）+ F4（兼容信息只展示）                                                                                                                        |
-| **端点**     | + 2 端点 = **12 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）<br>`GET /api/ldm/community-plugins/:slug`（详情页：GitHub Releases 外链 + 最近版本） |
+| **端点**     | + 2 端点 = **12 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）<br>`GET /api/ldm/community-plugins/:owner/:repo`（详情页：GitHub Releases 外链 + 最近版本） |
 | **前端**     | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...）+ 「插件来源 Tab」增强（详情抽屉 + 版本时间线 + README 截断预览）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新）       |
 | **后端模块** | 无新模块——纯前端 + 复用 `LdmDiscoveryService` 增 1 方法 `getLdmStatus(serverId)`                                                                                                                                   |
 | **依赖**     | 必须 Phase 2 完成（状态卡片依赖 Discovery 完整数据）                                                                                                                                                               |
