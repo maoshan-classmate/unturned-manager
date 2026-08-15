@@ -32,7 +32,9 @@ import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { InfoCard } from "../components/shared/InfoCard.js";
 import { Input } from "../components/ui/input.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
+import { SearchInput } from "../components/shared/SearchInput.js";
 import { LdmStatusCard } from "../components/ldm/LdmStatusCard.js";
+import type { PluginRuntimeStatus } from "@unturned-manager/shared";
 import { OnboardingSopCard } from "../components/ldm/OnboardingSopCard.js";
 import { CommunityPluginDetailDialog } from "../components/ldm/CommunityPluginDetailDialog.js";
 import { FrameworkConfigTab } from "../components/ldm/FrameworkConfigTab.js";
@@ -169,8 +171,30 @@ export function LdmPage() {
 
 // ─── Tab 1: 已装插件 ─────────────────────────────────────
 
+// 状态筛选枚举映射（前端展示 → 后端 status 值）
+const RUNTIME_STATUS_OPTIONS = [
+  { value: null as PluginRuntimeStatus | null, label: "全部" },
+  { value: "loaded" as PluginRuntimeStatus, label: "已加载" },
+  { value: "unloaded" as PluginRuntimeStatus, label: "未加载" },
+  { value: "failure" as PluginRuntimeStatus, label: "加载失败" },
+  { value: "cancelled" as PluginRuntimeStatus, label: "已取消" },
+  { value: "unknown" as PluginRuntimeStatus, label: "未知" },
+];
+
 function InstalledTab({ serverId }: { serverId: string }) {
-  const { data, isLoading, error, refetch, isRefetching } = useQuery({
+  // Phase 4b：搜索/筛选 state（query 即时更新 + debounce 300ms 触发后端查询）
+  const [queryInput, setQueryInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<PluginRuntimeStatus | null>(null);
+  // 标记是否启用筛选（避免无筛选时也打后端——保持原 /installed 路径）
+  const searchEnabled = debouncedQuery !== "" || statusFilter !== null;
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(queryInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [queryInput]);
+
+  // 主列表 useQuery（无筛选时走 /installed；筛选时走 /plugins/search）
+  const installedQuery = useQuery({
     queryKey: ["ldm", "installed", serverId],
     queryFn: async () => {
       const res = await apiClient.get<{ data: InstalledPluginsResponse }>(
@@ -178,12 +202,47 @@ function InstalledTab({ serverId }: { serverId: string }) {
       );
       return res.data.data;
     },
-    enabled: !!serverId,
+    enabled: !!serverId && !searchEnabled,
     staleTime: 60_000,
   });
 
+  // 搜索 useQuery（筛选时启用）
+  const searchQuery = useQuery({
+    queryKey: ["ldm", "search", serverId, debouncedQuery, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (debouncedQuery) params.set("query", debouncedQuery);
+      if (statusFilter) params.set("status", statusFilter);
+      const res = await apiClient.get<{ data: InstalledPlugin[] }>(
+        `/servers/${serverId}/ldm/plugins/search?${params.toString()}`,
+      );
+      return res.data.data;
+    },
+    enabled: !!serverId && searchEnabled,
+    staleTime: 60_000,
+  });
+
+  // 统一当前展示的列表/loading/error/refetch
+  const data = searchEnabled
+    ? {
+        serverId,
+        plugins: searchQuery.data ?? [],
+        ldmNotDetected: false,
+        detectedAtIso: new Date().toISOString(),
+      }
+    : installedQuery.data;
+  const isLoading = searchEnabled ? searchQuery.isLoading : installedQuery.isLoading;
+  const error = searchEnabled ? searchQuery.error : installedQuery.error;
+  const refetch = () => {
+    if (searchEnabled) searchQuery.refetch();
+    else installedQuery.refetch();
+  };
+  const isRefetching = searchEnabled
+    ? searchQuery.isFetching
+    : installedQuery.isFetching;
+
   const commandMutation = useMutation({
-    mutationFn: async (vars: { pluginName: string; action: "load" | "unload" }) => {
+    mutationFn: async (vars: { pluginName: string; action: "load" | "unload" | "reload" }) => {
       const url = `/servers/${serverId}/ldm/${vars.action}-plugin`;
       const res = await apiClient.post<{ data: { outcome: string; ldmOutput: string } }>(
         url,
@@ -192,12 +251,15 @@ function InstalledTab({ serverId }: { serverId: string }) {
       return res.data.data;
     },
     onSuccess: (data, vars) => {
+      const pastTense = vars.action === "load" ? "加载" : vars.action === "unload" ? "卸载" : "重新加载";
       if (data.outcome === "success") {
-        toast.success(`${vars.pluginName} 已${vars.action === "load" ? "加载" : "卸载"}`);
+        toast.success(`${vars.pluginName} 已${pastTense}`);
       } else {
-        toast.warning(`${vars.action === "load" ? "加载" : "卸载"}未完成：${data.ldmOutput || "无详情"}`);
+        toast.warning(`${pastTense}未完成：${data.ldmOutput || "无详情"}`);
       }
-      refetch();
+      // reload 后刷新——主列表路径（search 时不刷新避免 query 状态混乱）
+      if (!searchEnabled) installedQuery.refetch();
+      else searchQuery.refetch();
     },
     onError: (err) => toast.error(errorMessage(err, "操作失败")),
   });
@@ -252,11 +314,40 @@ function InstalledTab({ serverId }: { serverId: string }) {
       {data && (
         <div className="space-y-3">
           <LdmStatusCard serverId={serverId} />
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <p className="text-xs" style={{ color: "#64748B" }}>
-              共 {data.plugins.length} 个插件 · 检测于 {formatDate(data.detectedAtIso)}
+              {searchEnabled
+                ? `匹配 ${data.plugins.length} 个插件（筛选中）`
+                : `共 ${data.plugins.length} 个插件 · 检测于 ${formatDate(data.detectedAtIso)}`}
             </p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SearchInput
+                value={queryInput}
+                onChange={setQueryInput}
+                placeholder="搜索 .dll 名或版本"
+                width={220}
+              />
+              <div className="flex items-center gap-1">
+                {RUNTIME_STATUS_OPTIONS.map((opt) => {
+                  const active = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setStatusFilter(opt.value)}
+                      className="px-2 h-7 rounded text-xs transition-colors"
+                      style={{
+                        backgroundColor: active ? "#22C55E" : "#0F172A",
+                        color: active ? "#F1F5FB" : "#94A3B8",
+                        border: "1px solid #334059",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
               <UploadButton
                 disabled={uploadMutation.isPending}
                 onSelect={(file) => uploadMutation.mutate(file)}
@@ -280,6 +371,7 @@ function InstalledTab({ serverId }: { serverId: string }) {
                 loading={commandMutation.isPending}
                 onLoad={() => commandMutation.mutate({ pluginName: p.name, action: "load" })}
                 onUnload={() => commandMutation.mutate({ pluginName: p.name, action: "unload" })}
+                onReload={() => commandMutation.mutate({ pluginName: p.name, action: "reload" })}
               />
             ))}
           </div>
@@ -458,13 +550,15 @@ function PluginCard({
   loading,
   onLoad,
   onUnload,
+  onReload,
 }: {
   plugin: InstalledPlugin;
   loading: boolean;
   onLoad: () => void;
   onUnload: () => void;
+  onReload?: () => void;
 }) {
-  const [confirm, setConfirm] = useState<"load" | "unload" | null>(null);
+  const [confirm, setConfirm] = useState<"load" | "unload" | "reload" | null>(null);
   const isLoaded = p.runtimeStatus === "loaded";
   const isFailed = p.runtimeStatus === "failure" || p.runtimeStatus === "cancelled";
 
@@ -493,6 +587,17 @@ function PluginCard({
         <span>{formatDate(p.modifiedAtIso)}</span>
       </div>
       <div className="flex gap-2">
+        {isLoaded && onReload && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={loading}
+            onClick={() => setConfirm("reload")}
+            aria-label={`重新加载 ${p.name}`}
+          >
+            <RefreshCw size={14} /> 重新加载
+          </Button>
+        )}
         {isLoaded ? (
           <Button
             size="sm"
@@ -517,14 +622,28 @@ function PluginCard({
       <ConfirmDialog
         open={confirm !== null}
         onCancel={() => setConfirm(null)}
-        title="确认操作"
-        message={`将对 ${p.name} 执行${confirm === "load" ? "加载" : "卸载"}命令`}
-        confirmLabel={`确认${confirm === "load" ? "加载" : "卸载"}`}
+        title={
+          confirm === "reload"
+            ? "重新加载插件"
+            : "确认操作"
+        }
+        message={
+          confirm === "reload"
+            ? `重新加载 ${p.name}？此操作不保证成功，可能破坏插件状态。建议仅在插件状态异常时使用。`
+            : `将对 ${p.name} 执行${confirm === "load" ? "加载" : "卸载"}命令`
+        }
+        confirmLabel={
+          confirm === "reload"
+            ? "确认重新加载"
+            : `确认${confirm === "load" ? "加载" : "卸载"}`
+        }
         variant={confirm === "load" ? "default" : "danger"}
         onConfirm={() => {
+          const action = confirm;
           setConfirm(null);
-          if (confirm === "load") onLoad();
-          else if (confirm === "unload") onUnload();
+          if (action === "load") onLoad();
+          else if (action === "unload") onUnload();
+          else if (action === "reload") onReload?.();
         }}
       />
     </div>

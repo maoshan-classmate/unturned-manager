@@ -37,6 +37,21 @@ export interface ILdmDiscoveryService {
    * @returns ldmInstalled (Rocket.Unturned.module 是否存在) + rocketDirExists + pluginCount
    */
   getStatus(serverId: ServerId): Promise<LdmStatus>;
+
+  /**
+   * 按 query / 状态筛选已装插件——内存过滤（不重新读盘）。
+   * Phase 4b 新增——§11.1 F1 列表查询的扩展。
+   *
+   * @param serverId 实例标识
+   * @param opts.query .dll 名 / 版本号 / PluginName 子串匹配（不区分大小写）
+   * @param opts.status 运行时状态筛选（loaded/unloaded/failure/cancelled/unknown）；null/undefined = 全部
+   * @returns 筛选后的插件列表
+   * @throws AppError('server-not-found') 实例不存在
+   */
+  searchPlugins(
+    serverId: ServerId,
+    opts: { query?: string; status?: PluginRuntimeStatus | null },
+  ): Promise<InstalledPlugin[]>;
 }
 
 /**
@@ -96,6 +111,30 @@ export interface ILdmPluginCommandsService {
    */
   reloadPermissions(
     serverId: ServerId,
+  ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }>;
+
+  /**
+   * PTY 写 `/rocket reload <name>`——单插件 reload（Phase 4a）。
+   *
+   * **关键边界**（§11.1 B4 + LDM 官方 CommandRocket.cs）：
+   * - 社区已知 reload 会破坏部分插件状态（依赖全局单例/计时器/缓存的插件）
+   * - 面板**必须**前端弹二次确认（设计 §11.1 B4）
+   * - 后端**不**主动判断插件是否「安全可 reload」——一律放过，由前端警告 + 用户决策
+   *
+   * @param serverId 实例标识
+   * @param pluginName 插件名（Linux 大小写敏感，与 .dll 文件名去扩展严格一致）
+   * @returns outcome + LDM stdout 末尾（≤ 256 字）
+   *   success = 命令已接受（reload 已触发，非 reload 最终成功——成功零日志）
+   *   failure = LDM 拒绝（插件不存在 / 未加载 / 加载执行失败）
+   * @throws AppError('server-not-running') 实例未运行
+   * @throws AppError('plugin-not-found') 插件未安装
+   * @throws AppError('pty-write-failed') PTY 写入失败
+   * @throws AppError('pty-timeout') 10s 内未收到 LDM 响应
+   * @throws AppError('operation-conflict') 已有同 server 的 plugin command 在跑
+   */
+  reloadPlugin(
+    serverId: ServerId,
+    pluginName: string,
   ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }>;
 
   /**

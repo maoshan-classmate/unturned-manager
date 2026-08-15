@@ -36,6 +36,7 @@ const mockDiscovery = {
     pluginCount: 3,
     detectedAtIso: "2026-08-15T06:00:00.000Z",
   }),
+  searchPlugins: vi.fn().mockResolvedValue([]),
 };
 const mockCommands = {
   loadPlugin: vi.fn().mockResolvedValue({
@@ -49,6 +50,10 @@ const mockCommands = {
   reloadPermissions: vi.fn().mockResolvedValue({
     outcome: "success",
     ldmOutput: "Reloaded permissions",
+  }),
+  reloadPlugin: vi.fn().mockResolvedValue({
+    outcome: "success",
+    ldmOutput: "Reloading Uconomy",
   }),
   readLdmVersion: vi.fn().mockResolvedValue({
     ldmVersion: "4.9.3.18",
@@ -412,5 +417,107 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
       .set("Authorization", "Bearer test-token");
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("server-not-running");
+  });
+
+  // ─── Phase 4a 端点（单插件 reload）────────────────────────────────
+
+  it("POST /reload-plugin happy path: 调 commands.reloadPlugin → 包装 serverId + pluginName", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/reload-plugin")
+      .set("Authorization", "Bearer test-token")
+      .send({ pluginName: "Uconomy" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.outcome).toBe("success");
+    expect(res.body.data.ldmOutput).toBe("Reloading Uconomy");
+    expect(mockCommands.reloadPlugin).toHaveBeenCalledWith("S1", "Uconomy");
+  });
+
+  it("POST /reload-plugin 错误码：pluginName 缺失 → 400 plugin-name-missing", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/reload-plugin")
+      .set("Authorization", "Bearer test-token")
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /reload-plugin 错误码：pluginName 非法字符 → 400 plugin-name-invalid", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/reload-plugin")
+      .set("Authorization", "Bearer test-token")
+      .send({ pluginName: "evil path" });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /reload-plugin 错误码：实例非 RUNNING → 409 server-not-running", async () => {
+    const { AppError } = await import("../src/utils/AppError.js");
+    mockCommands.reloadPlugin.mockRejectedValueOnce(
+      new AppError("server-not-running", "实例未运行，无法 reload", 409),
+    );
+    const app = makeApp();
+    const res = await request(app)
+      .post("/api/servers/S1/ldm/reload-plugin")
+      .set("Authorization", "Bearer test-token")
+      .send({ pluginName: "Uconomy" });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("server-not-running");
+  });
+
+  // ─── Phase 4b 端点（插件搜索/筛选）──────────────────────────────
+
+  it("GET /plugins/search 无 query: searchPlugins 调无 opts（全部状态）", async () => {
+    mockDiscovery.searchPlugins.mockResolvedValueOnce([
+      {
+        name: "Uconomy",
+        version: "3.0.0.0",
+        sizeBytes: 1024,
+        hasConfig: true,
+        modifiedAtIso: "2026-08-15T06:00:00.000Z",
+        runtimeStatus: "loaded",
+      },
+    ]);
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/plugins/search")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].name).toBe("Uconomy");
+    expect(mockDiscovery.searchPlugins).toHaveBeenCalledWith("S1", {
+      query: "",
+      status: null,
+    });
+  });
+
+  it("GET /plugins/search 带 query + status: 透传 searchPlugins opts", async () => {
+    mockDiscovery.searchPlugins.mockResolvedValueOnce([]);
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/plugins/search?query=Uconomy&status=loaded")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(200);
+    expect(mockDiscovery.searchPlugins).toHaveBeenCalledWith("S1", {
+      query: "Uconomy",
+      status: "loaded",
+    });
+  });
+
+  it("GET /plugins/search 错误码：status 非法值 → 400 plugin-search-invalid", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/plugins/search?status=invalid")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("plugin-search-invalid");
+  });
+
+  it("GET /plugins/search 错误码：serverId 缺失 → 404 not-found（路由不匹配）", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/ldm/plugins/search")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(404);
   });
 });

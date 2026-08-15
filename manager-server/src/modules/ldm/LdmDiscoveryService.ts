@@ -20,6 +20,7 @@ import type {
   InstalledPlugin,
   LdmRuntimeStatusReader,
   LdmStatus,
+  PluginRuntimeStatus,
   ServerId,
 } from '@unturned-manager/shared';
 import { AppError } from '../../utils/AppError.js';
@@ -136,6 +137,34 @@ export class LdmDiscoveryService implements ILdmDiscoveryService {
       pluginCount,
       detectedAtIso: new Date().toISOString(),
     };
+  }
+
+  /**
+   * 按 query / 状态筛选已装插件——内存过滤（不重新读盘，Phase 4b）。
+   *
+   * 复用 listInstalledPlugins 全部逻辑（含 runtimeStatus 注入），
+   * 内存过滤：name.includes(query) + version?.startsWith(query) + runtimeStatus === status
+   *
+   * @param serverId 实例标识
+   * @param opts.query .dll 名 / 版本号 / PluginName 子串匹配（不区分大小写）
+   * @param opts.status 运行时状态筛选；null/undefined = 全部
+   * @returns 筛选后的插件列表
+   * @throws AppError('server-not-found') 实例不存在（透传 listInstalledPlugins）
+   */
+  async searchPlugins(
+    serverId: ServerId,
+    opts: { query?: string; status?: PluginRuntimeStatus | null },
+  ): Promise<InstalledPlugin[]> {
+    const all = await this.listInstalledPlugins(serverId);
+    const q = (opts.query ?? "").trim().toLowerCase();
+    const status = opts.status ?? null;
+    return all.plugins.filter((p) => {
+      if (status !== null && p.runtimeStatus !== status) return false;
+      if (q === "") return true;
+      if (p.name.toLowerCase().includes(q)) return true;
+      if (p.version?.toLowerCase().includes(q)) return true;
+      return false;
+    });
   }
 }
 

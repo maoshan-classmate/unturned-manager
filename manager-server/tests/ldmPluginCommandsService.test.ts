@@ -96,6 +96,33 @@ describe('LdmPluginCommandsService', () => {
     expect(result.outcome).toBe('success');
   });
 
+  it('4a. 成功 reload：PTY stdout 含 "Reloading" → outcome=success', async () => {
+    const { pty, serverManager, runtimeStatusReader } = mockDeps({
+      lines: ['[LDM] Reloading plugin Uconomy'],
+    });
+    const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
+    const result = await svc.reloadPlugin('S1' as never, 'Uconomy');
+    expect(result.outcome).toBe('success');
+  });
+
+  it('4b. failure reload：PTY stdout 含 "Plugin X not found" → outcome=failure', async () => {
+    const { pty, serverManager, runtimeStatusReader } = mockDeps({
+      lines: ['Plugin MissingPlugin not found'],
+    });
+    const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
+    const result = await svc.reloadPlugin('S1' as never, 'MissingPlugin');
+    expect(result.outcome).toBe('failure');
+  });
+
+  it('4c. failure reload：PTY stdout 含 "Failed to load" → outcome=failure', async () => {
+    const { pty, serverManager, runtimeStatusReader } = mockDeps({
+      lines: ['Failed to load plugin Uconomy, unloading now...'],
+    });
+    const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
+    const result = await svc.reloadPlugin('S1' as never, 'Uconomy');
+    expect(result.outcome).toBe('failure');
+  });
+
   it('4. 成功：收到 "Loading Uconomy" → outcome=success', async () => {
     const { pty, serverManager, runtimeStatusReader } = mockDeps({
       lines: ['[LDM] Loading Uconomy', 'Loaded plugin Uconomy'],

@@ -87,6 +87,32 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
   }
 
   /**
+   * PTY 写 `/rocket reload <name>`——单插件 reload（Phase 4a B4）。
+   *
+   * **不保证成功**——社区已知 reload 会破坏部分插件状态（设计 §11.1 B4）；
+   * 前端**必须**弹二次确认由用户决策。
+   * 成功 reload 零日志（与 load 行为一致，CommandRocket.cs 行为）——
+   * success markers 用 `Reloading|Reload ` 捕获 reload 启动事件，failure
+   * 锚点复用 isFailureLine() 全局函数（识别 Failed/Unable to/Could not）。
+   *
+   * @param serverId - 实例标识
+   * @param pluginName - 插件名（Linux 大小写敏感）
+   * @returns outcome + LDM stdout 末尾（≤ 256 字）
+   * @throws AppError('server-not-running') 实例未运行
+   * @throws AppError('pty-write-failed') PTY 写入失败
+   * @throws AppError('pty-timeout') 10s 内未收到 LDM 响应
+   * @throws AppError('operation-conflict') 已有同 server 的 plugin command 在跑
+   */
+  async reloadPlugin(
+    serverId: ServerId,
+    pluginName: string,
+  ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }> {
+    return this.run(serverId, pluginName, "reload", [
+      /Reloading\s+|Reload\s+/i,
+    ]);
+  }
+
+  /**
    * 读LDM 主框架版本（D2）——PTY 写空 `/rocket`（U.cs:88-118 输出 Rocket v<ver> for Unturned v<gameVer>）。
    *
    * @param serverId - 实例标识
@@ -183,7 +209,7 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
   private async run(
     serverId: ServerId,
     pluginName: string,
-    verb: "load" | "unload",
+    verb: "load" | "unload" | "reload",
     successMarkers: RegExp[],
   ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }> {
     // 1. 互斥锁

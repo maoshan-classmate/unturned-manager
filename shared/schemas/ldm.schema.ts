@@ -156,6 +156,31 @@ export const PluginConfigWriteSchema = z.object({
 });
 export type PluginConfigWriteRequest = z.infer<typeof PluginConfigWriteSchema>;
 
+// ─── LDM Phase 4a 契约 ─────────────────────────────────
+
+/**
+ * @phase4a POST /api/servers/:id/ldm/reload-plugin 请求
+ * 单插件 reload（二次确认）——B4 边界（§11.1 B4，**不保证成功**）
+ */
+export const ReloadPluginSchema = z.object({
+  pluginName: z.string().regex(/^[A-Za-z0-9._-]+$/, '插件名只能含字母数字 . _ -'),
+});
+export type ReloadPluginRequest = z.infer<typeof ReloadPluginSchema>;
+
+/**
+ * @phase4a GET /api/servers/:id/ldm/plugins/search query 参数
+ * 插件搜索/筛选——按 .dll 名 / 版本前缀 / 运行时状态组合筛选
+ */
+export const PluginSearchQuerySchema = z.object({
+  query: z.string().optional().default(''),
+  status: z
+    .enum(['loaded', 'unloaded', 'failure', 'cancelled', 'unknown'])
+    .nullable()
+    .optional()
+    .default(null),
+});
+export type PluginSearchQuery = z.infer<typeof PluginSearchQuerySchema>;
+
 // ─── LDM Phase 3 契约 ─────────────────────────────────
 
 /**

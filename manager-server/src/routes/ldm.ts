@@ -15,12 +15,15 @@ import {
   PluginConfigWriteSchema,
   RocketConfigWriteSchema,
   PermissionsConfigWriteSchema,
+  ReloadPluginSchema,
+  PluginSearchQuerySchema,
   type ILdmApplyService,
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
   type ILdmPluginSourceService,
   type ILdmConfigWriter,
   type ServerId,
+  type PluginRuntimeStatus,
 } from "@unturned-manager/shared";
 import { authenticateToken } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -101,6 +104,54 @@ export function createLdmServerRouter(deps: {
       if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
       const state = await deps.commands.readModulesState(serverId as ServerId);
       res.json({ data: { serverId, ...state } });
+    }),
+  );
+
+  // ─── Phase 4a 端点 ────────────────────────────────────────
+
+  // POST /reload-plugin — 单插件 reload（B4，**不保证成功**，前端二级确认）
+  router.post(
+    "/reload-plugin",
+    validate(ReloadPluginSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const { pluginName } = req.body as { pluginName: string };
+      const result = await deps.commands.reloadPlugin(serverId as ServerId, pluginName);
+      res.json({
+        data: {
+          serverId,
+          pluginName,
+          outcome: result.outcome,
+          ldmOutput: result.ldmOutput,
+        },
+      });
+    }),
+  );
+
+  // ─── Phase 4b 端点 ────────────────────────────────────────
+
+  // GET /plugins/search?query=&status= — 插件搜索/筛选
+  router.get(
+    "/plugins/search",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      // Zod 校验 query 参数
+      const parsed = PluginSearchQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        throw new AppError(
+          "plugin-search-invalid",
+          `搜索参数非法：${parsed.error.issues.map((i) => i.message).join("; ")}`,
+          400,
+        );
+      }
+      const { query, status } = parsed.data;
+      const result = await deps.discovery.searchPlugins(serverId as ServerId, {
+        query,
+        status: status as PluginRuntimeStatus | null,
+      });
+      res.json({ data: result });
     }),
   );
 
