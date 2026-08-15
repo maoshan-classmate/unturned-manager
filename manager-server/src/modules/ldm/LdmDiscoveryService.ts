@@ -144,9 +144,10 @@ export class LdmDiscoveryService implements ILdmDiscoveryService {
    *
    * 复用 listInstalledPlugins 全部逻辑（含 runtimeStatus 注入），
    * 内存过滤：name.includes(query) + version?.startsWith(query) + runtimeStatus === status
+   * （设计稿 §4.1：版本按「前缀」匹配，插件名按「子串」匹配）
    *
    * @param serverId 实例标识
-   * @param opts.query .dll 名 / 版本号 / PluginName 子串匹配（不区分大小写）
+   * @param opts.query .dll 名子串 / 版本号前缀（不区分大小写）
    * @param opts.status 运行时状态筛选；null/undefined = 全部
    * @returns 筛选后的插件列表
    * @throws AppError('server-not-found') 实例不存在（透传 listInstalledPlugins）
@@ -162,7 +163,8 @@ export class LdmDiscoveryService implements ILdmDiscoveryService {
       if (status !== null && p.runtimeStatus !== status) return false;
       if (q === "") return true;
       if (p.name.toLowerCase().includes(q)) return true;
-      if (p.version?.toLowerCase().includes(q)) return true;
+      // 版本按前缀匹配（设计稿 §4.1）——例：查 "3" 命中 "3.0.0.0" 但不命中 "13.0.0.0"
+      if (p.version?.toLowerCase().startsWith(q)) return true;
       return false;
     });
   }

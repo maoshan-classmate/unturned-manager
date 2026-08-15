@@ -105,13 +105,26 @@ describe('LdmPluginCommandsService', () => {
     expect(result.outcome).toBe('success');
   });
 
-  it('4b. failure reload：PTY stdout 含 "Plugin X not found" → outcome=failure', async () => {
+  it('4b. reload 插件不存在：PTY stdout 含 "Plugin X not found" → 抛 plugin-not-found', async () => {
     const { pty, serverManager, runtimeStatusReader } = mockDeps({
       lines: ['Plugin MissingPlugin not found'],
     });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
-    const result = await svc.reloadPlugin('S1' as never, 'MissingPlugin');
-    expect(result.outcome).toBe('failure');
+    await expect(svc.reloadPlugin('S1' as never, 'MissingPlugin')).rejects.toMatchObject({
+      code: 'plugin-not-found',
+      status: 404,
+    });
+  });
+
+  it('4d. reload 未加载插件：PTY stdout 含 "The plugin X is not loaded" → 抛 plugin-not-found', async () => {
+    const { pty, serverManager, runtimeStatusReader } = mockDeps({
+      lines: ['The plugin Uconomy is not loaded'],
+    });
+    const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
+    await expect(svc.reloadPlugin('S1' as never, 'Uconomy')).rejects.toMatchObject({
+      code: 'plugin-not-found',
+      status: 404,
+    });
   });
 
   it('4c. failure reload：PTY stdout 含 "Failed to load" → outcome=failure', async () => {
@@ -141,29 +154,29 @@ describe('LdmPluginCommandsService', () => {
     expect(result.outcome).toBe('failure');
   });
 
-  it('6. 超时 10s：无响应 → outcome=failure', async () => {
-    // 这里仅用 vi.useFakeTimers 加速测试
+  it('6. 超时 10s：无响应 → 抛 pty-timeout', async () => {
     const { pty, serverManager, runtimeStatusReader } = mockDeps({ lines: [] });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
-    // 把内部 waitForMarker 改成超时——但它是 10s 真实时间；测试改用 vi.advanceTimersByTime
-    // 这里改为限定时间 100ms——通过 mock waitForMarker 自己的 setTimeout
-    // 实际：内部 setTimeout 10s 在 fake timer 下会被快进
-    const before = Date.now();
-    const result = await svc.loadPlugin('S1' as never, 'Uconomy');
-    expect(result.outcome).toBe('failure');
-    // 实际墙钟应 < 2s（pollForMarker 50ms 间隔循环 + 计数器）
-    expect(Date.now() - before).toBeLessThan(2000);
+    await expect(svc.loadPlugin('S1' as never, 'Uconomy')).rejects.toMatchObject({
+      code: 'pty-timeout',
+      status: 500,
+    });
   });
 
-  it('7. per-server 互斥锁：同一 serverId 串行执行', async () => {
-    const slowLines = ['Loading Uconomy'];
-    const dep1 = mockDeps({ lines: slowLines });
+  it('7. per-server 互斥锁：同 serverId 并发 → 第二个抛 operation-conflict', async () => {
+    const dep1 = mockDeps({ lines: ['Loading Uconomy'] });
     const svc = new LdmPluginCommandsService(dep1.pty, dep1.serverManager, dep1.runtimeStatusReader);
-    const order: string[] = [];
-    const p1 = svc.loadPlugin('S1' as never, 'Uconomy').then(() => order.push('p1'));
-    const p2 = svc.loadPlugin('S1' as never, 'Uconomy').then(() => order.push('p2'));
-    await Promise.all([p1, p2]);
-    expect(order).toEqual(['p1', 'p2']);
+    // 第一个任务先占用锁——用 waitForMarker 挂起模拟任务未完成
+    const p1 = svc.loadPlugin('S1' as never, 'Uconomy');
+    // 第二个立即调用——锁被占 → 抛 operation-conflict
+    await expect(svc.loadPlugin('S1' as never, 'Uconomy')).rejects.toMatchObject({
+      code: 'operation-conflict',
+      status: 409,
+    });
+    // 等待 p1 完成后锁释放，后续调用可再执行
+    await p1;
+    const p2 = await svc.loadPlugin('S1' as never, 'Uconomy');
+    expect(p2.outcome).toBe('success');
   });
 
   it('8. 不同 serverId 并行执行', async () => {

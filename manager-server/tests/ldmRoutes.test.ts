@@ -504,13 +504,13 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
     });
   });
 
-  it("GET /plugins/search 错误码：status 非法值 → 400 plugin-search-invalid", async () => {
+  it("GET /plugins/search 错误码：status 非法值 → 400 status-invalid", async () => {
     const app = makeApp();
     const res = await request(app)
       .get("/api/servers/S1/ldm/plugins/search?status=invalid")
       .set("Authorization", "Bearer test-token");
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("plugin-search-invalid");
+    expect(res.body.error.code).toBe("status-invalid");
   });
 
   it("GET /plugins/search 错误码：serverId 缺失 → 404 not-found（路由不匹配）", async () => {

@@ -562,4 +562,43 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       errors.filter((e) => !e.includes("@base-ui") && !e.includes("motion")),
     ).toHaveLength(0);
   });
+
+  // ─── Phase 4b：插件搜索/筛选 ─────────────────────────────
+  // 场景：登录 → 选实例 → LdmPage 已装插件 Tab → 搜索框输入 → 过滤生效（无 JS 错误）
+  test("LdmPage 插件搜索框 + 状态 chip 渲染（Phase 4b）", async ({ page }) => {
+    await page.goto("/");
+    await page.fill("#login-username", "admin");
+    await page.fill("#login-password", "123456");
+    await page
+      .getByRole("button", { name: /登录|Sign/i })
+      .first()
+      .click();
+    await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
+
+    await selectActiveInstance(page);
+    await page.goto("/ldm");
+    await expect(
+      page.getByRole("heading", { name: "Mod 框架" }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // 已装插件 Tab 顶部搜索框渲染（Phase 4b）
+    await expect(page.getByPlaceholderText(/搜索 .dll 名或版本/)).toBeVisible({
+      timeout: 5_000,
+    });
+    // 状态 chip 渲染
+    await expect(page.getByRole("button", { name: "全部" })).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.getByRole("button", { name: "未加载" })).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // 无 JS 错误
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.waitForTimeout(500);
+    expect(
+      errors.filter((e) => !e.includes("@base-ui") && !e.includes("motion")),
+    ).toHaveLength(0);
+  });
 });

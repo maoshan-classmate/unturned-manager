@@ -181,7 +181,7 @@ const RUNTIME_STATUS_OPTIONS = [
   { value: "unknown" as PluginRuntimeStatus, label: "未知" },
 ];
 
-function InstalledTab({ serverId }: { serverId: string }) {
+export function InstalledTab({ serverId }: { serverId: string }) {
   // Phase 4b：搜索/筛选 state（query 即时更新 + debounce 300ms 触发后端查询）
   const [queryInput, setQueryInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -253,7 +253,8 @@ function InstalledTab({ serverId }: { serverId: string }) {
     onSuccess: (data, vars) => {
       const pastTense = vars.action === "load" ? "加载" : vars.action === "unload" ? "卸载" : "重新加载";
       if (data.outcome === "success") {
-        toast.success(`${vars.pluginName} 已${pastTense}`);
+        // 成功零日志——命令已接受即提示「已触发」（非「已完成」）
+        toast.success(`${vars.pluginName} 已${vars.action === "reload" ? "触发重新加载" : pastTense}`);
       } else {
         toast.warning(`${pastTense}未完成：${data.ldmOutput || "无详情"}`);
       }
@@ -299,7 +300,13 @@ function InstalledTab({ serverId }: { serverId: string }) {
       loading={isLoading}
       error={error ? errorMessage(error) : null}
       empty={!data || data.plugins.length === 0}
-      emptyText={data?.ldmNotDetected ? "LDM 主框架未安装" : "当前未安装任何插件"}
+      emptyText={
+        searchEnabled
+          ? "无匹配插件"
+          : data?.ldmNotDetected
+            ? "LDM 主框架未安装"
+            : "当前未安装任何插件"
+      }
       emptyAction={data?.ldmNotDetected ? (
         <div className="text-xs space-y-2 text-left max-w-md mx-auto" style={{ color: "#94A3B8" }}>
           <p>请按以下步骤激活 LDM（Legally-Distinct-Missile）框架：</p>
@@ -545,7 +552,7 @@ function SourceTab({
 
 // ─── 子组件：已装插件卡片 ─────────────────────────────────
 
-function PluginCard({
+export function PluginCard({
   plugin: p,
   loading,
   onLoad,

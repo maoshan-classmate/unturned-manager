@@ -40,15 +40,25 @@ const FAILURE_MARKERS = [
   /Failed to/i,
 ];
 
+/** 插件不存在/未加载载荷（Phase 4a：这些行触发 plugin-not-found 404）——真源 U.cs:97-98 */
+const PLUGIN_NOT_FOUND_MARKERS = [
+  /(not found|does not exist|is not installed)/i,
+  /The plugin .* is not loaded/i,
+];
+
 function isFailureLine(line: string): boolean {
   return FAILURE_MARKERS.some((rx) => rx.test(line));
+}
+
+function isPluginNotFoundLine(line: string): boolean {
+  return PLUGIN_NOT_FOUND_MARKERS.some((rx) => rx.test(line));
 }
 
 // ─── service ─────────────────────────────────────────────
 
 export class LdmPluginCommandsService implements ILdmPluginCommandsService {
-  /** per-server 互斥锁——同一 serverId 同时只能跑一个 plugin 命令 */
-  private locks = new Map<ServerId, Promise<void>>();
+  /** per-server 互斥锁——同一 serverId 同时只能跑一个 plugin 命令；有任务在跑时新命令抛 operation-conflict */
+  private locks = new Set<ServerId>();
 
   constructor(
     private readonly pty: Pick<IPtyManager, "write" | "waitForMarker" | "onData">,
@@ -212,12 +222,16 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
     verb: "load" | "unload" | "reload",
     successMarkers: RegExp[],
   ): Promise<{ outcome: "success" | "failure"; ldmOutput: string }> {
-    // 1. 互斥锁
-    const prev = this.locks.get(serverId) ?? Promise.resolve();
-    let release!: () => void;
-    const next = new Promise<void>((r) => (release = r));
-    this.locks.set(serverId, prev.then(() => next));
-    await prev;
+    // 1. 互斥锁——有任务在跑直接抛 operation-conflict（Phase 4a 改为拒绝式，不再排队）
+    //    设计稿 §3.1 契约承诺：并发重入 → 409 operation-conflict
+    if (this.locks.has(serverId)) {
+      throw new AppError(
+        "operation-conflict",
+        "该实例已有插件命令在跑，请稍后再试",
+        409,
+      );
+    }
+    this.locks.add(serverId);
     try {
       // 2. 实例必须运行
       const state = this.serverManager.getState(serverId);
@@ -232,11 +246,16 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
       // 3. 采集最近 256 字最近输出（PTY 滚动 buffer——这里用收集器）
       const collector: string[] = [];
       let markerHit: "success" | "failure" | null = null;
+      let notFoundLine: string | null = null;
       const offData = this.pty.onData(serverId, (line) => {
         if (markerHit) return;
         collector.push(line);
         if (successMarkers.some((rx) => rx.test(line))) {
           markerHit = "success";
+        } else if (isPluginNotFoundLine(line)) {
+          // Phase 4a：插件不存在/未加载 → 记下待抛错（真源 U.cs:97-98）
+          notFoundLine = line;
+          markerHit = "failure";
         } else if (isFailureLine(line)) {
           markerHit = "failure";
         }
@@ -254,22 +273,40 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
         const winner = await Promise.race([
           pollForMarker(collector, () => markerHit, COMMAND_TIMEOUT_MS),
           this.pty
-            .waitForMarker(serverId, /Loading\s+|Unloading\s+|Unable to|Could not|Failed/, COMMAND_TIMEOUT_MS)
+            .waitForMarker(
+              serverId,
+              /Loading\s+|Unloading\s+|Reloading\s+|Unable to|Could not|Failed|not loaded|not found/,
+              COMMAND_TIMEOUT_MS,
+            )
             .then(() => markerHit),
         ]);
 
-        const outcome = winner ?? "failure"; // 超时/未匹配 → failure
+        // Phase 4a：超时/未匹配 → 抛 pty-timeout（设计稿 §3.1 契约）
+        if (!winner) {
+          throw new AppError(
+            "pty-timeout",
+            `${verb === "reload" ? "重新加载" : verb === "load" ? "加载" : "卸载"}插件 ${pluginName} 超时未响应`,
+            500,
+          );
+        }
+
+        // Phase 4a：插件不存在/未加载 → 抛 plugin-not-found（设计稿 §3.1 契约）
+        if (notFoundLine) {
+          throw new AppError(
+            "plugin-not-found",
+            `插件 ${pluginName} 未找到或未加载`,
+            404,
+          );
+        }
+
+        const outcome = winner;
         const tail = collector.slice(-8).join("\n").slice(-256);
         return { outcome, ldmOutput: tail };
       } finally {
         offData();
       }
     } finally {
-      release();
-      // 锁链清理：若当前就是链尾，删除避免 Map 无限增长
-      if (this.locks.get(serverId) === prev.then(() => next)) {
-        this.locks.delete(serverId);
-      }
+      this.locks.delete(serverId);
     }
   }
 }

@@ -165,4 +165,61 @@ describe('LdmDiscoveryService', () => {
     expect(result.plugins.length).toBe(1);
     expect(result.plugins[0]?.name).toBe('Good');
   });
+
+  // ─── Phase 4b：searchPlugins（内存过滤）──────────────────────────
+
+  async function setupPlugins(files: Array<{ name: string; version: string }>) {
+    await mkdir(join(testRoot, 'Modules', 'Rocket.Unturned'), { recursive: true });
+    await writeFile(join(testRoot, 'Modules', 'Rocket.Unturned', 'Rocket.Unturned.module'), '');
+    const pluginsDir = join(testRoot, 'Servers', serverId, 'Rocket', 'Plugins');
+    await mkdir(pluginsDir, { recursive: true });
+    for (const f of files) {
+      await writeFile(join(pluginsDir, `${f.name}.dll`), Buffer.alloc(512, 0));
+    }
+    const versionMap: Record<string, string> = {};
+    for (const f of files) versionMap[f.name] = f.version;
+    return new LdmDiscoveryService(
+      { readVersion: async (p: string) => versionMap[p.split('\\').pop()!.split('/').pop()!.replace('.dll', '')] ?? null },
+      async () => ({}),
+    );
+  }
+
+  it('8. searchPlugins 插件名子串匹配（不区分大小写）', async () => {
+    const svc = await setupPlugins([
+      { name: 'Uconomy', version: '3.0.0.0' },
+      { name: 'Kits', version: '1.0.0.0' },
+    ]);
+    const result = await svc.searchPlugins(serverId as never, { query: 'ucon' });
+    expect(result.length).toBe(1);
+    expect(result[0]?.name).toBe('Uconomy');
+  });
+
+  it('9. searchPlugins 版本前缀匹配（startsWith 语义：查 "3" 命中 3.0.0.0 不命中 13.0.0.0）', async () => {
+    const svc = await setupPlugins([
+      { name: 'Uconomy', version: '3.0.0.0' },
+      { name: 'Kits', version: '13.0.0.0' },
+    ]);
+    const result = await svc.searchPlugins(serverId as never, { query: '3' });
+    expect(result.map((p) => p.name)).toEqual(['Uconomy']);
+  });
+
+  it('10. searchPlugins 状态筛选', async () => {
+    const svc = await setupPlugins([
+      { name: 'A', version: '1.0.0.0' },
+      { name: 'B', version: '1.0.0.0' },
+    ]);
+    // 注入运行时状态
+    (svc as unknown as { runtimeStatusReader: unknown }).runtimeStatusReader = async () => ({ A: 'loaded', B: 'unloaded' });
+    const result = await svc.searchPlugins(serverId as never, { status: 'loaded' });
+    expect(result.map((p) => p.name)).toEqual(['A']);
+  });
+
+  it('11. searchPlugins 空 query + null status → 返回全部', async () => {
+    const svc = await setupPlugins([
+      { name: 'A', version: '1.0.0.0' },
+      { name: 'B', version: '1.0.0.0' },
+    ]);
+    const result = await svc.searchPlugins(serverId as never, {});
+    expect(result.length).toBe(2);
+  });
 });

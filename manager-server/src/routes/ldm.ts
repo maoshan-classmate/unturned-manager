@@ -141,7 +141,7 @@ export function createLdmServerRouter(deps: {
       const parsed = PluginSearchQuerySchema.safeParse(req.query);
       if (!parsed.success) {
         throw new AppError(
-          "plugin-search-invalid",
+          "status-invalid",
           `搜索参数非法：${parsed.error.issues.map((i) => i.message).join("; ")}`,
           400,
         );
