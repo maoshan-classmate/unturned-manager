@@ -90,36 +90,44 @@ describe("LdmPage 子组件 — B1 上传入口闭环", () => {
       updatedAtIso: "2020-02-19T08:24:35Z",
     };
 
-    it("渲染插件名/作者/最新版本 + 「查看仓库」外链 + 「上传到此实例」按钮", () => {
+    it("渲染插件名/作者/最新版本 + 「前往 Releases」外链 + 「查看详情」按钮 + 「上传到此实例」按钮", () => {
       const onUpload = vi.fn();
+      const onViewDetail = vi.fn();
       render(
         <CommunityCard
           plugin={basePlugin}
           uploading={false}
           onUpload={onUpload}
+          onViewDetail={onViewDetail}
         />,
       );
       expect(screen.getByText("Uconomy")).toBeInTheDocument();
       expect(screen.getByText("RocketModPlugins")).toBeInTheDocument();
       expect(screen.getByText("d-r-1")).toBeInTheDocument();
       // 外链 GitHub Releases
-      const link = screen.getByRole("link", { name: /查看仓库/ });
+      const link = screen.getByRole("link", { name: /前往 Releases/ });
       expect(link.getAttribute("href")).toBe(basePlugin.repoUrl);
       expect(link.getAttribute("target")).toBe("_blank");
       // 上传按钮
       expect(
         screen.getByText(/上传到此实例/),
       ).toBeInTheDocument();
+      // 详情按钮（Phase 3-3 G3）
+      expect(
+        screen.getByRole("button", { name: /查看详情/ }),
+      ).toBeInTheDocument();
     });
 
     it("选文件后 onUpload 被调 1 次，文件名为用户上传的 .dll", async () => {
       const user = userEvent.setup();
       const onUpload = vi.fn();
+      const onViewDetail = vi.fn();
       const { container } = render(
         <CommunityCard
           plugin={basePlugin}
           uploading={false}
           onUpload={onUpload}
+          onViewDetail={onViewDetail}
         />,
       );
       const fileInput = container.querySelector(
@@ -133,11 +141,13 @@ describe("LdmPage 子组件 — B1 上传入口闭环", () => {
 
     it("uploading=true 时 file input disabled", () => {
       const onUpload = vi.fn();
+      const onViewDetail = vi.fn();
       const { container } = render(
         <CommunityCard
           plugin={basePlugin}
           uploading={true}
           onUpload={onUpload}
+          onViewDetail={onViewDetail}
         />,
       );
       const fileInput = container.querySelector(
@@ -148,15 +158,34 @@ describe("LdmPage 子组件 — B1 上传入口闭环", () => {
 
     it("插件名带特殊字符时 suggestedName 在 title 属性里", () => {
       const onUpload = vi.fn();
+      const onViewDetail = vi.fn();
       const { container } = render(
         <CommunityCard
           plugin={{ ...basePlugin, name: "Test Plugin!" }}
           uploading={false}
           onUpload={onUpload}
+          onViewDetail={onViewDetail}
         />,
       );
       const label = container.querySelector('label[title]');
       expect(label?.getAttribute("title")).toMatch(/Test_Plugin\.dll/);
+    });
+
+    it("点「查看详情」→ onViewDetail 回调 1 次传入 plugin.slug", async () => {
+      const user = userEvent.setup();
+      const onUpload = vi.fn();
+      const onViewDetail = vi.fn();
+      render(
+        <CommunityCard
+          plugin={basePlugin}
+          uploading={false}
+          onUpload={onUpload}
+          onViewDetail={onViewDetail}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /查看详情/ }));
+      expect(onViewDetail).toHaveBeenCalledTimes(1);
+      expect(onViewDetail).toHaveBeenCalledWith(basePlugin.slug);
     });
   });
 });

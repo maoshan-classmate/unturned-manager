@@ -46,6 +46,19 @@ const mockCommands = {
     outcome: "success",
     ldmOutput: "Plugin Uconomy unloaded",
   }),
+  reloadPermissions: vi.fn().mockResolvedValue({
+    outcome: "success",
+    ldmOutput: "Reloaded permissions",
+  }),
+  readLdmVersion: vi.fn().mockResolvedValue({
+    ldmVersion: "4.9.3.18",
+    gameVersion: "3.25.0.0",
+    raw: "Rocket v4.9.3.18 for Unturned v3.25.0.0",
+  }),
+  readModulesState: vi.fn().mockResolvedValue({
+    rocketUnturnedLoaded: true,
+    raw: "Rocket.Unturned loaded",
+  }),
 };
 const mockConfigWriter = {
   writeRocketConfig: vi.fn().mockResolvedValue({
@@ -347,5 +360,57 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
       .set("Authorization", "Bearer test-token");
     // 单段不匹配 :owner/:repo 路由 → Express 404
     expect(res.status).toBe(404);
+  });
+
+  // ─── Phase 3-3 端点（D2/D3：LDM 版本 + 模块状态）───────────────────────
+
+  it("GET /version happy path: 调 commands.readLdmVersion → 包装 serverId", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/version")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(200);
+    expect(res.body.data.serverId).toBe("S1");
+    expect(res.body.data.ldmVersion).toBe("4.9.3.18");
+    expect(res.body.data.gameVersion).toBe("3.25.0.0");
+    expect(res.body.data.raw).toBe("Rocket v4.9.3.18 for Unturned v3.25.0.0");
+    expect(mockCommands.readLdmVersion).toHaveBeenCalledWith("S1");
+  });
+
+  it("GET /version 错误码：实例非 RUNNING → 409 server-not-running", async () => {
+    const { AppError } = await import("../src/utils/AppError.js");
+    mockCommands.readLdmVersion.mockRejectedValueOnce(
+      new AppError("server-not-running", "实例未运行，无法读 LDM 版本", 409),
+    );
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/version")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("server-not-running");
+  });
+
+  it("GET /modules-state happy path: 调 commands.readModulesState → 包装 serverId", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/modules-state")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(200);
+    expect(res.body.data.serverId).toBe("S1");
+    expect(res.body.data.rocketUnturnedLoaded).toBe(true);
+    expect(mockCommands.readModulesState).toHaveBeenCalledWith("S1");
+  });
+
+  it("GET /modules-state 错误码：实例非 RUNNING → 409 server-not-running", async () => {
+    const { AppError } = await import("../src/utils/AppError.js");
+    mockCommands.readModulesState.mockRejectedValueOnce(
+      new AppError("server-not-running", "实例未运行，无法读模块状态", 409),
+    );
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/servers/S1/ldm/modules-state")
+      .set("Authorization", "Bearer test-token");
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("server-not-running");
   });
 });

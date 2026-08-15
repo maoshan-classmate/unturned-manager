@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import {
   Package,
   Globe,
+  Settings,
+  Shield,
   Search,
   RefreshCw,
   Power,
@@ -17,6 +19,7 @@ import {
   XCircle,
   AlertTriangle,
   Upload,
+  Info,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,6 +32,11 @@ import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { InfoCard } from "../components/shared/InfoCard.js";
 import { Input } from "../components/ui/input.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
+import { LdmStatusCard } from "../components/ldm/LdmStatusCard.js";
+import { OnboardingSopCard } from "../components/ldm/OnboardingSopCard.js";
+import { CommunityPluginDetailDialog } from "../components/ldm/CommunityPluginDetailDialog.js";
+import { FrameworkConfigTab } from "../components/ldm/FrameworkConfigTab.js";
+import { PermissionsTab } from "../components/ldm/PermissionsTab.js";
 import { formatSize, formatDate, errorMessage } from "../lib/utils.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 
@@ -86,8 +94,14 @@ export function LdmPage() {
   // 取值来源切到共享层（sc:design 第 4 阶段）
   const guard = useRequireServer();
 
-  const [activeTab, setActiveTab] = useState<"installed" | "source">("installed");
+  const [activeTab, setActiveTab] = useState<
+    "installed" | "framework" | "permissions" | "source"
+  >("installed");
   const [pat, setPat] = useState<string | null>(null);
+  // Phase 3-3：社区插件详情抽屉状态（owner/repo 两段——与路由 :owner/:repo 对齐）
+  const [detailSlug, setDetailSlug] = useState<
+    { owner: string; repo: string } | null
+  >(null);
 
   // PAT 从 localStorage 读（fallback，无后端持久化）
   useEffect(() => {
@@ -105,6 +119,11 @@ export function LdmPage() {
   }
   const serverId = guard.serverId;
 
+  const onViewDetail = (slug: string) => {
+    const [owner, repo] = slug.split("/");
+    if (owner && repo) setDetailSlug({ owner, repo });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -112,19 +131,38 @@ export function LdmPage() {
           Mod 框架
         </h1>
       </div>
+      <OnboardingSopCard />
       <TabBar
         active={activeTab}
-        onChange={(k) => setActiveTab(k as "installed" | "source")}
+        onChange={(k) =>
+          setActiveTab(
+            k as "installed" | "framework" | "permissions" | "source",
+          )
+        }
         tabs={[
           { key: "installed", label: "已装插件", icon: Package },
+          { key: "framework", label: "框架配置", icon: Settings },
+          { key: "permissions", label: "权限组", icon: Shield },
           { key: "source", label: "插件来源", icon: Globe },
         ]}
       />
-      {activeTab === "installed" ? (
-        <InstalledTab serverId={serverId} />
-      ) : (
-        <SourceTab serverId={serverId} pat={pat} onPatChange={setPat} />
+      {activeTab === "installed" && <InstalledTab serverId={serverId} />}
+      {activeTab === "framework" && <FrameworkConfigTab serverId={serverId} />}
+      {activeTab === "permissions" && <PermissionsTab />}
+      {activeTab === "source" && (
+        <SourceTab
+          serverId={serverId}
+          pat={pat}
+          onPatChange={setPat}
+          onViewDetail={onViewDetail}
+        />
       )}
+      <CommunityPluginDetailDialog
+        open={!!detailSlug}
+        onClose={() => setDetailSlug(null)}
+        slug={detailSlug}
+        pat={pat}
+      />
     </div>
   );
 }
@@ -213,6 +251,7 @@ function InstalledTab({ serverId }: { serverId: string }) {
     >
       {data && (
         <div className="space-y-3">
+          <LdmStatusCard serverId={serverId} />
           <div className="flex items-center justify-between">
             <p className="text-xs" style={{ color: "#64748B" }}>
               共 {data.plugins.length} 个插件 · 检测于 {formatDate(data.detectedAtIso)}
@@ -256,10 +295,12 @@ function SourceTab({
   serverId: _serverId,
   pat,
   onPatChange,
+  onViewDetail,
 }: {
   serverId: string;
   pat: string | null;
   onPatChange: (p: string | null) => void;
+  onViewDetail: (slug: string) => void;
 }) {
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ["ldm", "community", pat ?? ""],
@@ -399,6 +440,7 @@ function SourceTab({
                   plugin={p}
                   uploading={uploadMutation.isPending}
                   onUpload={(file) => uploadMutation.mutate(file)}
+                  onViewDetail={onViewDetail}
                 />
               ))}
             </div>
@@ -590,23 +632,27 @@ export function InstallStepsCard() {
 }
 
 /**
- * 社区插件卡片——展示插件名/作者/最新版本，「查看仓库」外链 GitHub Releases，
- * 「上传到此实例」按钮把用户本地 .dll 传到当前实例 Rocket/Plugins/（B1/G3）。
+ * 社区插件卡片——展示插件名/作者/最新版本，「前往 Releases」外链 GitHub Releases 下载页，
+ * 「查看详情」触发详情抽屉（Phase 3-3 G3 入口），「上传到此实例」按钮把用户本地 .dll 传到
+ * 当前实例 Rocket/Plugins/（B1/G3）。
  *
  * @param props - 组件属性
  * @param props.plugin - 社区插件元数据
  * @param props.uploading - 是否正在上传（互斥锁，全局同一时间只一个上传动作）
  * @param props.onUpload - 用户选完 .dll 回调，传入原生 File 对象
+ * @param props.onViewDetail - 用户点 Info 按钮回调，传入插件 slug（`owner/repo` 形式）
  * @returns 社区插件卡片 React 元素
  */
 export function CommunityCard({
   plugin: p,
   uploading,
   onUpload,
+  onViewDetail,
 }: {
   plugin: CommunityPlugin;
   uploading: boolean;
   onUpload: (file: File) => void;
+  onViewDetail: (slug: string) => void;
 }) {
   // 用户填的「预期文件名」—— GitHub Releases 上常见命名规则：插件名 + 版本号 + .dll
   // 用户在浏览器下载时看到实际文件名，落在 file.name 里，无需前端猜
@@ -625,11 +671,31 @@ export function CommunityCard({
             {p.author}
           </p>
         </div>
-        {p.latestVersion && (
-          <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "#0F172A", color: "#94A3B8" }}>
-            {p.latestVersion}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="查看详情"
+            title="查看详情"
+            onClick={() => onViewDetail(p.slug)}
+            className="inline-flex items-center justify-center transition-colors hover:opacity-80"
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              backgroundColor: "#0F172A",
+              color: "#94A3B8",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            <Info size={12} />
+          </button>
+          {p.latestVersion && (
+            <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "#0F172A", color: "#94A3B8" }}>
+              {p.latestVersion}
+            </span>
+          )}
+        </div>
       </div>
       {p.description && (
         <p className="text-xs line-clamp-2" style={{ color: "#94A3B8" }}>
@@ -644,7 +710,7 @@ export function CommunityCard({
           className="flex-1"
         >
           <Button size="sm" variant="ghost" className="w-full">
-            <Search size={14} /> 查看仓库
+            <Search size={14} /> 前往 Releases
           </Button>
         </a>
         <label

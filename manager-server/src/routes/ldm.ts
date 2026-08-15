@@ -80,6 +80,30 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
+  // GET /version — LDM 主框架版本（Phase 3-3 D2）——前端「关于 LDM」卡用
+  // 服务端必须 RUNNING 才能调 PTY；非 RUNNING 时 commands.readLdmVersion 抛 server-not-running 409
+  router.get(
+    "/version",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const info = await deps.commands.readLdmVersion(serverId as ServerId);
+      res.json({ data: { serverId, ...info } });
+    }),
+  );
+
+  // GET /modules-state — Rocket.Unturned 模块加载状态（Phase 3-3 D3）——前端「关于 LDM」卡用
+  // 服务端必须 RUNNING；非 RUNNING 时 commands.readModulesState 抛 server-not-running 409
+  router.get(
+    "/modules-state",
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const state = await deps.commands.readModulesState(serverId as ServerId);
+      res.json({ data: { serverId, ...state } });
+    }),
+  );
+
   // POST /load-plugin
   router.post(
     "/load-plugin",

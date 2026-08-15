@@ -155,3 +155,71 @@ export const PluginConfigWriteSchema = z.object({
   raw: z.string().min(1),
 });
 export type PluginConfigWriteRequest = z.infer<typeof PluginConfigWriteSchema>;
+
+// ─── LDM Phase 3 契约 ─────────────────────────────────
+
+/**
+ * @phase3 GET /api/servers/:id/ldm/status 响应
+ * LDM 统一状态——前端「LDM 状态」卡用
+ */
+export const LdmStatusSchema = z.object({
+  serverId: z.string(),
+  ldmInstalled: z.boolean(),
+  rocketDirExists: z.boolean(),
+  pluginCount: z.number().int().nonnegative(),
+  detectedAtIso: z.string().datetime(),
+});
+export type LdmStatus = z.infer<typeof LdmStatusSchema>;
+
+/**
+ * @phase3 GET /api/ldm/community-plugins/:slug 响应
+ * 社区插件详情——前端详情抽屉用
+ */
+export const CommunityPluginDetailSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  author: z.string(),
+  description: z.string(),
+  repoUrl: z.string().url(),
+  latestVersion: z.string(),
+  updatedAtIso: z.string().datetime(),
+  /** GitHub Releases URL——前端「下载 .dll」外链按钮用 */
+  releasesUrl: z.string().url(),
+  /** README 截断预览（≤ 500 字）——详情抽屉展示 */
+  readmePreview: z.string().nullable(),
+});
+export type CommunityPluginDetail = z.infer<typeof CommunityPluginDetailSchema>;
+
+// ─── LDM Phase 3-3 契约 ────────────────────────────────
+
+/**
+ * @phase3-3 GET /api/servers/:id/ldm/version 响应
+ * LDM 主框架版本（PTY 写空 `/rocket` 解析 stdout）——前端「关于 LDM」卡用
+ *
+ * 服务端必须 RUNNING 才能调 PTY；非 RUNNING 时后端抛 server-not-running 409
+ */
+export const LdmVersionInfoSchema = z.object({
+  serverId: z.string(),
+  /** LDM 主框架版本（如 "4.0.0.0"）——解析失败返回 null */
+  ldmVersion: z.string().nullable(),
+  /** 游戏版本（如 "3.25.0.0"）——解析失败返回 null */
+  gameVersion: z.string().nullable(),
+  /** PTY 原始 stdout（≤ 256 字）——前端调试展示用 */
+  raw: z.string(),
+});
+export type LdmVersionInfo = z.infer<typeof LdmVersionInfoSchema>;
+
+/**
+ * @phase3-3 GET /api/servers/:id/ldm/modules-state 响应
+ * Rocket.Unturned 模块加载状态（PTY 写 `/modules` 解析 stdout）
+ *
+ * 服务端必须 RUNNING；非 RUNNING 时后端抛 server-not-running 409
+ */
+export const ModulesStateSchema = z.object({
+  serverId: z.string(),
+  /** Rocket.Unturned 是否加载（stdout 含 "Rocket.Unturned" 字样） */
+  rocketUnturnedLoaded: z.boolean(),
+  /** PTY 原始 stdout */
+  raw: z.string(),
+});
+export type ModulesState = z.infer<typeof ModulesStateSchema>;
