@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
-# 小功能判定——读 git diff 累计改动，属于小功能（未超阈值）时 stderr 提醒最小验证 + exit 2 喂给 Claude
-# stdin：PostToolUse 事件 JSON（含 tool_name）
-# stderr + exit 2：PostToolUse 场景 exit 2 不阻断工具，仅把提醒文本喂给 Claude 上下文；超阈值时静默
+# 小功能判定——Stop 事件触发（Claude 收尾时判定一次），读 git diff 累计改动；属小功能时经 additionalContext 提醒最小验证
+# stdin：Stop 事件 JSON（含 prompt_id）
+# stdout：JSON { hookSpecificOutput: { hookEventName: "Stop", additionalContext } }——非 block 决策，不阻止停止
+# 判定依据：git diff HEAD --numstat + 未跟踪文件，按 threshold.json 过滤（代码扩展名白名单 + 排除路径）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THRESHOLD="$SCRIPT_DIR/md/threshold.json"
+TMP_INPUT="/tmp/small-feature-detect.input.json"
+STATE_FILE="/tmp/small-feature-detect.state"
 
-# 读 stdin → 拿 tool_name
-TOOL_NAME=$(cat | node -e "process.stdin.on('data', d => { try { process.stdout.write(JSON.parse(d).tool_name || ''); } catch (e) {} })")
+# 消费 stdin 落盘——避免 data 事件分块导致 JSON.parse 失败
+cat > "$TMP_INPUT"
 
-# 只追踪 Edit/Write/MultiEdit
-case "$TOOL_NAME" in
-  Edit|Write|MultiEdit) ;;
-  *) exit 0 ;;
-esac
+# 读 prompt_id（用于同轮去重：Claude 补跑 typecheck 后再收尾时不重复注入）
+PROMPT_ID=$(node -e "
+  const fs = require('fs');
+  try {
+    const d = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    process.stdout.write(d.prompt_id || '');
+  } catch (e) {}
+" "$TMP_INPUT")
+
+# 同轮已注入过 → 放行
+if [ -n "$PROMPT_ID" ] && [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "$PROMPT_ID" ]; then
+  exit 0
+fi
 
 # 已修改文件的 numstat（HEAD 比工作区，含已暂存 + 未暂存）
 MODIFIED_NUMSTAT=$(git diff HEAD --numstat 2>/dev/null || true)
@@ -34,8 +45,8 @@ fi
 # 合并 modified + untracked
 ALL_NUMSTAT="${MODIFIED_NUMSTAT}"$'\n'"${UNTRACKED_NUMSTAT}"
 
-# 用 node 解析阈值 + 过滤 numstat + 判定；小功能（未超阈值）stderr 提醒最小验证 + exit 2，超阈值静默
-node -e "
+# 解析阈值 + 过滤 numstat + 判定；小功能 → stdout 输出 additionalContext JSON；否则静默
+OUTPUT=$(node -e "
   const fs = require('fs');
   const threshold = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
   const numstat = process.argv[2];
@@ -68,11 +79,24 @@ node -e "
     if (total > maxChanged) maxChanged = total;
   }
 
-  // 判定小功能：代码文件数 ≤ 阈值 且 单文件改动 ≤ 阈值 → 提醒最小验证；任一超出 → 静默
+  // 0 个代码文件 → 静默（纯文档/聊天收尾）
+  if (codeFiles.length === 0) { process.exit(0); }
+
+  // 判定小功能：代码文件数 ≤ 阈值 且 单文件改动 ≤ 阈值 → additionalContext 提醒最小验证；任一超出 → 静默
   const isSmall = codeFiles.length <= threshold.max_files && maxChanged <= threshold.max_lines_per_file;
   if (isSmall) {
-    const msg = '✅ 当前累计改动属于小功能（' + codeFiles.length + ' 个代码文件，单文件最多 ' + maxChanged + ' 行）。走最小验证即可：跑 typecheck 通过即可，不跑单测/e2e。';
-    process.stderr.write(msg + '\n');
-    process.exit(2);
+    const msg = '本轮改动属小功能（' + codeFiles.length + ' 个代码文件，单文件最多 ' + maxChanged + ' 行），走最小验证即可：跑 typecheck 通过即可，不需要跑单测/e2e。';
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'Stop',
+        additionalContext: msg
+      }
+    }));
   }
-" "$THRESHOLD" "$ALL_NUMSTAT"
+" "$THRESHOLD" "$ALL_NUMSTAT")
+
+# 注入成功 → 记录本轮 prompt_id（同轮去重，避免补跑 typecheck 后再收尾重复注入）
+if [ -n "$OUTPUT" ]; then
+  printf '%s\n' "$OUTPUT"
+  [ -n "$PROMPT_ID" ] && echo "$PROMPT_ID" > "$STATE_FILE"
+fi

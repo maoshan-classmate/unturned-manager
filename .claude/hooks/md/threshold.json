@@ -18,6 +18,7 @@
     "docs/",
     "claudedocs/",
     ".claude/rules/",
+    ".claude/hooks/",
     ".research/",
     ".serena",
     ".memory"
