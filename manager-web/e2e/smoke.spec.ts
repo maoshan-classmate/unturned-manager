@@ -495,4 +495,71 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       errors.filter((e) => !e.includes("@base-ui") && !e.includes("motion")),
     ).toHaveLength(0);
   });
+
+  // ─── LDM Phase 3-3 ─────────────────────────────────────
+  // 场景：登录 → 选实例 → 进 LdmPage → 4 Tab 都能渲染 + 引导卡默认展开 + 切 Tab 无 JS 错误
+  test("LdmPage 4 Tab 渲染 + 引导卡默认展开 + 切换无 JS 错误", async ({ page }) => {
+    // 登录
+    await page.goto("/");
+    await page.fill("#login-username", "admin");
+    await page.fill("#login-password", "123456");
+    await page
+      .getByRole("button", { name: /登录|Sign/i })
+      .first()
+      .click();
+    await expect(page.locator("aside")).toBeVisible({ timeout: 10_000 });
+
+    // 选实例 + 进 LdmPage
+    await selectActiveInstance(page);
+    await page.goto("/ldm");
+    // 标题（heading 避免撞侧边栏链接）
+    await expect(
+      page.getByRole("heading", { name: "Mod 框架" }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // 引导卡默认展开：5 步标题「安装 Unturned 服务端」可见
+    await expect(page.getByText(/安装 Unturned 服务端/)).toBeVisible({
+      timeout: 5_000,
+    });
+    // 引导卡「收起」按钮可见（默认展开时显示）
+    await expect(page.getByRole("button", { name: "收起" })).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // 4 Tab 全部渲染
+    const tabs = ["已装插件", "框架配置", "权限组", "插件来源"];
+    for (const tab of tabs) {
+      await expect(page.getByRole("button", { name: tab }).first()).toBeVisible({
+        timeout: 5_000,
+      });
+    }
+
+    // 收集 JS 错误监听器（每个 Tab 切换后断言）
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+
+    // 切换 Tab：「框架配置」→ 看到「Mod 框架状态」/「关于 LDM」卡
+    await page.getByRole("button", { name: "框架配置" }).first().click();
+    await expect(page.getByText("Mod 框架状态")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("关于 LDM")).toBeVisible({ timeout: 5_000 });
+
+    // 切「权限组」→ 占位卡「权限组编辑器」可见
+    await page.getByRole("button", { name: "权限组" }).first().click();
+    await expect(page.getByText(/权限组编辑器/)).toBeVisible({ timeout: 5_000 });
+
+    // 切「插件来源」→ PAT 卡 + InstallStepsCard 可见
+    await page.getByRole("button", { name: "插件来源" }).first().click();
+    await expect(page.getByText("GitHub PAT")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/插件安装步骤/)).toBeVisible({ timeout: 5_000 });
+
+    // 切回「已装插件」→ 「LDM 状态」卡标题或「已装插件」Tab 内容
+    await page.getByRole("button", { name: "已装插件" }).first().click();
+    await expect(page.getByText("Mod 框架状态")).toBeVisible({ timeout: 5_000 });
+
+    // 无 JS 错误
+    await page.waitForTimeout(500);
+    expect(
+      errors.filter((e) => !e.includes("@base-ui") && !e.includes("motion")),
+    ).toHaveLength(0);
+  });
 });
