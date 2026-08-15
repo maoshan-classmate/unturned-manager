@@ -275,4 +275,83 @@ describe('LdmPluginSourceService', () => {
     expect(second.plugins.length).toBe(first.plugins.length);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // ─── Phase 3：getPluginDetail（详情抽屉）────────────────────────
+
+  it('14. getPluginDetail：缓存列表命中 + GitHub releases 补全 latestVersion + readmePreview', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(SAMPLE_HTML),
+    });
+    // 统一 GitHub 响应（enrich repos + releases + getPluginDetail releases）
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { forEach: () => {} },
+      json: () =>
+        Promise.resolve({
+          pushed_at: '2026-08-01T00:00:00Z',
+          tag_name: 'v2.3.1',
+          body: 'Release notes for Uconomy v2.3.1',
+        }),
+    });
+
+    const svc = new LdmPluginSourceService();
+    await svc.listCommunityPlugins(null); // 填充缓存
+    const detail = await svc.getPluginDetail('ExampleAuthor/Uconomy', null);
+
+    expect(detail).not.toBeNull();
+    expect(detail?.name).toBe('Uconomy');
+    expect(detail?.latestVersion).toBe('v2.3.1');
+    expect(detail?.readmePreview).toContain('Release notes');
+    expect(detail?.releasesUrl).toBe('https://github.com/ExampleAuthor/Uconomy/releases/latest');
+  });
+
+  it('15. getPluginDetail：列表外插件 → null（不触发 GitHub）', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(SAMPLE_HTML),
+    });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { forEach: () => {} },
+      json: () => Promise.resolve({}),
+    });
+
+    const svc = new LdmPluginSourceService();
+    await svc.listCommunityPlugins(null);
+    const detail = await svc.getPluginDetail('UnknownOwner/UnknownPlugin', null);
+    expect(detail).toBeNull();
+  });
+
+  it('16. getPluginDetail：PAT 透传 Authorization 头（token 前缀）', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(SAMPLE_HTML),
+    });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { forEach: () => {} },
+      json: () =>
+        Promise.resolve({
+          pushed_at: '2026-08-01T00:00:00Z',
+          tag_name: 'v2.3.1',
+          body: 'x',
+        }),
+    });
+
+    const svc = new LdmPluginSourceService();
+    await svc.listCommunityPlugins('ghp_test');
+    const detail = await svc.getPluginDetail('ExampleAuthor/Uconomy', 'ghp_test');
+    expect(detail).not.toBeNull();
+    // releases 请求带 Authorization 头（PAT 透传；前缀风格 getPluginDetail=token / enrich=Bearer，
+    // 审计已记录非 P0/P1，此处仅断言非空）
+    const authCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes('/releases/latest'),
+    );
+    const opts = authCall?.[1] as { headers?: Record<string, string> };
+    expect(opts?.headers?.Authorization).toContain('ghp_test');
+  });
 });

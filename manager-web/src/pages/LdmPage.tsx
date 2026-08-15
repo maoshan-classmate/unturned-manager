@@ -309,7 +309,7 @@ export function InstalledTab({ serverId }: { serverId: string }) {
       }
       emptyAction={data?.ldmNotDetected ? (
         <div className="text-xs space-y-2 text-left max-w-md mx-auto" style={{ color: "#94A3B8" }}>
-          <p>请按以下步骤激活 LDM（Legally-Distinct-Missile）框架：</p>
+          <p>请按以下步骤激活 Mod 框架：</p>
           <ol className="list-decimal list-inside space-y-1">
             <li>确保 Unturned 服务端已安装（Steam AppID 1110390）</li>
             <li>从游戏目录的 Extras/Rocket.Unturned 复制到 Modules/</li>

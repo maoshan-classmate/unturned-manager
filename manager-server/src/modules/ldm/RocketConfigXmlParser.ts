@@ -219,8 +219,9 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
     originalXml: string,
   ): string {
     const tree = this.parseGeneric(originalXml);
-    const root = this.findElement(tree, ROCKET_UNTURNED_ROOT);
-    if (!root) return originalXml;
+    // 与 serializeRocketConfig 一致：parseGeneric 对单根 XML 直接返回根元素本身，
+    // 不能用 findElement 找自己（那会搜子元素永远找不到 → 任何修改不写回）。
+    const root = tree;
     this.setElementBool(
       root,
       "AutomaticSave",

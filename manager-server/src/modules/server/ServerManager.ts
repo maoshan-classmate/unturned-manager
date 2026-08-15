@@ -486,7 +486,12 @@ export class ServerManager implements IServerManager {
       }
       // 2. 内部 stop（与 restart 共用底层）
       await this.stopInternal(serverId, "配置变更");
-      // 3. postStartHook（启动后任务；抛错仅记录——实例已启动不能让其崩溃）
+      // 3. 内部 start——先启动，再等 RUNNING（stdout ready 提前 / 3s 兜底），最后 postStartHook。
+      //    ★ Phase 2 审计 P0-1：postStartHook（如 LDM /p reload）依赖实例 RUNNING（LdmPluginCommandsService
+      //      查 getState()===RUNNING），若在 STARTING 执行会抛 server-not-running 被吞 → 永远不执行。
+      await this.startInternal(serverId);
+      await this.waitForState(serverId, ServerState.RUNNING, 15_000);
+      // 4. postStartHook（启动后任务；抛错仅记录——实例已启动不能让其崩溃）
       if (opts.postStartHook) {
         try {
           await opts.postStartHook();
@@ -497,8 +502,6 @@ export class ServerManager implements IServerManager {
           );
         }
       }
-      // 4. 内部 start
-      await this.startInternal(serverId);
     } finally {
       entry.activeOperation = { type: "none" };
     }
@@ -512,6 +515,35 @@ export class ServerManager implements IServerManager {
     this.transition(serverId, ServerState.STOPPING);
     await this.stopPty(serverId, reason);
     this.transition(serverId, ServerState.STOPPED);
+  }
+
+  /**
+   * 轮询等待实例达到目标状态（有超时兜底，超时降级不抛错）。
+   * 用于 applyChangesCore 在 startInternal 后等 RUNNING——postStartHook（如 LDM /p reload）
+   * 需要实例真正 RUNNING 才能执行。U3DS 正常启动 3s 内 transition(RUNNING)（stdout ready 提前 / 3s 兜底），
+   * 15s 超时保护启动失败的极端情况（降级后 postStartHook 内部自己兜底）。
+   *
+   * @param serverId - 实例标识
+   * @param target - 目标状态（如 RUNNING）
+   * @param timeoutMs - 超时毫秒数
+   */
+  private async waitForState(
+    serverId: ServerId,
+    target: ServerState,
+    timeoutMs: number,
+  ): Promise<void> {
+    const entry = this.ensureServer(serverId);
+    const deadline = Date.now() + timeoutMs;
+    while (entry.state !== target) {
+      if (Date.now() >= deadline) {
+        logger.warn(
+          { serverId, target, state: entry.state },
+          "waitForState 超时——降级继续",
+        );
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。 */

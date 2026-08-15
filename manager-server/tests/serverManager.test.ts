@@ -666,3 +666,97 @@ describe("ServerManager — startCommand 持久化（ADR-0004 Phase 4）", () =>
     );
   });
 });
+
+// ─── applyChangesCore（Phase 2 审计 P0-1 回归）───────────────
+describe("ServerManager — applyChangesCore（配置变更流水线）", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("P0-1 回归：postStartHook 在 startInternal 之后执行（实例已 RUNNING）", async () => {
+    const { pty, mgr } = setup();
+    await started(mgr, pty, "A1");
+
+    // 记录 hook 执行时实例状态
+    const hookStates: string[] = [];
+    const preStopCalled = vi.fn();
+    const postStartCalled = vi.fn();
+
+    const applyPromise = mgr.applyChangesCore("A1" as ServerId, {
+      hook: "ldm_apply",
+      preStopHook: async () => {
+        preStopCalled();
+        hookStates.push(`preStop:${mgr.getState("A1" as ServerId)}`);
+      },
+      postStartHook: async () => {
+        postStartCalled();
+        hookStates.push(`postStart:${mgr.getState("A1" as ServerId)}`);
+      },
+    });
+    // applyChangesCore 内 waitForState 轮询——推进 3s 触发 startInternal 的 3s 兜底 transition(RUNNING)
+    await vi.advanceTimersByTimeAsync(4000);
+    await applyPromise;
+
+    // 顺序：preStop（此时实例还没 stop，仍 RUNNING）→ 启动完成 → postStart（已 RUNNING）
+    expect(preStopCalled).toHaveBeenCalledTimes(1);
+    expect(postStartCalled).toHaveBeenCalledTimes(1);
+    expect(hookStates).toEqual([
+      `preStop:${ServerState.RUNNING}`,
+      `postStart:${ServerState.RUNNING}`,
+    ]);
+    // 实例最终 RUNNING
+    expect(mgr.getState("A1" as ServerId)).toBe(ServerState.RUNNING);
+  });
+
+  it("preStopHook 抛错 → 流水线 abort（不进入 stop + start）", async () => {
+    const { pty, mgr } = setup();
+    await started(mgr, pty, "A2");
+
+    const { AppError } = await import("../src/utils/AppError.js");
+    await expect(
+      mgr.applyChangesCore("A2" as ServerId, {
+        hook: "ldm_apply",
+        preStopHook: async () => {
+          throw new AppError("ldm-apply-failed", "应用失败", 500);
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ldm-apply-failed", status: 500 });
+
+    // 实例没被 stop/start——仍是 RUNNING（started 后状态未动）
+    expect(mgr.getState("A2" as ServerId)).toBe(ServerState.RUNNING);
+  });
+
+  it("postStartHook 抛错 → 仅记录不阻止（实例已启动）", async () => {
+    const { pty, mgr } = setup();
+    await started(mgr, pty, "A3");
+
+    const { AppError } = await import("../src/utils/AppError.js");
+    const applyPromise = mgr.applyChangesCore("A3" as ServerId, {
+      hook: "ldm_apply",
+      postStartHook: async () => {
+        throw new AppError("pty-write-failed", "PTY 写入失败", 500);
+      },
+    });
+    // 推进触发 RUNNING（waitForState 轮询）
+    await vi.advanceTimersByTimeAsync(4000);
+    await applyPromise;
+
+    // 抛错被吞，实例仍 RUNNING
+    expect(mgr.getState("A3" as ServerId)).toBe(ServerState.RUNNING);
+  });
+
+  it("重入保护：已有 activeOperation → 抛 operation-conflict", async () => {
+    const { pty, mgr } = setup();
+    await createServer(mgr, "A4");
+
+    const { AppError } = await import("../src/utils/AppError.js");
+    // 手动置 activeOperation 模拟已有操作
+    const entry = (mgr as unknown as { servers: Map<string, { activeOperation: { type: string } }> }).servers.get("A4")!;
+    entry.activeOperation = { type: "manual_restart" };
+
+    await expect(
+      mgr.applyChangesCore("A4" as ServerId, { hook: "ldm_apply" }),
+    ).rejects.toMatchObject({ code: "operation-conflict", status: 409 });
+  });
+});

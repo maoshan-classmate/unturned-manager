@@ -136,4 +136,66 @@ describe("RocketConfigXmlParser", () => {
       expect(fields.groups[1]?.color).toBe("yellow");
     });
   });
+
+  describe("parseRocketUnturnedConfig / serializeRocketUnturnedConfig（9 字段）", () => {
+    const SAMPLE = `<?xml version="1.0"?>
+<RocketConfiguration>
+  <AutomaticSave>
+    <Enabled>true</Enabled>
+    <Interval>1800</Interval>
+  </AutomaticSave>
+  <CharacterNameValidation>false</CharacterNameValidation>
+  <CharacterNameValidationRule>([\\x00-\\AA]|[\\w_\\ \\.\\+\\-])+</CharacterNameValidationRule>
+  <LogSuspiciousPlayerMovement>true</LogSuspiciousPlayerMovement>
+  <EnableItemBlacklist>false</EnableItemBlacklist>
+  <EnableItemSpawnLimit>false</EnableItemSpawnLimit>
+  <MaxSpawnAmount>10</MaxSpawnAmount>
+  <EnableVehicleBlacklist>false</EnableVehicleBlacklist>
+</RocketConfiguration>`;
+
+    it("解析 9 字段完整", () => {
+      const { fields } = parser.parseRocketUnturnedConfig(SAMPLE);
+      expect(fields.automaticSaveEnabled).toBe(true);
+      expect(fields.automaticSaveInterval).toBe(1800);
+      expect(fields.characterNameValidation).toBe(false);
+      expect(fields.enableVehicleBlacklist).toBe(false);
+      expect(fields.maxSpawnAmount).toBe(10);
+    });
+
+    it("字段合并：改 automaticSaveInterval + 未知键保留（P0-2 回归）", () => {
+      // ★ P0-2 回归：之前 serializeRocketUnturnedConfig 用 findElement 找根元素永远找不到，
+      //   任何字段修改都不写回（返回原文）。修复后 root = tree，字段合并生效。
+      const modified = parser.serializeRocketUnturnedConfig(
+        { ...parser.parseRocketUnturnedConfig(SAMPLE).fields, automaticSaveInterval: 600 },
+        SAMPLE,
+      );
+      // 修改生效
+      expect(modified).toContain("<Interval>600</Interval>");
+      // 未改字段保留（Enabled 仍是 true——setElementBool 输出 .NET PascalCase True/False）
+      expect(modified).toContain("<Enabled>True</Enabled>");
+      // 原 XML 结构未破坏（根元素还在）
+      expect(modified).toContain("<RocketConfiguration>");
+      // round-trip：再解析得到修改后的字段
+      const reparsed = parser.parseRocketUnturnedConfig(modified);
+      expect(reparsed.fields.automaticSaveInterval).toBe(600);
+      expect(reparsed.fields.automaticSaveEnabled).toBe(true);
+    });
+
+    it("注释保留 + 修改字段并存", () => {
+      const xml = `<?xml version="1.0"?>
+<RocketConfiguration>
+  <!-- 自动存档设置 -->
+  <AutomaticSave>
+    <Enabled>true</Enabled>
+    <Interval>1800</Interval>
+  </AutomaticSave>
+</RocketConfiguration>`;
+      const modified = parser.serializeRocketUnturnedConfig(
+        { ...parser.parseRocketUnturnedConfig(xml).fields, automaticSaveEnabled: false },
+        xml,
+      );
+      expect(modified).toContain("<!-- 自动存档设置 -->");
+      expect(modified).toContain("<Enabled>False</Enabled>");
+    });
+  });
 });

@@ -14,6 +14,7 @@ import {
   PluginCommandRequestSchema,
   PluginConfigWriteSchema,
   RocketConfigWriteSchema,
+  RocketUnturnedConfigWriteSchema,
   PermissionsConfigWriteSchema,
   ReloadPluginSchema,
   PluginSearchQuerySchema,
@@ -307,6 +308,32 @@ export function createLdmServerRouter(deps: {
         data: {
           serverId,
           file: "Rocket.config.xml",
+          success: result.success,
+          backupPath: result.backupPath,
+          writtenAtIso: result.writtenAtIso,
+        },
+      });
+    }),
+  );
+
+  // PUT /rocket-unturned-config — 写 Rocket.Unturned.config.xml（9 字段）
+  // Phase 2 审计 P0-3：之前漏了此路由，writeRocketUnturnedConfig 是死代码——前端无法保存 Rocket.Unturned 配置
+  router.put(
+    "/rocket-unturned-config",
+    validate(RocketUnturnedConfigWriteSchema, "body"),
+    asyncHandler(async (req, res) => {
+      const serverId = req.params.id as string;
+      if (!serverId) throw new AppError("server-id-missing", "实例 ID 缺失", 400);
+      const fields = req.body as Parameters<ILdmConfigWriter["writeRocketUnturnedConfig"]>[1];
+
+      const result = await deps.configWriter.writeRocketUnturnedConfig(
+        serverId as ServerId,
+        fields,
+      );
+      res.json({
+        data: {
+          serverId,
+          file: "Rocket.Unturned.config.xml",
           success: result.success,
           backupPath: result.backupPath,
           writtenAtIso: result.writtenAtIso,

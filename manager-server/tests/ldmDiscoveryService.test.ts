@@ -222,4 +222,57 @@ describe('LdmDiscoveryService', () => {
     const result = await svc.searchPlugins(serverId as never, {});
     expect(result.length).toBe(2);
   });
+
+  // ─── Phase 3：getStatus（统一状态）──────────────────────────
+
+  it('12. getStatus：LDM 激活 + 2 插件 → ldmInstalled=true + pluginCount=2', async () => {
+    const svc = await setupPlugins([
+      { name: 'A', version: '1.0.0.0' },
+      { name: 'B', version: '1.0.0.0' },
+    ]);
+    const status = await svc.getStatus(serverId as never);
+    expect(status.ldmInstalled).toBe(true);
+    expect(status.rocketDirExists).toBe(true);
+    expect(status.pluginCount).toBe(2);
+  });
+
+  it('13. getStatus：LDM 未激活（无 .module）→ ldmInstalled=false', async () => {
+    // 只有 Servers/<id>/Rocket/，无 Modules/Rocket.Unturned/.module
+    await mkdir(join(testRoot, 'Servers', serverId, 'Rocket'), { recursive: true });
+    const svc = new LdmDiscoveryService(
+      { readVersion: async () => null },
+      async () => ({}),
+    );
+    const status = await svc.getStatus(serverId as never);
+    expect(status.ldmInstalled).toBe(false);
+    expect(status.rocketDirExists).toBe(true);
+    expect(status.pluginCount).toBe(0);
+  });
+
+  it('14. getStatus：Rocket/ 目录不存在 → rocketDirExists=false', async () => {
+    // 什么都不建——目录不存在
+    const svc = new LdmDiscoveryService(
+      { readVersion: async () => null },
+      async () => ({}),
+    );
+    const status = await svc.getStatus(serverId as never);
+    expect(status.rocketDirExists).toBe(false);
+    expect(status.ldmInstalled).toBe(false);
+    expect(status.pluginCount).toBe(0);
+    expect(status.serverId).toBe(serverId);
+    expect(status.detectedAtIso).toBeTruthy();
+  });
+
+  it('15. getStatus：Plugins/ 空目录 → pluginCount=0', async () => {
+    await mkdir(join(testRoot, 'Modules', 'Rocket.Unturned'), { recursive: true });
+    await writeFile(join(testRoot, 'Modules', 'Rocket.Unturned', 'Rocket.Unturned.module'), '');
+    await mkdir(join(testRoot, 'Servers', serverId, 'Rocket', 'Plugins'), { recursive: true });
+    const svc = new LdmDiscoveryService(
+      { readVersion: async () => null },
+      async () => ({}),
+    );
+    const status = await svc.getStatus(serverId as never);
+    expect(status.ldmInstalled).toBe(true);
+    expect(status.pluginCount).toBe(0);
+  });
 });

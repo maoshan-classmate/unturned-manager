@@ -182,6 +182,37 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
     expect(mockConfigWriter.writeRocketConfig).toHaveBeenCalledTimes(1);
   });
 
+  it("PUT /rocket-unturned-config happy path: 调 configWriter.writeRocketUnturnedConfig（P0-3 回归）", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .put("/api/servers/S1/ldm/rocket-unturned-config")
+      .set("Authorization", "Bearer test-token")
+      .send({
+        automaticSaveEnabled: true,
+        automaticSaveInterval: 1800,
+        characterNameValidation: false,
+        characterNameValidationRule: "([\\x00-\\AA]|[\\w_\\ \\.\\+\\-])+",
+        logSuspiciousPlayerMovement: true,
+        enableItemBlacklist: false,
+        enableItemSpawnLimit: false,
+        maxSpawnAmount: 10,
+        enableVehicleBlacklist: false,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.success).toBe(true);
+    expect(res.body.data.file).toBe("Rocket.Unturned.config.xml");
+    expect(mockConfigWriter.writeRocketUnturnedConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("PUT /rocket-unturned-config 错误码：Zod 校验失败 → 400", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .put("/api/servers/S1/ldm/rocket-unturned-config")
+      .set("Authorization", "Bearer test-token")
+      .send({ automaticSaveEnabled: "not-bool" });
+    expect(res.status).toBe(400);
+  });
+
   it("PUT /permissions-config happy path: 调 configWriter.writePermissionsConfig", async () => {
     const app = makeApp();
     const res = await request(app)

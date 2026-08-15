@@ -61,7 +61,7 @@ export function OnboardingSopCard() {
             安装 Unturned 服务端（Steam AppID 1110390）—— 已有「安装 Unturned 服务端」按钮
           </li>
           <li>
-            复制 U3DS 装包自带的 Mod 框架到 Modules 目录：
+            复制 Unturned 服务端安装包自带的 Mod 框架到 Modules 目录：
             <div className="flex items-center gap-2 mt-1 ml-5">
               <code
                 className="text-[11px] px-2 py-0.5 rounded font-mono"
@@ -85,7 +85,7 @@ export function OnboardingSopCard() {
             </div>
           </li>
           <li>
-            启动一次服务端，让 Rocket 配置目录自动生成：
+            启动一次服务端，让 Mod 框架配置目录自动生成：
             <div className="flex items-center gap-2 mt-1 ml-5">
               <code
                 className="text-[11px] px-2 py-0.5 rounded font-mono"
@@ -113,7 +113,7 @@ export function OnboardingSopCard() {
             「上传 .dll」按钮上传
           </li>
           <li>
-            编辑框架配置 → 点「应用变更」走 PTY 重启流水线生效
+            编辑框架配置 → 点「应用变更」，重启后生效
           </li>
         </ol>
       )}
