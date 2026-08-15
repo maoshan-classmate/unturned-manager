@@ -39,21 +39,20 @@ md/
 
 **两步**：
 
-**第一步**——在 `always/` 下新建一个 `.md` 文件，写规则内容：
+**第一步**——在 `always/` 下新建一个 `.md` 文件，**用 `<!-- INJECT -->` 标签包裹要注入的精炼指令**（标签外内容只给人看，不注入）：
 
 ```bash
-# 例：加一条「禁止 console.log 输出敏感信息」铁律
+# 例：加一条「禁止日志输出敏感信息」铁律
 cat > always/no-sensitive-log.md <<'EOF'
-# 禁止 console.log 输出敏感信息
+# 禁止日志输出敏感信息
 
-## 总原则
+（标签外：给人看的完整文档、背景、详细示例——不注入）
+
+<!-- INJECT -->
 所有日志输出严禁包含密码、token、API Key、GSLT、Steam WebAPI Key 等凭证。
-
-## 正确示例
-logger.info({ ctx }, '用户登录成功')
-
-## 反面示例
-console.log('登录成功 token=', token)
+反例（不要这样）：console.log('登录成功 token=', token)
+正例（应该这样）：logger.info({ ctx }, '用户登录成功')
+<!-- /INJECT -->
 EOF
 ```
 
@@ -70,6 +69,21 @@ EOF
 ```
 
 下次用户提问时，新铁律自动注入。
+
+### ⚠️ 注入标签语法（务必遵守）
+
+每个铁律 `.md` 用 HTML 注释标签标记「注入段」，**只注入标签之间的内容**：
+
+| 标签 | 含义 |
+|---|---|
+| `<!-- INJECT -->` | 注入段起点 |
+| `<!-- /INJECT -->` | 注入段终点 |
+
+规则：
+- **一个文件只能有一对 INJECT 标签**（脚本取第一对）
+- 标签之间写**精炼指令**（纯规则、反例/正例），不要写元信息（来源、背景）、不要写长示例
+- 标签之外的内容随意写（给人看的完整文档），**不注入**
+- 占位符：`{max_files}`、`{max_lines_per_file}`、`{code_extensions}` 会被脚本从 `threshold.json` 动态替换
 
 ### ③ 改代码文件白名单
 
@@ -123,7 +137,7 @@ EOF
 echo '{"prompt":"test"}' | bash .claude/hooks/iron-rules-inject.sh
 ```
 
-期望看到**纯文本**铁律内容直接输出（引导框架 + 两条铁律正文）。输出**不以 `{` 开头**——UserPromptSubmit 支持纯文本 stdout 注入，直接输出文本最稳，绕开 JSON 解析路径。
+期望看到 **`<EXTREMELY_IMPORTANT>` 包裹的纯文本**铁律：精简引导框架 + 各铁律的 INJECT 标签段（含反例/正例、动态阈值数值）。输出**不以 `{` 开头**——UserPromptSubmit 支持纯文本 stdout 注入，直接输出文本最稳，绕开 JSON 解析路径。
 
 ### 测 PostToolUse（小功能判定）
 

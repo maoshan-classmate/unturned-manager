@@ -9,25 +9,48 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INDEX="$SCRIPT_DIR/md/index.json"
 MD_DIR="$SCRIPT_DIR/md"
+THRESHOLD="$SCRIPT_DIR/md/threshold.json"
 
 # 消费 stdin（避免 "cat on closed stdin" 警告），不读内容
 cat > /dev/null
 
-# 用 node 读取 index.json + 各 always 规则的 .md 文件 + 拼成 additionalContext
-# JSON.stringify 自动处理转义（双引号、反斜杠、换行符）
+# 用 node 读取 index.json + 各 always 规则的 .md 文件，提取 <!-- INJECT --> 标签内的精炼指令，
+# 动态替换阈值占位符，最后用 <EXTREMELY_IMPORTANT> 包裹纯文本输出。
+# 标签外内容保留给人读，不注入——避免把元信息/长示例灌进上下文。
 node -e "
   const fs = require('fs');
   const index = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
   const mdDir = process.argv[2];
+  const threshold = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+
+  // 占位符替换 map——改 threshold.json 后注入文案自动同步，不用改脚本
+  const replacements = {
+    '{max_files}': String(threshold.max_files),
+    '{max_lines_per_file}': String(threshold.max_lines_per_file),
+    '{code_extensions}': threshold.code_extensions.join(' '),
+  };
+  const replaceAll = (s) => Object.entries(replacements)
+    .reduce((acc, [k, v]) => acc.split(k).join(v), s);
+
+  // 提取每个规则的 INJECT 标签段（标签外内容不注入）
+  // 用 indexOf 定位字面标签——比正则稳，文档里若再出现标签文本不会误匹配
+  const startMarker = '<!-- INJECT -->';
+  const endMarker = '<!-- /INJECT -->';
   const parts = [];
   for (const r of index.always) {
     const content = fs.readFileSync(mdDir + '/' + r.file, 'utf8');
-    parts.push('【' + r.title + '】\n\n' + content);
+    const start = content.indexOf(startMarker);
+    if (start === -1) continue;
+    const end = content.indexOf(endMarker, start);
+    if (end === -1) continue;
+    const inject = content.slice(start + startMarker.length, end).trim();
+    parts.push('【' + r.title + '】\n\n' + replaceAll(inject));
   }
-  // 引导框架——让注入内容成为一段完整的、有明确指令语义的提示词，
-  const intro = '你是本项目的开发助手。以下铁律对你的一切输出生效——终端输出、文档输出、架构设计输出、工作流输出、测试输出、任务清单输出——必须严格遵守：';
-  const ctx = intro + '\n\n' + parts.join('\n\n');
+
+  // pua 风格：<EXTREMELY_IMPORTANT> 强调标签 + 极简引导框架
+  const intro = '以下铁律必须严格遵守：';
+  const ctx = '<EXTREMELY_IMPORTANT>\n' + intro + '\n\n' + parts.join('\n\n') + '\n</EXTREMELY_IMPORTANT>';
   // 直接输出纯文本——UserPromptSubmit 官方支持纯文本 stdout 注入上下文
   process.stdout.write(ctx);
-" "$INDEX" "$MD_DIR"
+" "$INDEX" "$MD_DIR" "$THRESHOLD"
 echo
