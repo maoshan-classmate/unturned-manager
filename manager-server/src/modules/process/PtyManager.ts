@@ -18,6 +18,12 @@ interface ManagedPty {
 }
 
 const DEFAULT_GRACEFUL_TIMEOUT_MS = 5_000;
+// ★ PTY 输出节流：onData 同步推 WS.send 在 U3DS 高频输出时阻塞链反向传导（master read
+// 不消费 → PTY buffer 满 → U3DS Console.WriteLine 阻塞 → consoleMain 死锁 → 后续命令
+// 卡死）。改成 onData 只 push 进环形 buffer + 定时器 50ms 批量 flush，断开阻塞链。
+// 范式对齐 MCSManager daemon/src/entity/instance/instance.ts:startOutputLoop。
+const OUTPUT_BUFFER_CAPACITY = 256;
+const OUTPUT_FLUSH_INTERVAL_MS = 50;
 
 /**
  * PTY 进程生命周期管理器（ADR-0004 §2.5 Phase 1）。
@@ -41,6 +47,10 @@ export class PtyManager implements IPtyManager {
   private processes = new Map<PtyKey, ManagedPty>();
   private dataCallbacks = new Map<PtyKey, PtyDataCallback[]>();
   private exitCallbacks = new Map<PtyKey, PtyExitCallback[]>();
+  // PTY 输出节流（MCSManager 范式）：每行 push 进环形 buffer（>256 丢弃最老），
+  // 50ms 定时器批量 flush 单条 emit——避免同步 ws.send 阻塞 PTY read。
+  private outputBuffers = new Map<PtyKey, string[]>();
+  private flushTimers = new Map<PtyKey, NodeJS.Timeout>();
 
   // ── spawn ────────────────────────────────────────────
 
@@ -104,23 +114,28 @@ export class PtyManager implements IPtyManager {
     // data chunk → 按 \n 切行（保留尾部未完成行供下次 chunk 拼接）
     const lineBuffer = new Map<PtyKey, string>();
     ptyProcess.onData((chunk: string) => {
-      const cbs = this.dataCallbacks.get(serverId);
-      if (!cbs || cbs.length === 0) return;
-
       let buffered = lineBuffer.get(serverId) ?? "";
       buffered += chunk;
       const lines = buffered.split(/\r?\n/);
       // 最后一段可能是未完成的行，留给下一个 chunk
       lineBuffer.set(serverId, lines.pop() ?? "");
+      if (lines.length === 0) return;
+
+      // ★ 节流（MCSManager 范式）：每行 push 进环形 buffer（O(1) 同步操作，
+      // 不阻塞 PTY read），50ms 后批量 flush 单条 emit——断开「onData 同步 → ws.send
+      // 阻塞 → master read 不消费 → PTY buffer 满 → U3DS 死锁」链。
+      const buf = this.outputBuffers.get(serverId) ?? [];
       for (const line of lines) {
-        // 空行也要转发（PTY 进度条刷新常见空行）
-        for (const cb of cbs) {
-          try {
-            cb(line);
-          } catch (err) {
-            logger.error({ err, serverId }, "PTY data 回调异常");
-          }
-        }
+        buf.push(line);
+        if (buf.length > OUTPUT_BUFFER_CAPACITY) buf.shift();
+      }
+      this.outputBuffers.set(serverId, buf);
+
+      if (!this.flushTimers.has(serverId)) {
+        this.flushTimers.set(
+          serverId,
+          setTimeout(() => this.flushOutputBuffer(serverId), OUTPUT_FLUSH_INTERVAL_MS),
+        );
       }
     });
 
@@ -153,12 +168,45 @@ export class PtyManager implements IPtyManager {
           logger.error({ err, serverId }, "PTY exit 回调异常");
         }
       }
+      // ★ 节流清理：flush 待处理 buffer + 清 timer + 释放 Map entry
+      this.flushOutputBuffer(serverId);
+      const timer = this.flushTimers.get(serverId);
+      if (timer) clearTimeout(timer);
+      this.flushTimers.delete(serverId);
+      this.outputBuffers.delete(serverId);
       // ★ P0-2 修复：自然 exit 后清理 callback Map，避免长寿命 PtyManager 累积闭包泄漏
       this.exitCallbacks.delete(serverId);
       this.dataCallbacks.delete(serverId);
     });
 
     return entry.pid;
+  }
+
+  /**
+   * 批量 flush 输出 buffer（节流机制核心）。
+   *
+   * 50ms 内累积的所有 PTY 行 join 成单条 emit——避免每次 onData 都同步触发 ws.send
+   * 导致反向阻塞 PTY read（MCSManager daemon/src/entity/instance/instance.ts
+   * startOutputLoop 同款范式）。
+   *
+   * @param serverId - PTY key
+   */
+  private flushOutputBuffer(serverId: PtyKey): void {
+    const buf = this.outputBuffers.get(serverId);
+    if (!buf || buf.length === 0) return;
+    this.outputBuffers.delete(serverId);
+    const timer = this.flushTimers.get(serverId);
+    if (timer) clearTimeout(timer);
+    this.flushTimers.delete(serverId);
+    const merged = buf.join("\n");
+    const cbs = this.dataCallbacks.get(serverId) ?? [];
+    for (const cb of cbs) {
+      try {
+        cb(merged);
+      } catch (err) {
+        logger.error({ err, serverId }, "PTY data 回调异常");
+      }
+    }
   }
 
   // ── write / resize ───────────────────────────────────
@@ -225,6 +273,11 @@ export class PtyManager implements IPtyManager {
     } catch (err) {
       logger.warn({ err, serverId }, "PTY SIGKILL 失败");
     }
+    // ★ 节流清理：kill 触发 exit 异步，timer 先清避免 fire-and-forget 调空 cb
+    const timer = this.flushTimers.get(serverId);
+    if (timer) clearTimeout(timer);
+    this.flushTimers.delete(serverId);
+    this.outputBuffers.delete(serverId);
   }
 
   isRunning(serverId: PtyKey): boolean {
