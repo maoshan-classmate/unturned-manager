@@ -50,6 +50,31 @@ const DEFAULT_PATHS = [
 const PROGRESS_RE =
   /\b(downloading|validating|installed|preallocating|checking|updating|update complete|deprecated)\b/i;
 const PERCENT_RE = /(\d{1,3})\s*%/;
+/** SteamCMD 错误行——捕获后翻译成人话给用户看（原面板只检测 staging 目录非空，丢根因） */
+const STEAMCMD_ERROR_RE = /^ERROR!\s+(.+)$/i;
+
+/**
+ * 把 SteamCMD 原文错误翻译成中文人话（用户可见 toast 文案，按
+ * frontend-development.md §界面文案规范「AppError.message 属于用户可见文案」）。
+ *
+ * 已知 SteamCMD 错误类型：
+ *   - (File Not Found) — Steam Workshop 上找不到这个文件
+ *   - (Not Subscribed)  — Steam 账号未订阅（SteamCMD 匿名下载时常见）
+ *   - (Failure)         — 通用失败（SteamCDN 拒绝 / 限流 / 协议问题）
+ *   - 其他              — 保留原文括号标记便于支持排查
+ */
+function translateSteamCmdError(rawError: string): string {
+  if (/\(File Not Found\)/i.test(rawError)) {
+    return "Steam Workshop 上找不到这个文件（可能已被作者删除或设为私有）";
+  }
+  if (/\(Not Subscribed\)/i.test(rawError)) {
+    return "Steam 账号未订阅这个 Workshop 项目";
+  }
+  if (/\(Failure\)/i.test(rawError)) {
+    return "下载失败（Steam 服务端拒绝，请稍后重试）";
+  }
+  return "下载失败";
+}
 
 // AppID 唯一真源 = shared/constants.ts 的 STEAM_APP_IDS——
 // U3DS_SERVER=1110390（app_update/查版本），UNTURNED_GAME=304930（workshop 全链路）
@@ -588,7 +613,8 @@ export class SteamCmdManager implements ISteamCmdManager {
         this.activeJobs.add(lockKey);
 
         const scriptContent = [
-          "@ShutdownOnFailedCommand 1",
+          // 批下载场景下，第一个 mod 失败不应让 SteamCMD 整体 quit（会丢后续 mod 的 ERROR! 报告）
+          "@ShutdownOnFailedCommand 0",
           "@NoPromptForPassword 1",
           `force_install_dir "${stagingDir}"`,
           "login anonymous",
@@ -637,11 +663,17 @@ export class SteamCmdManager implements ISteamCmdManager {
           throw err;
         }
 
+        // SteamCMD 错误行缓冲——失败时透传给用户（原面板只检测 staging 目录非空，丢根因）
+        let lastSteamCmdError: string | undefined;
         this.processSupervisor.onStdout(jobId, (line: string) => {
           const { stage, percent } = this.parseProgressLine(line);
           // ★ 2026-08-14 per-fileId 进度：SteamCMD 输出「Downloading item <id>...
           // 1024/5678」时携带当前 fileId，前端按 fileId 各自渲染进度条。
           const currentFileId = this.parseCurrentFileId(line, itemIds);
+          const errorMatch = STEAMCMD_ERROR_RE.exec(line);
+          if (errorMatch) {
+            lastSteamCmdError = errorMatch[1]!.trim();
+          }
           this.broadcaster.broadcast({
             type: "steamcmd_progress",
             jobId,
@@ -651,14 +683,45 @@ export class SteamCmdManager implements ISteamCmdManager {
           });
         });
 
+        // 失败时清理 staging 内的失败 mod 残渣（仅删 content/<id>/ 子目录 + 脚本文件，
+        // 不删 appworkshop_<appid>.acf 保留其他成功 mod 的元数据，下个 mod 不丢）
+        const cleanupFailedMods = async (ids: string[]): Promise<void> => {
+          for (const id of ids) {
+            const itemDir = path.join(
+              stagingDir,
+              "steamapps",
+              "workshop",
+              "content",
+              STEAM_APP_IDS.UNTURNED_GAME,
+              id,
+            );
+            try {
+              await fs.promises.rm(itemDir, { recursive: true, force: true });
+            } catch {
+              /* best-effort：清理失败不影响主错误抛出 */
+            }
+          }
+          try {
+            await fs.promises.rm(scriptPath, { force: true });
+          } catch {
+            /* noop */
+          }
+        };
+
         try {
           const downloadExitCode = await this.processSupervisor.waitForExit(
             jobId,
             DOWNLOAD_TIMEOUT_MS,
           );
           if (downloadExitCode !== 0 && downloadExitCode != null) {
-            throw new Error(
-              `SteamCMD 下载进程异常退出 (code ${downloadExitCode})`,
+            await cleanupFailedMods(itemIds);
+            const cause = lastSteamCmdError
+              ? translateSteamCmdError(lastSteamCmdError)
+              : `SteamCMD 进程退出码 ${downloadExitCode}`;
+            throw new AppError(
+              "steamcmd-exit-failed",
+              cause,
+              502,
             );
           }
           // ★ BUG-5/6（第四版）：steamcmd 下载失败时**也可能 exit 0**——item 只进
@@ -683,8 +746,15 @@ export class SteamCmdManager implements ISteamCmdManager {
             }
           }
           if (missing.length > 0) {
-            throw new Error(
-              `SteamCMD 下载未完成（staging 无实际内容，仅元数据缓存）: ${missing.join(", ")}`,
+            await cleanupFailedMods(missing);
+            // 把 SteamCMD 的 ERROR! 行翻译成人话——原「仅元数据缓存」措辞对用户不可读，根因被吞
+            const rootCause = lastSteamCmdError
+              ? translateSteamCmdError(lastSteamCmdError)
+              : "下载失败（未找到文件内容）";
+            throw new AppError(
+              "steamcmd-download-failed",
+              rootCause,
+              502,
             );
           }
           try {
@@ -704,6 +774,7 @@ export class SteamCmdManager implements ISteamCmdManager {
             itemIds[0],
           );
         } catch (err) {
+          // cleanup 已在 throw 前各自处理（清理失败静默不影响主错误）
           this.broadcastProgressWithJobId(
             jobId,
             0,
