@@ -51,6 +51,12 @@ export class PtyManager implements IPtyManager {
   // 50ms 定时器批量 flush 单条 emit——避免同步 ws.send 阻塞 PTY read。
   private outputBuffers = new Map<PtyKey, string[]>();
   private flushTimers = new Map<PtyKey, NodeJS.Timeout>();
+  // 双通道：raw chunk 通道给前端 xterm——不做行切分，整段 join 喂给 xterm，
+  // 由 xterm 内部 ANSI 状态机处理跨 chunk 的不完整序列；line 通道继续给 waitForMarker
+  // / save 成功匹配 / U3DS_READY_PATTERNS 用（需要按行匹配的纯文本路径）。
+  private chunkBuffers = new Map<PtyKey, string[]>();
+  private chunkFlushTimers = new Map<PtyKey, NodeJS.Timeout>();
+  private chunkCallbacks = new Map<PtyKey, PtyDataCallback[]>();
 
   // ── spawn ────────────────────────────────────────────
 
@@ -114,6 +120,19 @@ export class PtyManager implements IPtyManager {
     // data chunk → 按 \n 切行（保留尾部未完成行供下次 chunk 拼接）
     const lineBuffer = new Map<PtyKey, string>();
     ptyProcess.onData((chunk: string) => {
+      // raw chunk 立即进 chunk 缓冲（不做行切分）——给前端 xterm 自处理 ANSI 跨 chunk 序列
+      const chunkBuf = this.chunkBuffers.get(serverId) ?? [];
+      chunkBuf.push(chunk);
+      if (chunkBuf.length > OUTPUT_BUFFER_CAPACITY) chunkBuf.shift();
+      this.chunkBuffers.set(serverId, chunkBuf);
+
+      if (!this.chunkFlushTimers.has(serverId)) {
+        this.chunkFlushTimers.set(
+          serverId,
+          setTimeout(() => this.flushChunkBuffer(serverId), OUTPUT_FLUSH_INTERVAL_MS),
+        );
+      }
+
       let buffered = lineBuffer.get(serverId) ?? "";
       buffered += chunk;
       const lines = buffered.split(/\r?\n/);
@@ -121,7 +140,7 @@ export class PtyManager implements IPtyManager {
       lineBuffer.set(serverId, lines.pop() ?? "");
       if (lines.length === 0) return;
 
-      // ★ 节流（MCSManager 范式）：每行 push 进环形 buffer（O(1) 同步操作，
+      // 节流（MCSManager 范式）：每行 push 进环形 buffer（O(1) 同步操作，
       // 不阻塞 PTY read），50ms 后批量 flush 单条 emit——断开「onData 同步 → ws.send
       // 阻塞 → master read 不消费 → PTY buffer 满 → U3DS 死锁」链。
       const buf = this.outputBuffers.get(serverId) ?? [];
@@ -168,15 +187,21 @@ export class PtyManager implements IPtyManager {
           logger.error({ err, serverId }, "PTY exit 回调异常");
         }
       }
-      // ★ 节流清理：flush 待处理 buffer + 清 timer + 释放 Map entry
+      // 节流清理：flush 待处理 buffer + 清 timer + 释放 Map entry
       this.flushOutputBuffer(serverId);
+      this.flushChunkBuffer(serverId);
       const timer = this.flushTimers.get(serverId);
       if (timer) clearTimeout(timer);
       this.flushTimers.delete(serverId);
       this.outputBuffers.delete(serverId);
-      // ★ P0-2 修复：自然 exit 后清理 callback Map，避免长寿命 PtyManager 累积闭包泄漏
+      const chunkTimer = this.chunkFlushTimers.get(serverId);
+      if (chunkTimer) clearTimeout(chunkTimer);
+      this.chunkFlushTimers.delete(serverId);
+      this.chunkBuffers.delete(serverId);
+      // P0-2 修复：自然 exit 后清理 callback Map，避免长寿命 PtyManager 累积闭包泄漏
       this.exitCallbacks.delete(serverId);
       this.dataCallbacks.delete(serverId);
+      this.chunkCallbacks.delete(serverId);
     });
 
     return entry.pid;
@@ -212,18 +237,53 @@ export class PtyManager implements IPtyManager {
     }
   }
 
+  /**
+   * 批量 flush raw chunk buffer（节流机制核心）。
+   *
+   * 与 flushOutputBuffer 并行，但走 chunk 通道：50ms 内累积的 PTY 原始 chunks
+   * 拼成一段单 emit，给前端 xterm 一次性写入。不切行——xterm 内部 ANSI 状态机
+   * 自处理跨 chunk 的不完整转义序列（行切分会把 \x1b[?...m 这种序列切碎、
+   * 状态机无法自愈，是「屏幕填满后新内容不显示」的根因）。
+   *
+   * @param serverId - PTY key
+   */
+  private flushChunkBuffer(serverId: PtyKey): void {
+    const buf = this.chunkBuffers.get(serverId);
+    if (!buf || buf.length === 0) return;
+    this.chunkBuffers.delete(serverId);
+    const timer = this.chunkFlushTimers.get(serverId);
+    if (timer) clearTimeout(timer);
+    this.chunkFlushTimers.delete(serverId);
+    const cbs = this.chunkCallbacks.get(serverId) ?? [];
+    const joined = buf.join("");
+    for (const cb of cbs) {
+      try {
+        cb(joined);
+      } catch (err) {
+        logger.error({ err, serverId }, "PTY chunk 回调异常");
+      }
+    }
+  }
+
   // ── write / resize ───────────────────────────────────
 
   write(serverId: PtyKey, data: string): void {
     const entry = this.processes.get(serverId);
     if (!entry) {
-      logger.warn({ serverId }, "PTY write: 进程不存在");
-      return;
+      throw new AppError(
+        "pty-not-running",
+        "控制台未在运行，请先启动服务器",
+        409,
+      );
     }
     try {
       entry.process.write(data);
     } catch (err) {
-      logger.warn({ err, serverId }, "PTY write 失败");
+      throw new AppError(
+        "pty-write-failed",
+        "命令未送达，请稍后重试",
+        500,
+      );
     }
   }
 
@@ -276,11 +336,15 @@ export class PtyManager implements IPtyManager {
     } catch (err) {
       logger.warn({ err, serverId }, "PTY SIGKILL 失败");
     }
-    // ★ 节流清理：kill 触发 exit 异步，timer 先清避免 fire-and-forget 调空 cb
+    // 节流清理：kill 触发 exit 异步，timer 先清避免 fire-and-forget 调空 cb
     const timer = this.flushTimers.get(serverId);
     if (timer) clearTimeout(timer);
     this.flushTimers.delete(serverId);
     this.outputBuffers.delete(serverId);
+    const chunkTimer = this.chunkFlushTimers.get(serverId);
+    if (chunkTimer) clearTimeout(chunkTimer);
+    this.chunkFlushTimers.delete(serverId);
+    this.chunkBuffers.delete(serverId);
   }
 
   isRunning(serverId: PtyKey): boolean {
@@ -313,6 +377,33 @@ export class PtyManager implements IPtyManager {
     // 退订：从数组摘除该 callback（settle 后幂等——Map 可能已被 exit 清理）
     return () => {
       const list = this.dataCallbacks.get(serverId);
+      if (!list) return;
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
+  }
+
+  /**
+   * 订阅 PTY 原始 chunk 流（不切行）——给前端 xterm 用。
+   *
+   * 与 onData(line) 的区别：本回调接收 50ms 内累积的 PTY 原始 chunks 拼接成的
+   * 字符串，xterm 内部 ANSI 状态机可正确处理跨 chunk 的不完整转义序列；
+   * onData(line) 按 \r?\n 切行后逐条回调，供 waitForMarker / save 成功匹配等
+   * 需要纯文本行匹配的消费者使用。
+   *
+   * @param serverId - PTY key
+   * @param callback - 接收 50ms 内累积的拼接字符串（可能含不完整 ANSI 序列）
+   * @returns 退订函数
+   */
+  onChunk(serverId: PtyKey, callback: PtyDataCallback): () => void {
+    const cbs = this.chunkCallbacks.get(serverId);
+    if (cbs) {
+      cbs.push(callback);
+    } else {
+      this.chunkCallbacks.set(serverId, [callback]);
+    }
+    return () => {
+      const list = this.chunkCallbacks.get(serverId);
       if (!list) return;
       const idx = list.indexOf(callback);
       if (idx >= 0) list.splice(idx, 1);
@@ -404,6 +495,7 @@ export class PtyManager implements IPtyManager {
     await new Promise((resolve) => setTimeout(resolve, 100));
     this.dataCallbacks.clear();
     this.exitCallbacks.clear();
+    this.chunkCallbacks.clear();
   }
 
   // ── 内部辅助 ─────────────────────────────────────────

@@ -26,6 +26,13 @@ export type ServerEvent =
       line: string;
       source: "stdout" | "file";
     }
+  // 原始 PTY 输出通道——不做行切分，由前端 xterm 内部 ANSI 状态机自处理跨 chunk
+  // 不完整转义序列。LogStreamer 文件 tail 仍走 console_line（每文件行一条事件）。
+  | {
+      type: "console_output";
+      serverId: ServerId;
+      chunk: string;
+    }
   | {
       type: "player_join";
       serverId: ServerId;

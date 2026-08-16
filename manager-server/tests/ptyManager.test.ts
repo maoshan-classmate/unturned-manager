@@ -433,9 +433,15 @@ describe("PtyManager — write / resize / lifecycle", () => {
     expect(fake.writeCalls).toEqual(["Players\n"]);
   });
 
-  it("write: 进程不存在 → warn 不抛", async () => {
+  it("write: 进程不存在 → 抛 AppError 409（不静默）", async () => {
     const mgr = new PtyManager();
-    expect(() => mgr.write("ghost", "x")).not.toThrow();
+    expect(() => mgr.write("ghost", "x")).toThrow(AppError);
+    try {
+      mgr.write("ghost", "x");
+    } catch (err) {
+      expect((err as AppError).code).toBe("pty-not-running");
+      expect((err as AppError).status).toBe(409);
+    }
   });
 
   it("resize: 调整 cols/rows", async () => {
@@ -774,5 +780,167 @@ describe("PtyManager — 多 serverId 隔离", () => {
 
     f2.emitExit(0);
     expect(r2).toEqual(["partial-s2"]); // S2 退出时 flush 自己
+  });
+});
+
+describe("PtyManager — onChunk 原始 chunk 流（前端 xterm 通道）", () => {
+  it("单 chunk 50ms 后整体 emit（保持原始字节流，不切行）", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const received: string[] = [];
+    mgr.onChunk("S1", (chunk) => received.push(chunk));
+
+    // 含不完整 ANSI 转义序列（屏幕填满后丢消息的根因场景）
+    fake.emitData("\x1b[32mgreen text\x1b[0m\nmore");
+    await flushOutput();
+    expect(received).toEqual(["\x1b[32mgreen text\x1b[0m\nmore"]);
+  });
+
+  it("50ms 内多 chunk 合并为单条 emit（拼接所有 chunks）", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const received: string[] = [];
+    mgr.onChunk("S1", (chunk) => received.push(chunk));
+
+    fake.emitData("\x1b[3");  // 不完整 ANSI
+    fake.emitData("2mhi");    // 补全
+    fake.emitData("\n");      // 终止
+    await flushOutput();
+    expect(received).toEqual(["\x1b[32mhi\n"]);
+  });
+
+  it("未注册 onChunk → chunk 静默丢弃，不报错", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    expect(() => fake.emitData("\x1b[32mhi\x1b[0m")).not.toThrow();
+  });
+
+  it("多个 onChunk callback → 都收到同一拼接字符串", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const a: string[] = [];
+    const b: string[] = [];
+    mgr.onChunk("S1", (chunk) => a.push(chunk));
+    mgr.onChunk("S1", (chunk) => b.push(chunk));
+
+    fake.emitData("hi");
+    await flushOutput();
+    expect(a).toEqual(["hi"]);
+    expect(b).toEqual(["hi"]);
+  });
+
+  it("chunk callback 异常 → 不影响其他 callback", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const good: string[] = [];
+    mgr.onChunk("S1", () => {
+      throw new Error("boom");
+    });
+    mgr.onChunk("S1", (chunk) => good.push(chunk));
+
+    fake.emitData("ok");
+    await flushOutput();
+    expect(good).toEqual(["ok"]);
+  });
+
+  it("exit 触发 flush chunk buffer 残留", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const received: string[] = [];
+    mgr.onChunk("S1", (chunk) => received.push(chunk));
+
+    fake.emitData("partial chunk without flush");
+    expect(received).toEqual([]); // 50ms 定时器未到
+    fake.emitExit(0);
+    expect(received).toEqual(["partial chunk without flush"]); // exit 立即 flush
+  });
+
+  it("onChunk 退订函数：退订后不再收到 chunks", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const received: string[] = [];
+    const off = mgr.onChunk("S1", (chunk) => received.push(chunk));
+    fake.emitData("a");
+    await flushOutput();
+    off();
+    fake.emitData("b");
+    await flushOutput();
+    expect(received).toEqual(["a"]);
+  });
+
+  it("chunk 与 line 通道并行：onChunk 收 raw 字符串，onData 收切行", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    const chunks: string[] = [];
+    const lines: string[] = [];
+    mgr.onChunk("S1", (c) => chunks.push(c));
+    mgr.onData("S1", (l) => lines.push(l));
+
+    // ANSI 序列被切在 [3 后，切行能拿到完整行，chunk 拿到 raw 字符串
+    fake.emitData("\x1b[32mhello\nworld\n");
+    await flushOutput();
+    expect(chunks).toEqual(["\x1b[32mhello\nworld\n"]);
+    expect(lines).toEqual(["\x1b[32mhello", "world"]);
+  });
+
+  it("不同 serverId 各自 chunk 流，互不影响", async () => {
+    const f1 = new FakePty();
+    const f2 = new FakePty();
+    const arr = [f1, f2];
+    let i = 0;
+    ptySpawnMock.mockImplementation(() => {
+      const f = arr[i++];
+      if (!f) throw new Error("unexpected spawn");
+      return f as unknown as IPty;
+    });
+
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    await mgr.spawn("S2", "/bin/echo", []);
+
+    const r1: string[] = [];
+    const r2: string[] = [];
+    mgr.onChunk("S1", (c) => r1.push(c));
+    mgr.onChunk("S2", (c) => r2.push(c));
+
+    f1.emitData("hello-1");
+    f2.emitData("hello-2");
+    await flushOutput();
+
+    expect(r1).toEqual(["hello-1"]);
+    expect(r2).toEqual(["hello-2"]);
+
+    f1.emitExit(0);
+    expect(mgr.isRunning("S1")).toBe(false);
+    expect(mgr.isRunning("S2")).toBe(true); // S2 不受影响
+  });
+
+  it("exit 后 chunkCallbacks Map 被清理（防长寿命内存泄漏）", async () => {
+    const fake = new FakePty();
+    spawnReturn = fake;
+    const mgr = new PtyManager();
+    await mgr.spawn("S1", "/bin/echo", []);
+    mgr.onChunk("S1", () => {});
+    fake.emitExit(0);
+    const chunkMap = (
+      mgr as unknown as { chunkCallbacks: Map<unknown, unknown> }
+    ).chunkCallbacks;
+    expect(chunkMap.size).toBe(0);
   });
 });

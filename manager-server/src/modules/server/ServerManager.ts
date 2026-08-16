@@ -723,25 +723,32 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 把 serverId 的 PTY stdout 接线到 console_line 广播（ADR-0004 §2.4 Phase 3）。
-   * U3DS 的 ANSI 彩色日志经此推给前端 xterm.js；PtyManager.exit 已自动清 callbacks，
-   * 每次 spawn 重新注册。幂等调用安全（重复注册仅多一次广播，PtyManager 行为一致）。
+   * 把 serverId 的 PTY stdout 接线到 console_output / console_line 双事件广播。
+   *
+   * 双订阅设计：
+   * - onChunk 推 console_output 给前端 xterm——保留原始字节流，由 xterm 内部
+   *   ANSI 状态机自处理跨 chunk 不完整转义序列（行切分会把 ESC 序列切碎）
+   * - onData 推 console_line 给 LogStreamer 文件 tail 等行匹配消费者
+   * - U3DS_READY_PATTERNS 仍在 onData 上匹配——依赖完整单行文本
+   *
+   * PtyManager.exit 已自动清 callbacks，每次 spawn 重新注册。幂等调用安全
+   * （重复注册仅多一次广播，PtyManager 行为一致）。
    */
   private pipePtyOutput(serverId: ServerId): void {
-    this.ptyManager.onData(serverId, (line: string) => {
+    this.ptyManager.onChunk(serverId, (chunk: string) => {
       this.broadcaster.broadcast({
-        type: "console_line",
+        type: "console_output",
         serverId,
-        line,
-        source: "stdout",
+        chunk,
       });
-      // ★ ADR-0005 Phase 7：PTY 每收到 stdout → 刷新 lastActivity（5 秒节流，SessionManager 内部处理）
+      // PTY 每收到 stdout → 刷新 lastActivity（5 秒节流，SessionManager 内部处理）
       if (this.sessionManager) {
         void this.sessionManager.touchActivity(serverId);
       }
-      // ★ 抄 GSM GameManager.ts:795-802（parseMinecraftOutput 命中 "Done (") / "For help"
-      // 立即 transition）：U3DS 命中 ready 正则 → 提前 transition(RUNNING)，不等到
-      // START_COMMAND_DELAY 兜底。transition 自身幂等，正则 + 定时器谁先到用哪个。
+    });
+    this.ptyManager.onData(serverId, (line: string) => {
+      // U3DS 就绪正则匹配：命中 "Done (" / "For help" 等模式后立即 transition(RUNNING)，
+      // 不等 START_COMMAND_DELAY 兜底。transition 自身幂等，正则 + 定时器谁先到用哪个。
       if (U3DS_READY_PATTERNS.some((re) => re.test(line))) {
         this.transition(serverId, ServerState.RUNNING);
       }

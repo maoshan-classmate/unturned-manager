@@ -4,31 +4,34 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 /**
- * xterm.js 终端包装组件（ADR-0004 §2.5 Phase 3）。
+ * xterm.js 终端包装组件。
  *
- * 把 U3DS 的 ANSI 彩色日志渲染成真终端：lines 增量写入 terminal，用户键盘输入经
- * onInput 透传 PTY stdin（PTY 自回显，组件不回显）。容器 resize 时 FitAddon 自动 fit。
+ * 输出由 useConsole 通过 onReady 暴露的 xterm 实例直接写入（PTY raw chunks），
+ * 不再走 lines 数组增量渲染——后者会把 ESC 转义序列切碎、xterm 状态机无法自愈。
+ * 容器 resize 时 FitAddon 自动 fit。
  *
  * 是 ConsolePage 的专属组件（组件存放规范：只被一个页面用 → components/<feature>/）。
  * 项目暗色主题对齐全局色值（component-abstraction.md），禁止新色值。
  *
  * @param props - 组件属性
- * @param props.lines - 控制台输出行数组，内部按行 ID 增量写入（不重灌全量）；
- *   清空后先 clear 重置游标
+ * @param props.onReady - xterm 实例初始化完成时回调，父组件保存到 ref 后可直接 term.write(...)
  * @param props.onInput - 用户键盘输入回调（xterm onData 原始字节，PTY 自回显）
  * @param props.connected - 是否已连接 WS，未连接时禁用输入
  * @returns xterm.js 容器 div 的 React 元素
  *
  * @example
  * ```tsx
- * <Terminal lines={lines} onInput={sendTerminalInput} connected={connected} />
+ * const termRef = useRef<XTerm | null>(null);
+ * <Terminal
+ *   onReady={(t) => { termRef.current = t; }}
+ *   onInput={sendTerminalInput}
+ *   connected={connected}
+ * />
  * ```
  */
-
-/** Terminal 组件属性 */
 interface TerminalProps {
-  /** 控制台输出行数组——内部按行 ID 增量写入（不重灌全量） */
-  lines: { id: number; text: string; source: string }[];
+  /** xterm 实例初始化完成时回调，父组件保存到 ref 后可直接 term.write(...) */
+  onReady?: (term: XTerm) => void;
   /** 用户键盘输入回调（xterm onData 原始字节，PTY 自回显） */
   onInput?: (data: string) => void;
   /** 是否已连接 WS——未连接时禁用输入 */
@@ -37,11 +40,11 @@ interface TerminalProps {
 
 /** xterm 主题——对齐全局色值常量（component-abstraction.md） */
 const THEME = {
-  background: "#0F172A", // 页面/输入框背景
-  foreground: "#F1F5FB", // ★ 2026-08-14：从 #94A3B8（次级文本）提亮为主文本——命令响应（如 "Successfully set time to day!"）更易读
-  cursor: "#22C55E", // 强调色
+  background: "#0F172A",
+  foreground: "#F1F5FB",
+  cursor: "#22C55E",
   cursorAccent: "#0F172A",
-  selectionBackground: "#334059", // 边框/选中
+  selectionBackground: "#334059",
   black: "#1E293B",
   red: "#EF4444",
   green: "#22C55E",
@@ -49,19 +52,19 @@ const THEME = {
   blue: "#3B82F6",
   magenta: "#A855F7",
   cyan: "#06B6D4",
-  white: "#F1F5FB", // 主文本
-  brightBlack: "#64748B", // 弱化文本
+  white: "#F1F5FB",
+  brightBlack: "#64748B",
 };
 
-export function Terminal({ lines, onInput, connected }: TerminalProps) {
+export function Terminal({ onReady, onInput, connected }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  // 上次写入的最大行 ID——增量写入只写 ID 更大的行（行数组会被裁剪，长度不能当游标）
-  const lastIdRef = useRef(0);
-  // onInput 最新引用——注册一次 onData，回调走 ref 避免重复订阅
+  // onInput / onReady 最新引用——注册一次 onData，回调走 ref 避免重复订阅
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   // 初始化 xterm + fit addon + onData 订阅（一次）
   useEffect(() => {
@@ -72,7 +75,10 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
       fontSize: 12,
       lineHeight: 1.2,
       cursorBlink: true,
-      convertEol: false, // console_line 已按行切分，不加 CR
+      // convertEol: true 让 xterm 把 \n 自动转 \r\n——服务端推来的 chunk 字符串
+      // 不保证行尾形式（PTY 原始字节流可能含 \n、\r\n、或仅 \r），xterm 内部按
+      // 标准终端规则归一
+      convertEol: true,
       scrollback: 2000,
     });
     const fit = new FitAddon();
@@ -84,6 +90,9 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
     // 首次 fit（容器可能尚未有尺寸，下一帧再 fit 一次兜底）
     fit.fit();
     const frame = requestAnimationFrame(() => fit.fit());
+
+    // 把 xterm 实例暴露给父组件（用于直接 write chunk）
+    onReadyRef.current?.(term);
 
     // 用户输入透传 PTY stdin（owner-trust，PTY 自回显）
     const dataSub = term.onData((data) => {
@@ -107,7 +116,6 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
-      lastIdRef.current = 0;
     };
   }, []);
 
@@ -117,30 +125,6 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
       termRef.current.options.disableStdin = !connected;
     }
   }, [connected]);
-
-  // 行数组增量写入（清空后 ID 重新变小 → 先 clear 重置游标）
-  useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-    const lastLine = lines[lines.length - 1];
-    if (!lastLine) {
-      // 已清空
-      if (lastIdRef.current !== 0) {
-        term.clear();
-        lastIdRef.current = 0;
-      }
-      return;
-    }
-    if (lastLine.id < lastIdRef.current) {
-      term.clear();
-      lastIdRef.current = 0;
-    }
-    for (const line of lines) {
-      if (line.id <= lastIdRef.current) continue;
-      term.writeln(line.text);
-      lastIdRef.current = line.id;
-    }
-  }, [lines]);
 
   return (
     <div

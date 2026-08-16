@@ -128,6 +128,19 @@ export interface IPtyManager {
   onData(serverId: PtyKey, callback: PtyDataCallback): () => void;
 
   /**
+   * 订阅 PTY 原始 chunk 流（不切行）——给前端 xterm 用。
+   *
+   * 回调接收 50ms 内累积的 PTY 原始 chunks 拼接成的字符串，由 xterm 内部
+   * ANSI 状态机自处理跨 chunk 的不完整转义序列；行切分会把 ESC 序列切碎、
+   * 状态机无法自愈，是「屏幕填满后新内容不显示」的根因。
+   *
+   * @param serverId - PTY key
+   * @param callback - 接收 50ms 内累积的拼接字符串
+   * @returns 退订函数
+   */
+  onChunk(serverId: PtyKey, callback: PtyDataCallback): () => void;
+
+  /**
    * 订阅 PTY 退出事件（spawn 时自动注册一次）。
    *
    * @param serverId - PTY key

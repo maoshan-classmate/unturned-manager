@@ -7,6 +7,7 @@ import {
   Save,
   Power,
 } from "lucide-react";
+import { Terminal as XTerm } from "@xterm/xterm";
 import { useServer } from "../hooks/useServer.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useCurrentServer } from "../contexts/CurrentServerContext.js";
@@ -81,17 +82,22 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
   const currentServer = servers.find((s) => s.id === serverId);
   const isServerRunning = currentServer?.state === "RUNNING";
-  // ADR-0005 Phase 7.2：拉取已保存的终端会话列表（面板重启后保留 tab 列表）
+  // 拉取已保存的终端会话列表（面板重启后保留 tab 列表）
   const { saved: savedSessions } = useSessionManager();
+  // xterm 实例由 Terminal 组件 onReady 暴露，写入回调包成 sinks 注入 useConsole
+  const termRef = useRef<XTerm | null>(null);
   const {
-    lines,
     sendCommand,
     clearLines,
     connected,
     sendTerminalInput,
     save,
     shutdown,
-  } = useConsole(serverId);
+  } = useConsole(serverId, {
+    onChunk: (chunk) => termRef.current?.write(chunk),
+    onLine: (line) => termRef.current?.write(line),
+    onClear: () => termRef.current?.clear(),
+  });
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -394,7 +400,9 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
       {/* ── Output：xterm.js 终端（Phase 3） ── */}
       <Terminal
-        lines={lines}
+        onReady={(term) => {
+          termRef.current = term;
+        }}
         onInput={sendTerminalInput}
         connected={connected}
       />
