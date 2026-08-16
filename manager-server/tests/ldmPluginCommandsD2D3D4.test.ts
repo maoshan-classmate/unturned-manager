@@ -56,7 +56,7 @@ describe("LdmPluginCommandsService — Phase 2b D2/D3/D4", () => {
     const svc = makeSvc();
     const result = await svc.reloadPermissions("S1" as ServerId);
     expect(result.outcome).toBe("success");
-    expect(pty.write).toHaveBeenCalledWith("S1", "/p reload\n");
+    expect(pty.write).toHaveBeenCalledWith("S1", "/p reload\r");
   });
 
   it("reloadPermissions 非 RUNNING → 抛 server-not-running", async () => {

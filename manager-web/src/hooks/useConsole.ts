@@ -103,15 +103,13 @@ export function useConsole(serverId: string): UseConsoleReturn {
       // ★ 2026-08-14 TERM 方案：不在前端塞 `> 命令` 标记——bash 自回显承担命令可见性，
       // 避免「命令在屏幕上出现两次」（bash 回显 + 前端标记）。
 
-      // PTY 终端：拼入 \n 让 U3DS bash 解析（U3-SDK -ThreadedConsole 的 Console.ReadLine()
-      // 以 LF 为行终止符；bash 中转 + 终端模式变化时 \r 不触发行结束导致 ReadLine 阻塞。
-      // ★ 2026-08-14 实机根因：原 \r 在早期 ICRNL 生效时能执行（Players 日志 16:52:35），
-      // 后续终端模式改变后 \r 失效 → 命令到 U3DS 但不执行 → 游戏内不生效）。
+      // 命令末尾拼回车符——与真实终端按下回车发出的字节一致。服务端控制台读取线程
+      // 运行在逐字符模式下，只认回车符作为行结束符；送换行符会让它卡在读取里不返回。
       // send 返回 false = 连接未就绪
       const sent = send({
         type: "terminal_input",
         serverId,
-        data: `${command}\n`,
+        data: `${command}\r`,
       });
       if (!sent) {
         setLines((prev) => [
@@ -133,14 +131,11 @@ export function useConsole(serverId: string): UseConsoleReturn {
     setLines([]);
   }, []);
 
-  // ★ ADR-0004 Phase 3：xterm.js onData 原始输入 → WS terminal_input → 后端 PTY stdin。
-  // 连接未就绪时静默丢弃（终端输入本身尽力而为，PTY 自回显，丢一个字符不可恢复）。
-  // ★ 2026-08-14：xterm 的 Enter 键发送单个 CR（\r），但 U3DS Console.ReadLine() 以 LF 为
-  // 行终止符——把单独的回车转 LF，保证手动按键也能触发命令（与 sendCommand 的 \n 对齐）。
+  // 终端按键原始输入透传服务端标准输入，不做任何改写——回车符原样送出，与真实终端一致。
+  // 连接未就绪时静默丢弃（终端输入尽力而为，服务端自回显，丢一个字符不可恢复）。
   const sendTerminalInput = useCallback(
     (data: string) => {
-      const normalized = data === "\r" ? "\n" : data;
-      send({ type: "terminal_input", serverId, data: normalized });
+      send({ type: "terminal_input", serverId, data });
     },
     [serverId, send],
   );

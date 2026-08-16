@@ -258,10 +258,10 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     await started(mgr, pty, "S1");
     await mgr.stop("S1" as ServerId, "unit-test");
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.STOPPED);
-    // ★ ADR-0004 Phase 6：Save + Shutdown 改为 PTY 拼字符串写入（owner-trust 模型）
+    // 存档与关服命令送进控制台（owner-trust 模型），末尾用回车符
     const writes = pty.writeCalls.map(([, d]) => d);
-    expect(writes).toContain("Save\n");
-    expect(writes).toContain('Shutdown 30 "unit-test"\n');
+    expect(writes).toContain("Save\r");
+    expect(writes).toContain('Shutdown 30 "unit-test"\r');
     expect(writes).toContain(""); // ctrl+c
     expect(writes).toContain("exit\n"); // 关永驻 bash
     expect(pty.waitExit).toHaveBeenCalledWith("S1" as ServerId, 30_000);
