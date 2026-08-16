@@ -702,18 +702,14 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 优雅停止 PTY：RCON Save + Shutdown（保留，Phase 6 评估去留）→ PTY 写 ctrl+c →
-   * 写 exit 关永驻 bash → 等 bash 退出（30s 超时 forceKill）。
+   * 优雅停止控制台：写存档与关服命令 → 写中断键 → 写退出关掉常驻 bash → 等退出（30 秒超时强杀）。
    *
-   * 顺序保证数据安全：先 RCON Save 刷盘，再双路关停（RCON Shutdown + ctrl+c）。
-   * ctrl+c 是 ADR-0004 §2.2 要求的 PTY 停服通道；exit\r 尽力关闭 bash（见下方实机说明）。
-   * 最后 waitExit 确认 bash 退出；超时 forceKill（SIGKILL bash → SIGHUP 前台组 U3DS 兜底）。
+   * 顺序保证数据安全：先存档刷盘，再双路关停（关服命令 + 中断键）。
    *
-   * 实机说明（review 风险-2）：U3DS 在前台运行时，③ 的 exit\r 字节进的是 U3DS 的 stdin
-   * 而非 bash（终端输入送达前台进程组），会被 U3DS 当控制台命令忽略——因此优雅关闭的主力
-   * 是 ① PTY 写 Save/Shutdown 命令 + ② ctrl+c，exit\r 只在 U3DS 已退出、bash 回提示符后才有机会命中。
-   * 真实停止耗时 ≈ Shutdown 30 秒，waitExit 超时后 forceKill 收尾是常态路径而非兜底。
-   * ★ ADR-0004 Phase 6：Save 与 Shutdown 改为 PTY 拼字符串写入（owner-trust 模式，等同 GSM3 形态）。
+   * 实机行为：服务端进程在前台时，退出命令的字节进的是服务端标准输入而非 bash（终端输入送达
+   * 前台进程组），会被当成控制台命令忽略——因此优雅关闭的主力是存档/关服命令加中断键，退出命令
+   * 只在服务端已退出、bash 回到提示符后才有机会命中。真实停止耗时约等于关服倒计时 30 秒，
+   * 等待超时后强杀收尾是常态路径而非兜底。
    */
   private async stopPty(serverId: ServerId, reason: string): Promise<void> {
     const entry = this.ensureServer(serverId);
@@ -721,8 +717,8 @@ export class ServerManager implements IServerManager {
 
     // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径——Phase 6 替代原 RCON.execute）
     try {
-      this.ptyManager.write(serverId, "Save\n");
-      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\n`);
+      this.ptyManager.write(serverId, "Save\r");
+      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\r`);
     } catch {
       /* PTY 可能已死——fallthrough 到 ctrl+c 强杀 */
     }

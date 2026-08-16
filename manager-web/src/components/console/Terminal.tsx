@@ -13,8 +13,8 @@ import "@xterm/xterm/css/xterm.css";
  * 项目暗色主题对齐全局色值（component-abstraction.md），禁止新色值。
  *
  * @param props - 组件属性
- * @param props.lines - console_line 输出数组，内部按上次长度增量写入（不重灌全量）；
- *   clearLines 导致长度骤减时先 clear 重置游标
+ * @param props.lines - 控制台输出行数组，内部按行 ID 增量写入（不重灌全量）；
+ *   清空后先 clear 重置游标
  * @param props.onInput - 用户键盘输入回调（xterm onData 原始字节，PTY 自回显）
  * @param props.connected - 是否已连接 WS，未连接时禁用输入
  * @returns xterm.js 容器 div 的 React 元素
@@ -27,7 +27,7 @@ import "@xterm/xterm/css/xterm.css";
 
 /** Terminal 组件属性 */
 interface TerminalProps {
-  /** console_line 输出数组——内部按上次长度增量写入（不重灌全量） */
+  /** 控制台输出行数组——内部按行 ID 增量写入（不重灌全量） */
   lines: { id: number; text: string; source: string }[];
   /** 用户键盘输入回调（xterm onData 原始字节，PTY 自回显） */
   onInput?: (data: string) => void;
@@ -57,8 +57,8 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  // 上次写入的 lines 长度——增量写入只写新增段
-  const writtenRef = useRef(0);
+  // 上次写入的最大行 ID——增量写入只写 ID 更大的行（行数组会被裁剪，长度不能当游标）
+  const lastIdRef = useRef(0);
   // onInput 最新引用——注册一次 onData，回调走 ref 避免重复订阅
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
@@ -107,7 +107,7 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
-      writtenRef.current = 0;
+      lastIdRef.current = 0;
     };
   }, []);
 
@@ -118,22 +118,28 @@ export function Terminal({ lines, onInput, connected }: TerminalProps) {
     }
   }, [connected]);
 
-  // lines 增量写入（clearLines 时长度骤减 → 先 clear 重置游标）
+  // 行数组增量写入（清空后 ID 重新变小 → 先 clear 重置游标）
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    if (lines.length < writtenRef.current) {
+    const lastLine = lines[lines.length - 1];
+    if (!lastLine) {
+      // 已清空
+      if (lastIdRef.current !== 0) {
+        term.clear();
+        lastIdRef.current = 0;
+      }
+      return;
+    }
+    if (lastLine.id < lastIdRef.current) {
       term.clear();
-      writtenRef.current = 0;
+      lastIdRef.current = 0;
     }
-    for (let i = writtenRef.current; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      // ★ 2026-08-14 修复：不再跳过 input 行——用户发送的命令必须在终端可见，
-      // 否则命令无响应时用户连自己敲了什么都不知道（原跳过导致「输入无反馈」视觉缺失）。
+    for (const line of lines) {
+      if (line.id <= lastIdRef.current) continue;
       term.writeln(line.text);
+      lastIdRef.current = line.id;
     }
-    writtenRef.current = lines.length;
   }, [lines]);
 
   return (
