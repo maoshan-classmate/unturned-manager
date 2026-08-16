@@ -185,9 +185,11 @@ export class PtyManager implements IPtyManager {
   /**
    * 批量 flush 输出 buffer（节流机制核心）。
    *
-   * 50ms 内累积的所有 PTY 行 join 成单条 emit——避免每次 onData 都同步触发 ws.send
+   * 50ms 内累积的所有 PTY 行逐条 emit——避免每次 onData 都同步触发 ws.send
    * 导致反向阻塞 PTY read（MCSManager daemon/src/entity/instance/instance.ts
-   * startOutputLoop 同款范式）。
+   * startOutputLoop 同款范式）。逐行回调保持 console_line 单行语义：若合并成单条
+   * （join "\n"）会让前端把多行当一行渲染，xterm 里裸 LF 只下移不归列首，产生
+   * 逐行递增的缩进错乱。
    *
    * @param serverId - PTY key
    */
@@ -198,13 +200,14 @@ export class PtyManager implements IPtyManager {
     const timer = this.flushTimers.get(serverId);
     if (timer) clearTimeout(timer);
     this.flushTimers.delete(serverId);
-    const merged = buf.join("\n");
     const cbs = this.dataCallbacks.get(serverId) ?? [];
-    for (const cb of cbs) {
-      try {
-        cb(merged);
-      } catch (err) {
-        logger.error({ err, serverId }, "PTY data 回调异常");
+    for (const line of buf) {
+      for (const cb of cbs) {
+        try {
+          cb(line);
+        } catch (err) {
+          logger.error({ err, serverId }, "PTY data 回调异常");
+        }
       }
     }
   }

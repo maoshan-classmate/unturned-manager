@@ -99,12 +99,12 @@ describe("WS gateway — terminal_input（ADR-0004 Phase 3）", () => {
       JSON.stringify({
         type: "terminal_input",
         serverId: "S1",
-        data: "Say hello\r",
+        data: "Say hello\n",
       }),
     );
     // WS 单向写入无回执——给事件循环一个 tick 让 message handler 执行
     await new Promise((r) => setTimeout(r, 50));
-    expect(pty.write).toHaveBeenCalledWith("S1" as ServerId, "Say hello\r");
+    expect(pty.write).toHaveBeenCalledWith("S1" as ServerId, "Say hello\n");
     ws.close();
   });
 

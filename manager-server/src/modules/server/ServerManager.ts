@@ -764,8 +764,8 @@ export class ServerManager implements IServerManager {
 
     // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径——Phase 6 替代原 RCON.execute）
     try {
-      this.ptyManager.write(serverId, "Save\r");
-      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\r`);
+      this.ptyManager.write(serverId, "Save\n");
+      this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\n`);
     } catch {
       /* PTY 可能已死——fallthrough 到 ctrl+c 强杀 */
     }

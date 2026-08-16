@@ -82,7 +82,7 @@ describe('LdmPluginCommandsService', () => {
     });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
     const result = await svc.loadPlugin('S1' as never, 'Uconomy');
-    expect(written).toContain('/rocket load Uconomy\r');
+    expect(written).toContain('/rocket load Uconomy\n');
     expect(result.outcome).toBe('success');
   });
 
@@ -92,7 +92,7 @@ describe('LdmPluginCommandsService', () => {
     });
     const svc = new LdmPluginCommandsService(pty, serverManager, runtimeStatusReader);
     const result = await svc.unloadPlugin('S1' as never, 'Uconomy');
-    expect(written).toContain('/rocket unload Uconomy\r');
+    expect(written).toContain('/rocket unload Uconomy\n');
     expect(result.outcome).toBe('success');
   });
 

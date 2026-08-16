@@ -94,6 +94,14 @@ beforeEach(() => {
   });
 });
 
+/**
+ * 等待 PTY 50ms 批量 flush 生效（PtyManager OUTPUT_FLUSH_INTERVAL_MS = 50）。
+ * onData 把行推进环形 buffer 后由 50ms 定时器批量回调——断言前必须等它跑完。
+ */
+async function flushOutput(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+
 describe("PtyManager — spawn 生命周期", () => {
   it("spawn: 返回 PID + isRunning true", async () => {
     const fake = new FakePty();
@@ -195,6 +203,7 @@ describe("PtyManager — onData chunk 切行", () => {
     mgr.onData("S1", (line) => received.push(line));
 
     fake.emitData("first\nsecond\nthird\n");
+    await flushOutput();
     expect(received).toEqual(["first", "second", "third"]);
   });
 
@@ -209,6 +218,7 @@ describe("PtyManager — onData chunk 切行", () => {
     fake.emitData("hello "); // 不切行
     expect(received).toEqual([]);
     fake.emitData("world\n"); // 补齐 \n
+    await flushOutput();
     expect(received).toEqual(["hello world"]);
   });
 
@@ -221,6 +231,7 @@ describe("PtyManager — onData chunk 切行", () => {
     mgr.onData("S1", (line) => received.push(line));
 
     fake.emitData("crlf\r\nnext\r\n");
+    await flushOutput();
     expect(received).toEqual(["crlf", "next"]);
   });
 
@@ -233,6 +244,7 @@ describe("PtyManager — onData chunk 切行", () => {
     mgr.onData("S1", (line) => received.push(line));
 
     fake.emitData("\n\ndone\n");
+    await flushOutput();
     expect(received).toEqual(["", "", "done"]);
   });
 
@@ -257,6 +269,7 @@ describe("PtyManager — onData chunk 切行", () => {
     mgr.onData("S1", (line) => b.push(line));
 
     fake.emitData("x\ny\n");
+    await flushOutput();
     expect(a).toEqual(["x", "y"]);
     expect(b).toEqual(["x", "y"]);
   });
@@ -273,6 +286,7 @@ describe("PtyManager — onData chunk 切行", () => {
     mgr.onData("S1", (line) => good.push(line));
 
     fake.emitData("ok\n");
+    await flushOutput();
     expect(good).toEqual(["ok"]);
   });
 });
@@ -690,8 +704,10 @@ describe("PtyManager — waitForMarker（ws-wrapper-design §2.4）", () => {
     const received: string[] = [];
     const off = mgr.onData("S1", (line) => received.push(line));
     fake.emitData("a\n");
+    await flushOutput();
     off();
     fake.emitData("b\n");
+    await flushOutput();
     expect(received).toEqual(["a"]);
   });
 });
@@ -719,6 +735,7 @@ describe("PtyManager — 多 serverId 隔离", () => {
 
     f1.emitData("hello-1\n");
     f2.emitData("hello-2\n");
+    await flushOutput();
 
     expect(received1).toEqual(["hello-1"]);
     expect(received2).toEqual(["hello-2"]);

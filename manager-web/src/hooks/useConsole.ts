@@ -100,16 +100,18 @@ export function useConsole(serverId: string): UseConsoleReturn {
         historyRef.current.shift();
       }
 
-      // ★ 2026-08-14 TERM 方案：不在前端塞 `> 命令` 标记——bash 自回显承担命令可见性，
+      // 不在前端塞 `> 命令` 标记——bash 自回显承担命令可见性，
       // 避免「命令在屏幕上出现两次」（bash 回显 + 前端标记）。
 
-      // 命令末尾拼回车符——与真实终端按下回车发出的字节一致。服务端控制台读取线程
-      // 运行在逐字符模式下，只认回车符作为行结束符；送换行符会让它卡在读取里不返回。
+      // 命令末尾拼换行符——服务端控制台读取线程以 LF 为行终止符（Console.ReadLine()）。
+      // 回车符（\r）在终端模式改变后不再触发 ICRNL 映射、不触发行结束，命令会送达
+      // 服务端但 ReadLine 阻塞不返回，表现为「只有首条命令生效」。换行符与启动命令
+      // 同终止符，任何终端模式下都能触发行结束。
       // send 返回 false = 连接未就绪
       const sent = send({
         type: "terminal_input",
         serverId,
-        data: `${command}\r`,
+        data: `${command}\n`,
       });
       if (!sent) {
         setLines((prev) => [
@@ -131,11 +133,13 @@ export function useConsole(serverId: string): UseConsoleReturn {
     setLines([]);
   }, []);
 
-  // 终端按键原始输入透传服务端标准输入，不做任何改写——回车符原样送出，与真实终端一致。
+  // 终端按键输入透传服务端标准输入——xterm 的回车键发出单个 \r，而服务端控制台以
+  // LF 为行终止符，把单独的回车转成换行，保证手动按键与命令栏一致触发命令。
   // 连接未就绪时静默丢弃（终端输入尽力而为，服务端自回显，丢一个字符不可恢复）。
   const sendTerminalInput = useCallback(
     (data: string) => {
-      send({ type: "terminal_input", serverId, data });
+      const normalized = data === "\r" ? "\n" : data;
+      send({ type: "terminal_input", serverId, data: normalized });
     },
     [serverId, send],
   );

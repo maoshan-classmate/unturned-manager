@@ -201,7 +201,7 @@ export function buildContainer(db: Database.Database): AppContainer {
         error: { code: "pty_not_running", message: "服务器没在运行，无法存档" },
       };
     }
-    ptyManager.write(msg.serverId, "Save\r");
+    ptyManager.write(msg.serverId, "Save\n");
     try {
       // ★ 2026-08-14 对齐官方真源：U3-SDK `CommandSave.cs:15` 存档完成后打本地化 SaveText
       // `SaveText` = "Successfully saved the game."（实机 `Localization/English/Server/ServerCommandSave.dat`
@@ -284,8 +284,8 @@ export function buildContainer(db: Database.Database): AppContainer {
     const reason =
       (msg.reason ?? "").replace(/["\r\n]+/g, " ").trim() || "面板请求关服";
     // SOP 重启流水线：先 Save 刷盘再 Shutdown（与 REST stop 同序）
-    ptyManager.write(msg.serverId, "Save\r");
-    ptyManager.write(msg.serverId, `Shutdown ${delaySeconds} "${reason}"\r`);
+    ptyManager.write(msg.serverId, "Save\n");
+    ptyManager.write(msg.serverId, `Shutdown ${delaySeconds} "${reason}"\n`);
     // 等控制台进程退出（倒计时 + 30s 冗余）；超时由用户在终端里人工处置
     const exited = await ptyManager.waitExit(
       msg.serverId,
