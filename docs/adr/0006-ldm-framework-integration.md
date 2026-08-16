@@ -106,9 +106,9 @@ manager-web/src/
 ├── pages/LdmPage.tsx              # 4 Tab（已装插件 / 框架配置 / 权限组 / 插件来源）
 ├── components/ldm/
 │   ├── InstalledTab.tsx
-│   ├── FrameworkConfigTab.tsx     # Rocket.config.xml + Rocket.Unturned.config.xml 双卡片
+│   ├── FrameworkConfigTab.tsx     # Rocket.config.xml + Rocket.Unturned.config.xml 双卡片（结构化编辑器）
 │   ├── PermissionsTab.tsx         # Permissions.config.xml 树形编辑器
-│   ├── PluginConfigDialog.tsx     # 通用 Monaco XML 编辑器
+│   ├── ~~PluginConfigDialog.tsx~~  # 通用 Monaco XML 编辑器（2026-08-16 推迟到独立 Phase——每插件 schema 不同）
 │   └── PluginSourceTab.tsx        # LDM-Community 列表 + 外链到 GitHub Releases
 └── lib/utils.ts                   # + formatPluginVersion / parseRocketStatus 等
 ```

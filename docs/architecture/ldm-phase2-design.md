@@ -22,8 +22,8 @@ Phase 2 拆 2a（XML 解析 + 配置读写，7-9 人天）+ 2b（重启流水线
 
 Phase 1（commit `cfa662b` 已闭环）做到「看得到 + 启停得了」，但**配置可改可不改**——用户要改 LDM 配置只能 ssh 上服务器手改 XML。Phase 2 目标：
 
-- **结构化字段编辑器**——`Rocket.config.xml` 16 字段 + `Rocket.Unturned.config.xml` 9 字段 + `Permissions.config.xml` 树形（Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Cooldown）
-- **通用 XML 编辑器**——各插件 `<Plugin>.configuration.xml` 原文编辑（不强解 schema）
+- **结构化字段编辑器**——`Rocket.config.xml` 9 字段 + `Rocket.Unturned.config.xml` 9 字段 + `Permissions.config.xml` 树形（Groups / Members / Permissions / Color / ParentGroup / Priority / Cooldown）
+- ~~**通用 XML 编辑器**——各插件 `<Plugin>.configuration.xml` 原文编辑（不强解 schema）~~ —— **2026-08-16 推迟到独立 Phase**
 - **改完走 PTY 终端 owner-trust 重启流水线**——**配置即生效**
 
 ### 1.2 钉死的边界
@@ -36,17 +36,20 @@ Phase 1（commit `cfa662b` 已闭环）做到「看得到 + 启停得了」，�
 | **前端「保存配置」按钮必须有「需重启生效」提示** | UI 文案「配置已保存，需重启服务器才能生效」（不是 toast 强提示，而是保存按钮旁的常驻提示 + 「应用变更」按钮同时可见） |
 | **配置原子写 + 备份 + 回滚** | `ConfigService.atomicWrite`（已存在）；写入前 `.bak.<UTC-ISO>` 备份 |
 | **XML 解析自写** | 不引 fast-xml-parser / xml2js 等外部依赖（保留注释/属性顺序/CDATA 关键） |
-| **不强解插件 schema** | 设计 §11.1 A4——每插件自定义，面板只做 Monaco XML 通用编辑器 |
+| **不强解插件 schema** | 设计 §11.1 A4——每插件自定义；**插件配置 `.configuration.xml` 编辑器本期不做**（独立 Phase） |
+| **「应用变更」按钮位置** | **LdmPage 顶部全局**（2026-08-16 用户拍板）—— 与 `unturned-sop.md` §LDM 一致 |
 
 ## 2. 总体切片（2a + 2b）
 
 | 期 | 主题 | 工作量 | 后端模块 | 端点 | 前端 | 升期依赖 |
 |---|---|---|---|---|---|---|
-| **Phase 2a** | XML 解析 + 配置读写 | 7-9 人天 | + `RocketConfigXmlParser` / `LdmConfigWriter` | +4 = 9 端点 | FrameworkConfigTab 骨架（只读 + 字段预览）+ PluginConfigDialog 框架 | Phase 1 全绿 + 实机验证 |
-| **Phase 2b** | 重启流水线 + UI 齐备 | 5-6 人天 | + `LdmApplyService` + `ServerManager.applyChangesCore` 抽出 + `LdmPluginCommandsService` 增强 | +2 = 11 端点 + 1 WS | 4 Tab 完整 UI + 树形编辑器 + Monaco XML + 「关于 LDM」/「LDM 状态」卡 | Phase 2a 全绿 + 实机验证 |
-| **合计** | — | **12-15 人天** | 7 模块 | 11 端点 + 1 WS | 1 页面 4 Tab | — |
+| **Phase 2a** | XML 解析 + 配置读写 | 7-9 人天 | + `RocketConfigXmlParser` / `LdmConfigWriter` | +4 = 9 端点 | FrameworkConfigTab 骨架（只读 + 字段预览） | Phase 1 全绿 + 实机验证 |
+| **Phase 2b** | 重启流水线 + UI 齐备 | 5-6 人天 | + `LdmApplyService` + `ServerManager.applyChangesCore` 抽出 + `LdmPluginCommandsService` 增强 | +2 = 11 端点 + 1 WS | 3 Tab 完整 UI + 树形编辑器 + 「关于 LDM」/「LDM 状态」卡（**本期不含插件配置 Tab，不含 Monaco**） | Phase 2a 全绿 + 实机验证 |
+| **合计** | — | **12-15 人天** | 7 模块 | 11 端点 + 1 WS | 1 页面 3 Tab（本期范围） | — |
 
-**为什么 2a/2b 拆**：§12.8 推荐——Phase 2a 是「读改能力」（纯文件 I/O，可独立交付 + 单测覆盖 ≥ 8 用例 RocketConfigXmlParser），Phase 2b 是「生效能力」（依赖 PTY 状态机 + 抽出 applyChangesCore + 前端 Monaco 集成）。拆开后 2a 完成后用户能 SSH 改前先预览字段、2b 完成后用户能面板全流程。
+**为什么 2a/2b 拆**：§12.8 推荐——Phase 2a 是「读改能力」（纯文件 I/O，可独立交付 + 单测覆盖 ≥ 8 用例 RocketConfigXmlParser），Phase 2b 是「生效能力」（依赖 PTY 状态机 + 抽出 applyChangesCore + 前端结构化编辑器）。拆开后 2a 完成后用户能 SSH 改前先预览字段、2b 完成后用户能面板全流程。
+
+> **范围外（2026-08-16 推迟）**：Monaco XML 原文编辑器（权限组备选）+ 插件配置 `.configuration.xml` 编辑器。详见 `ldm-editor-design.md` §10。
 
 ## 3. Phase 2a — XML 解析 + 配置读写（7-9 人天）
 
@@ -214,12 +217,12 @@ async writeRocketConfig(serverId, fields) {
 
 - `FrameworkConfigTab`：展示 Rocket.config.xml 字段（key-value 表格，禁用编辑）
 - `PermissionsTab`：展示 Permissions.config.xml 树形（只读）
-- `PluginConfigDialog`：Monaco XML 编辑器对话框——Phase 2a 只展示，Phase 2b 加「保存」按钮
+- ~~`PluginConfigDialog`~~：Monaco XML 编辑器对话框——**2026-08-16 推迟到独立 Phase**（每插件 schema 不同）
 
 **测试门槛**：`LdmPage.test.tsx` 加 4 用例
 - FrameworkConfigTab 字段渲染
 - PermissionsTab 树形渲染
-- PluginConfigDialog 打开 + XML 渲染
+- ~~PluginConfigDialog 打开 + XML 渲染~~（本期不做）
 - 只读状态断言（编辑控件 disabled）
 
 ## 4. Phase 2b — 重启流水线 + UI 齐备（5-6 人天）
@@ -350,9 +353,11 @@ export interface ILdmPluginCommandsService {
 | Tab | Phase 2a | Phase 2b |
 |---|---|---|
 | ① 已装插件 | Phase 1 继承 | + 「关于 LDM」卡显示版本（D2）<br>+ 「LDM 状态」卡显示模块加载（D3） |
-| ② 框架配置 | 只读字段预览 | + 结构化字段编辑器（16 + 9 字段）<br>+ XML 高级视图切换（Toggle：「结构化 / 原文」）<br>+ 「保存配置」按钮（调 `PUT /rocket-config`） |
+| ② 框架配置 | 只读字段预览 | + 结构化字段编辑器（16 + 9 字段）<br>+ 「保存配置」按钮（调 `PUT /rocket-config`） |
 | ③ 权限组 | 只读树形 | + 树形编辑器（Groups / Members / Permissions / Cooldown）<br>+ 「保存配置」按钮 |
-| ④ 插件配置 | 只读 Monaco XML | + 「保存配置」按钮（调 `PUT /plugins/:name/config`） |
+| ④ ~~插件配置~~ | ~~只读 Monaco XML~~ | ~~+ 「保存配置」按钮（调 `PUT /plugins/:name/config`）~~ —— **2026-08-16 推迟** |
+
+> **Tab ④「插件配置」本期不做**——每插件 schema 不同，独立 Phase 设计。后端 `GET / PUT /plugins/:name/config` 已就绪（Phase 2a 已交付，XML 原文读写 + 原子写）。
 
 **「保存配置」与「应用变更」是两独立动作**：
 

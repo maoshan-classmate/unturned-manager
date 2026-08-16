@@ -15,9 +15,11 @@
 | 「已装插件」Tab 没有「上传 .dll」按钮 | 工具栏包在「等数据回来才显示」条件内 | P0（已修） |
 | 框架配置 Tab 无法识别 Mod 框架模块 | LdmAboutCard 没 fallback 到「未安装」状态 | P1（已修） |
 | 加载插件报 404 | 服务层抛 `plugin-not-found`（PTY 输出含「未找到」字样） | P2（用户先放着） |
-| Rocket.config.xml 编辑器未实现 | FrameworkConfigTab 两张占位卡 | **本设计稿范围** |
-| Rocket.Unturned.config.xml 编辑器未实现 | 同上 | **本设计稿范围** |
-| 权限组 Tab 未实现 | PermissionsTab 单张占位卡 | **本设计稿范围** |
+| Rocket.config.xml 编辑器未实现 | FrameworkConfigTab 两张占位卡 | **本设计稿范围（Phase 5 前端）** |
+| Rocket.Unturned.config.xml 编辑器未实现 | 同上 | **本设计稿范围（Phase 5 前端）** |
+| 权限组 Tab 未实现 | PermissionsTab 单张占位卡 | **本设计稿范围（Phase 5 前端）** |
+| 插件配置 `.configuration.xml` 编辑器 | 留独立 Phase（每插件 schema 不同） | **本期不做** |
+| Monaco XML 原文编辑器（权限组备选） | 设计 §2.6 决策为备选 | **本期不做，推到「权限组编辑器 V2」** |
 
 ### 1.2 已沉淀的边界（钉死）
 
@@ -45,9 +47,9 @@
 
 ### 范围外（留后续 Phase）
 
-- 插件配置 `.configuration.xml` 编辑器（每插件 schema 不同，需独立设计）
+- **插件配置 `.configuration.xml` 编辑器**（每插件 schema 不同，独立 Phase 设计）
+- **Monaco XML 原文编辑器**（权限组 Tab 备选方案）—— 推迟到「权限组编辑器 V2」
 - LDM-Community 列表 `hasReleases` 字段
-- 插件配置 Monaco XML 原文编辑器（设计 §2.6 决策：仅作权限组备选）
 
 ---
 
@@ -197,31 +199,29 @@ writeRocketConfig(serverId, fields) {
 ```
 ┌─ PermissionsTab ──────────────────────────────────────────┐
 │ <Card title="权限组编辑器">                                │
-│   <Tabs>                                                  │
-│     <Tab label="结构化">                                  │
-│       <PermissionsConfigEditor serverId={serverId} />     │
-│     </Tab>                                                │
-│     <Tab label="XML 原文（备选）">                        │
-│       <MonacoXmlEditor serverId={serverId} />             │
-│     </Tab>                                                │
-│   </Tabs>                                                 │
+│   <PermissionsConfigEditor serverId={serverId} />         │
 │ </Card>                                                    │
+│                                                            │
+│ <InfoCard title="💡 XML 原文编辑">                         │
+│   本期只提供结构化编辑器。Monaco XML 原文编辑器            │
+│   推迟到「权限组编辑器 V2」（参考设计 §10 决策）。         │
+│ </InfoCard>                                                │
 └────────────────────────────────────────────────────────────┘
 ```
 
-**结构化编辑器（默认）**：树形 Groups + Members + Permissions + Color + ParentGroup + Priority。
+**结构化编辑器（本期实现）**：树形 Groups + Members + Permissions + Color + ParentGroup + Priority。
 
-**XML 原文编辑器（备选）**：Monaco XML 编辑器（设计 §2.6 决策）。
+~~**XML 原文编辑器（备选）**：Monaco XML 编辑器~~ —— **本期不做**，推到「权限组编辑器 V2」。
 
 ### 5.3 编辑器组件
 
 | 组件 | 路径 | 职责 |
 |---|---|---|
-| `RocketConfigEditor` | `manager-web/src/components/ldm/RocketConfigEditor.tsx` | 16 字段结构化编辑 |
-| `RocketUnturnedConfigEditor` | `manager-web/src/components/ldm/RocketUnturnedConfigEditor.tsx` | 9 字段结构化编辑 |
+| `RocketConfigEditor` | `manager-web/src/components/ldm/RocketConfigEditor.tsx` | 9 字段结构化编辑（语言/帧预算/自动关服/远程同步；**RCON 字段前端不渲染**——设计 §2.4 RCON 不在面板范围） |
+| `RocketUnturnedConfigEditor` | `manager-web/src/components/ldm/RocketUnturnedConfigEditor.tsx` | 9 字段结构化编辑（自动存档/角色名校验/可疑日志/物品与载具黑名单） |
 | `PermissionsConfigEditor` | `manager-web/src/components/ldm/PermissionsConfigEditor.tsx` | 树形结构化编辑 |
-| `MonacoXmlEditor` | `manager-web/src/components/ldm/MonacoXmlEditor.tsx` | XML 原文编辑（备选） |
-| `LdmConfigApplyButton` | `manager-web/src/components/ldm/LdmConfigApplyButton.tsx` | 全局「应用变更」按钮 |
+| `LdmConfigApplyButton` | `manager-web/src/components/ldm/LdmConfigApplyButton.tsx` | 全局「应用变更」按钮（**LdmPage 顶部**——§10 决策） |
+| ~~`MonacoXmlEditor`~~ | ~~`manager-web/src/components/ldm/MonacoXmlEditor.tsx`~~ | ~~XML 原文编辑（备选）~~ —— **本期不做，推到 V2** |
 
 ### 5.4 「应用变更」按钮位置 + 流程
 
@@ -355,19 +355,37 @@ RocketConfigWriteSchema.extend({  // 沿用现有
 | 后端 `：serializePermissionsConfig` 未知键保留 | 1 文件 | 1h |
 | 前端 `RocketConfigEditor` + `RocketUnturnedConfigEditor` | 3 文件 | 3h |
 | 前端 `PermissionsConfigEditor` 树形 | 2 文件 | 4h |
-| 前端 `MonacoXmlEditor` 备选 | 1 文件 | 1.5h |
+| ~~前端 `MonacoXmlEditor` 备选~~ | ~~1 文件~~ | ~~1.5h~~ | **本期不做 → 推到「权限组编辑器 V2」** |
 | 前端 `LdmConfigApplyButton` + WS 进度 Modal | 2 文件 | 1.5h |
 | 单测 + 文档同步 + commit 收尾 | 5+ 文件 | 2h |
-| **合计** | **20+ 文件** | **15.5h ≈ 2-3 个 Sprint** |
+| **合计（本期）** | **18+ 文件** | **13h ≈ 2 个 Sprint** |
+| 推迟项合计 | 2-3 文件 | ~4h |
 
 ---
 
-## §10 待用户拍板
+## §10 用户决策（2026-08-16 拍板）
 
-1. **Monaco XML 原文编辑器是否本期做？**——设计 §2.6 决策为备选，但实现成本不低（1.5h）；可推到「权限组编辑器 V2」
-2. **「应用变更」按钮的全局位置**——LdmPage 顶部 vs LdmConfigApplyButton 嵌入每个编辑器 Card 内
-3. **顺序**：先做后端 3 GET 读端点 → 修 2 旧账 → 前端 3 编辑器 → 应用变更按钮 → Monaco 备选？
-4. **范围**：是否本期也做插件配置 `.configuration.xml` 编辑器？（每插件 schema 不同，可能要独立 Phase）
+| # | 决策 | 结果 |
+|---|---|---|
+| 1 | Monaco XML 原文编辑器（权限组备选）是否本期做？ | **本期不做**，推到「权限组编辑器 V2」独立 Phase |
+| 2 | 「应用变更」按钮位置 | **LdmPage 顶部全局按钮**（与 unturned-sop.md 一致） |
+| 3 | 实现顺序 | **后端先收尾 → 前端 3 编辑器 → 应用变更 → 单测**（每步独立可测可提交） |
+| 4 | 范围是否含插件配置 `.configuration.xml` 编辑器 | **不含**——每插件 schema 不同，留独立 Phase（参考设计 §11.3） |
+
+### 推迟项交接
+
+**Monaco XML 原文编辑器**：
+
+- 推迟到「权限组编辑器 V2」独立 Phase
+- 触发条件：用户对结构化编辑器反馈「批量改 / 模板复制」需求 OR 用户首次出现结构化编辑器无法表达的配置场景
+- 预估工期：1.5h（编辑器组件）+ Monaco 依赖管理
+
+**插件配置 `.configuration.xml` 编辑器**：
+
+- 推迟到独立 Phase（每插件 schema 不同）
+- 已就绪后端：`GET / PUT /plugins/:name/config`（XML 原文）—— 见 `manager-server/src/routes/ldm.ts` §「Phase 2a 配置写入端点」
+- 设计要点：需要先确定「通用 XML 原文编辑器」 vs 「逐插件 schema 适配」两种路线
+- 关联 ADR：ADR-0006 边界声明（不接管 .dll 编译/分发，但 Configuration.xml 编辑器归属待定）
 
 ---
 

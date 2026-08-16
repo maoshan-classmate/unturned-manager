@@ -484,7 +484,9 @@ U3DS Config.txt 文件路径：`PlayConfigUtils.GetServerConfigPathV2(serverId)`
 > **真源**：每插件自定义（LDM 不强解 schema）
 > **生效**：改后需重启（同 3.1）。
 
-**面板处理**：通用 Monaco XML 编辑器——原文读写 + 实时校验；**不强解字段**（插件 schema 由插件开发者决定，维护成本无限）。Phase 2 用 `RocketConfigXmlParser.parseGeneric / serializeGeneric`（保留注释/CDATA/嵌套）做底层读写。
+**面板处理**（**2026-08-16 推迟**）：通用 Monaco XML 编辑器——原文读写 + 实时校验；**不强解字段**（插件 schema 由插件开发者决定，维护成本无限）。
+
+> **本期不做**——每插件 schema 不同，独立 Phase 设计（见 `docs/architecture/ldm-editor-design.md` §10）。后端 `GET / PUT /plugins/:name/config` 已就绪（XML 原文读写 + 原子写），仅前端编辑器组件待落地。
 
 ---
 
