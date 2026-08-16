@@ -95,7 +95,7 @@ done
 # ── 结果 ──
 if [ -n "$HIT_KW" ]; then
   USER_MSG="❌ 注释含历史叙述：${HIT_KW}"
-  CLAUDE_REASON="检测到代码注释含历史叙述（命中关键词：${HIT_KW}）。请删除历史叙述，仅保留最新版本描述。历史信息维护在 docs/ 或 claudedocs/ 或 git log，不进入代码注释。"
+  CLAUDE_REASON="检测到代码注释含历史叙述（命中关键词：${HIT_KW}）。请删除历史叙述，仅保留最新版本描述。历史信息维护在 文档 或 git log，不进入代码注释。"
   emit_deny "$USER_MSG" "$CLAUDE_REASON"
 else
   emit_allow "代码注释历史叙述检测通过"
