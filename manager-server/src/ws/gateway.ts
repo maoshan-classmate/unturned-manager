@@ -20,12 +20,13 @@ interface WsSubscription {
 
 const SUBSCRIBE_TIMEOUT_MS = 5_000;
 
-// ★ BUG-FIX（2026-08-10）：WS 心跳保活。gateway 原先无 ping/pong——空闲连接在
-//   反向代理 idle 超时 / 中间链路静默下被切断，用户反馈「WS 客户端经常断」→
-//   steamcmd_progress 进度事件全部丢失（BUG-2/5 无进度提示的伴随根因）。
+// WS 心跳保活。gateway 原先无 ping/pong——空闲连接在反向代理 idle 超时 / 中间链路
+//   静默下被切断，用户反馈「WS 客户端经常断」→ 进度事件全部丢失。
 //   标准 ws 库保活：服务端每 HEARTBEAT_INTERVAL_MS 发 ping，浏览器自动回 pong；
 //   间隔内未回 pong（isAlive 仍 false）视为死连接 terminate 清理。
-const HEARTBEAT_INTERVAL_MS = 30_000;
+//   与前端应用层 ping 间隔 10_000 对齐——节奏不一致会导致「服务端发 ping 前
+//   已经判死」的误杀窗口。
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /** ★ 2026-08-14 历史回灌：每个 serverId 保留最近 200 条 console_line，
  *  新订阅者注册时先把这 200 条当作 console_line 事件推给它（按时间序），
@@ -178,15 +179,15 @@ class WsBroadcaster implements IBroadcaster {
               }
             }
           } else if (msg.type === "terminal_input") {
-            // ★ ADR-0004 Phase 3：xterm.js onData 的原始输入 → 写入对应 serverId 的 PTY stdin。
-            // owner-trust 模型（§3.4）：WS verifyClient 已校验 JWT，终端是 owner 自己用，
+            // xterm.js onData 的原始输入 → 写入对应 serverId 的 PTY stdin。
+            // owner-trust 模型：WS verifyClient 已校验 JWT，终端是 owner 自己用，
             // 不做命令解析/危险指令门控——前端 ConsolePage 的 ConfirmDialog 负责拦截。
             if (!ptyManager) {
               ws.send(
                 JSON.stringify({
-                  type: "error",
-                  code: "pty_unavailable",
-                  message: "控制台未就绪，请稍后重试",
+                  type: "console_output",
+                  serverId: msg.serverId,
+                  chunk: "[错误] 控制台未就绪，请稍后重试\n",
                 }),
               );
               return;
@@ -203,8 +204,23 @@ class WsBroadcaster implements IBroadcaster {
               );
               return;
             }
-            // 契约合法即受理（isRunning=false 时 write 幂等丢弃 + PtyManager 打 warn 日志）
-            ptyManager.write(serverId, data);
+            // 写入失败时推错误到终端——照搬 MCSManager general_command.ts 失败即通知的
+            // 模式，消除 silent fail。成功时不推（PTY 自回显）。
+            try {
+              ptyManager.write(serverId, data);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "命令未送达";
+              logger.warn({ err, serverId }, "terminal_input 写入失败");
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(
+                  JSON.stringify({
+                    type: "console_output",
+                    serverId,
+                    chunk: `[错误] ${message}\n`,
+                  }),
+                );
+              }
+            }
           } else if (
             msg.type === "terminal_close" ||
             msg.type === "save" ||
@@ -327,7 +343,7 @@ class WsBroadcaster implements IBroadcaster {
   broadcast(event: ServerEvent): void {
     // ★ 2026-08-14 历史回灌：console_line 先入 buffer（按 serverId 隔离 + 200 行上限），
     // 然后正常广播给订阅者。
-    if (event.type === "console_line") {
+    if (event.type === "console_line" || event.type === "console_output") {
       const id = event.serverId;
       let buf = consoleLineBuffer.get(id);
       if (!buf) {

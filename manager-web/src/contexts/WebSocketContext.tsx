@@ -100,8 +100,10 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const REFRESH_BEFORE_EXPIRY_MS = 3 * 60 * 1000;
 /** refresh 调度允许的最小间隔（防止 setTimeout drift 触发紧循环） */
 const MIN_REFRESH_INTERVAL_MS = 30 * 1000;
-/** 应用层 ping 间隔——25s 远小于任何反向代理默认 idle 超时（nginx 60s / caddy 5min） */
-const PING_INTERVAL_MS = 25_000;
+/** 应用层 ping 间隔——10s 远小于任何反向代理默认 idle 超时（nginx 60s / caddy 5min），
+ * 加快心跳可缩小「底层连接已重置但前端 readyState 还显示打开」的竞争窗口。
+ * 仍保留服务端 30s 心跳超时容差。 */
+const PING_INTERVAL_MS = 10_000;
 
 interface PendingRequest {
   resolve: (result: WsRequestResult<unknown>) => void;
