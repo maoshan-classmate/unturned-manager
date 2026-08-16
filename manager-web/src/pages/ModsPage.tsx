@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Package, AlertCircle } from "lucide-react";
@@ -102,6 +102,11 @@ export function ModsPage() {
 
   // 下载进行中 { fileId: jobId }——jobId 关联 WS 进度事件，completed/failed 时清（BUG-5/6）
   const [downloading, setDownloading] = useState<Record<string, string>>({});
+  // downloading 的 ref 镜像——useEffect 内读 ref 而非 state，避免 setDownloading 触发 effect 重跑重复 toast
+  const downloadingRef = useRef(downloading);
+  downloadingRef.current = downloading;
+  // 已 toast 过的 progress 去重集合（同一 jobId+currentFileId+stage 只处理一次）
+  const handledProgressRef = useRef<Set<string>>(new Set());
 
   // 详情弹窗
   const [detailFileId, setDetailFileId] = useState<string | null>(null);
@@ -297,16 +302,24 @@ export function ModsPage() {
     const { jobId, stage, percent, queuePos, queueTotal, errorMessage } = p;
     if (!jobId || !jobId.startsWith("steamcmd-download-")) return;
 
+    // ★ 去重：同一 (jobId + currentFileId + stage) 组合只处理一次——防止 setDownloading
+    // 触发 effect 重跑时重复 toast。WS 偶发重复广播 completed 也走同一去重。
+    const dedupKey = `${jobId}|${p.currentFileId ?? ""}|${stage}`;
+    if (handledProgressRef.current.has(dedupKey)) return;
+    handledProgressRef.current.add(dedupKey);
+
     // ★ 2026-08-14 修复：所有 mod 共享同一个 jobId（steamcmd-download-<installDir>），
     // 靠 jobId 反查 fileId 永远命中第一个 → 接力时删错进度条。
     // 正确做法：优先用 currentFileId（后端 completed/downloading 都带）精确锁定；
     // 退化到 jobId 唯一匹配（仅当 downloading 里该 jobId 恰好一个 fileId 时才可信）。
+    // 用 downloadingRef.current 读最新 downloading（不参与 deps——避免 setDownloading
+    // 触发 effect 重跑重复 toast）。
 
     // completed/failed：用 currentFileId 精确锁定 fileId
     if (stage === "completed" || stage === "failed") {
       let targetFileId = p.currentFileId;
       if (!targetFileId) {
-        const entries = Object.entries(downloading).filter(
+        const entries = Object.entries(downloadingRef.current).filter(
           ([, jid]) => jid === jobId,
         );
         if (entries.length === 1) targetFileId = entries[0]![0];
@@ -336,7 +349,7 @@ export function ModsPage() {
     if (stage === "queued") {
       let targetFileId = p.currentFileId;
       if (!targetFileId) {
-        const entries = Object.entries(downloading).filter(
+        const entries = Object.entries(downloadingRef.current).filter(
           ([, jid]) => jid === jobId,
         );
         if (entries.length === 1) targetFileId = entries[0]![0];
@@ -356,7 +369,7 @@ export function ModsPage() {
     // active 阶段（downloading/verifying）：currentFileId 精确锁定
     let targetFileId = p.currentFileId;
     if (!targetFileId) {
-      const entries = Object.entries(downloading).filter(
+      const entries = Object.entries(downloadingRef.current).filter(
         ([, jid]) => jid === jobId,
       );
       if (entries.length === 1) targetFileId = entries[0]![0];
@@ -372,7 +385,7 @@ export function ModsPage() {
         ...(errorMessage ? { errorMessage } : {}),
       },
     }));
-  }, [downloadProgress, downloading, refetchDownloaded]);
+  }, [downloadProgress]);
 
   // ── 渲染 ────────────────────────────────────────────
 
