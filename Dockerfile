@@ -95,12 +95,8 @@ COPY manager-web/package.json manager-web/
 # ⚠️ 用 npm install 而非 npm ci：npm ci 严格按 lockfile 重现 node_modules 树，但 lockfile
 #    在 Windows 生成时跳过了 Linux 平台原生二进制（@rollup/rollup-linux-x64-gnu 等 optionalDeps）。
 #    Docker 在 Linux 上 ci 会照搬跳过 → vite build 找不到 loader（npm/cli#4828 bug）。
-#    --include=optional 强制装当前平台的 optional deps（esbuild-linux-64 / rollup-linux-x64-gnu 等）。
-RUN npm install --prefer-offline --no-audit --include=optional
-# 强制重编 platform 二进制：npm install 跨平台场景下偶尔装错平台的 esbuild/rollup 原生模块，
-# rebuild 走 node-gyp 重新下载/编译当前 Linux 平台的二进制版本，根除 vite build 报
-# cannot find module 之类的诡异错误（vite/esbuild 内部报错时会把错误的模块路径抛出来）。
-RUN npm rebuild esbuild @rollup/rollup-linux-x64-gnu 2>&1 | tail -5 || true
+#    npm install 在目标平台实时解析 optional deps，不受 lockfile 跨平台限制。版本仍由 lockfile 锁定。
+RUN npm install --prefer-offline --no-audit
 
 # 再拷源码
 COPY shared/ shared/
