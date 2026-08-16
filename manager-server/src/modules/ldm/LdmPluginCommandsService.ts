@@ -203,7 +203,12 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
       await Promise.race([
         pollForMarker(collector, () => markerHit, COMMAND_TIMEOUT_MS),
         this.pty
-          .waitForMarker(serverId, /Reloaded|Rocket\.Unturned|Rocket\s+v/, COMMAND_TIMEOUT_MS)
+          .waitForMarker(
+            serverId,
+            /Reloaded|Rocket\.Unturned|Rocket\s+v/,
+            COMMAND_TIMEOUT_MS,
+            `${cmd} 超时未响应（${COMMAND_TIMEOUT_MS / 1000} 秒内未收到 Mod 框架回显）`,
+          )
           .then(() => markerHit),
       ]);
       const outcome = markerHit ?? "failure";
@@ -277,6 +282,7 @@ export class LdmPluginCommandsService implements ILdmPluginCommandsService {
               serverId,
               /Loading\s+|Unloading\s+|Reloading\s+|Unable to|Could not|Failed|not loaded|not found/,
               COMMAND_TIMEOUT_MS,
+              `${verb === "reload" ? "重新加载" : verb === "load" ? "加载" : "卸载"}插件 ${pluginName} 超时未响应（${COMMAND_TIMEOUT_MS / 1000} 秒内未收到 Mod 框架回显）`,
             )
             .then(() => markerHit),
         ]);

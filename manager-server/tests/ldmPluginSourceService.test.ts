@@ -278,7 +278,7 @@ describe('LdmPluginSourceService', () => {
 
   // ─── Phase 3：getPluginDetail（详情抽屉）────────────────────────
 
-  it('14. getPluginDetail：缓存列表命中 + GitHub releases 补全 latestVersion + readmePreview', async () => {
+  it('14. getPluginDetail：缓存列表命中 + GitHub releases 补全 latestVersion + releaseNotes', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       text: () => Promise.resolve(SAMPLE_HTML),
@@ -303,7 +303,7 @@ describe('LdmPluginSourceService', () => {
     expect(detail).not.toBeNull();
     expect(detail?.name).toBe('Uconomy');
     expect(detail?.latestVersion).toBe('v2.3.1');
-    expect(detail?.readmePreview).toContain('Release notes');
+    expect(detail?.releaseNotes).toContain('Release notes');
     expect(detail?.releasesUrl).toBe('https://github.com/ExampleAuthor/Uconomy/releases/latest');
   });
 

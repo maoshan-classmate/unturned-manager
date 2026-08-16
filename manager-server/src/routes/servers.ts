@@ -65,7 +65,12 @@ export function createServersRouter(serverManager: IServerManager): Router {
   router.post(
     "/:id/restart",
     asyncHandler(async (req, res) => {
-      await serverManager.restart(req.params.id as never, "用户手动重启");
+      // ★ P2 #4 改动：手动重启走 restartAndApplyMods（preStartHook 把 staging Mod 移入 content）。
+      // 与 LDM「应用变更」共用 applyChangesCore 流水线本体——保证行为可观测可重入。
+      await serverManager.restartAndApplyMods(
+        req.params.id as never,
+        "用户手动重启",
+      );
       res.status(202).json({ data: { message: "服务端正在重启" } });
     }),
   );

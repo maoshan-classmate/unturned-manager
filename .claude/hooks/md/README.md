@@ -211,6 +211,6 @@ echo '{"hook_event_name":"Stop","prompt_id":"test-1"}' | bash .claude/hooks/smal
 
 ## 关联文档
 
-- 铁律内容来源：`CLAUDE.md §2`（Claude Code开发、输出内容铁律）
+- 铁律内容来源：`CLAUDE.md` 顶部「⚠️ 全局最高级别约束」段（铁律 ① 代码名+中文堆砌、铁律 ② 注释不留历史）
 - Hook 注册位置：`.claude/settings.local.json` 的 `hooks.hooks` 块
 - 现有 hook 参考实现：`.claude/hooks/check-doc-outdated.sh`

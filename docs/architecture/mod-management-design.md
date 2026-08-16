@@ -172,9 +172,10 @@ ConfigPage > Mod 列表 tab（内部组件 `WorkshopTab`，不改组件结构；
     ├── 无备份、无回滚（写入幂等，前端状态是权威）
     └── toast.success 引导用户「手动重启后生效」
     → 用户在控制台/首页手动 [重启]
-    → ServerManager.startInternal(serverId)
+    → ServerManager.restartAndApplyMods(serverId, reason)
+      → applyChangesCore(serverId, { hook: 'mod_apply', preStartHook })
       ├─ state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
-      ├─ WorkshopApplyService.applyStaged(serverId)  ← 自动在启动前执行
+      ├─ preStartHook → WorkshopApplyService.applyStaged(serverId)
       │   ├─ 解析 staging/appworkshop_304930.acf
       │   ├─ WorkshopAcfService.addItem 合并到 content/acf
       │   ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
@@ -232,11 +233,12 @@ toast.success("Mod 列表已保存，重启服务器后生效")  ← 引导用�
 用户在控制台/首页手动点 [重启]
   │
   ▼
-ServerManager.startInternal(serverId)
+ServerManager.restartAndApplyMods(serverId, reason)
+  → applyChangesCore(serverId, { hook: 'mod_apply', preStartHook })
   │
   ├─ ① state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
   │
-  ├─ ② **WorkshopApplyService.applyStaged(serverId)**   ← 自动在启动前执行
+  ├─ ② **preStartHook：WorkshopApplyService.applyStaged(serverId)**
   │     ├─ 解析 staging/appworkshop_304930.acf
   │     ├─ WorkshopAcfService.addItem(serverId, fileId, meta)（内部自带备份+回滚）
   │     ├─ mv staging/content/304930/<id>/ → content/304930/<id>/
@@ -527,7 +529,7 @@ DELETE /api/servers/:id/mods/:fileId           → IWorkshopDeleteService.delete
 GET    /api/servers/:id/mods/acf               → IWorkshopAcfService.listItems
 PUT    /api/servers/:id/config/workshop         → ConfigService.writeWorkshopFileIds
                                                     （v2.6：保存与重启解耦；staging → content 移动
-                                                     由 ServerManager.startInternal 自动 applyStaged）
+                                                     由 ServerManager.restartAndApplyMods（preStartHook）触发）
 ```
 
 ---

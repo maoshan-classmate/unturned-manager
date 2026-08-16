@@ -16,8 +16,8 @@ interface CommunityPluginDetail {
   updatedAtIso: string;
   /** GitHub Releases URL——「下载 .dll」外链按钮 */
   releasesUrl: string;
-  /** README 截断预览（≤ 500 字） */
-  readmePreview: string | null;
+  /** GitHub Releases body 截断（≤ 500 字）——详情抽屉「发布说明（Release Notes）」展示 */
+  releaseNotes: string | null;
 }
 
 interface CommunityPluginDetailDialogProps {
@@ -108,11 +108,11 @@ export function CommunityPluginDetailDialog({
             </p>
           </div>
 
-          {/* README 预览 */}
-          {data.readmePreview && (
+          {/* 发布说明（Release Notes） */}
+          {data.releaseNotes && (
             <div className="mb-4">
               <div className="flex items-center gap-1 text-xs font-medium text-slate-300 mb-1.5">
-                <BookText size={12} /> README 预览
+                <BookText size={12} /> 发布说明（Release Notes）
               </div>
               <pre
                 className="text-[11px] leading-relaxed whitespace-pre-wrap p-2 rounded max-h-32 overflow-y-auto font-mono"
@@ -122,7 +122,7 @@ export function CommunityPluginDetailDialog({
                   border: "1px solid #334059",
                 }}
               >
-                {data.readmePreview}
+                {data.releaseNotes}
               </pre>
             </div>
           )}

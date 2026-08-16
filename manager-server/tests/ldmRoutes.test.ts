@@ -117,7 +117,7 @@ const mockSourceService = {
     latestVersion: "1.1.2",
     updatedAtIso: "2026-03-07T14:15:06Z",
     releasesUrl: "https://github.com/XanderCodes/AppleAdminControl/releases/latest",
-    readmePreview: "AppleAdminControl is a plugin...",
+    releaseNotes: "AppleAdminControl is a plugin...",
   }),
 };
 

@@ -8,12 +8,12 @@
 > **源码版本核对（2026-08-12）**：本地 master 源码与游戏自带 `Extras/Rocket.Unturned/`（`Rocket.API/Core.dll=4.9.3.16` + `Rocket.Unturned.dll=4.9.3.18`）的 schema 字段 + `/rocket` 命令行为**零差异**（git diff v4.9.3.15/18 vs master 验证）——本设计文档所有真源引用对实际运行版本成立
 
 > **实施与审计修订（2026-08-15，Phase 1-4 全部落地）**：
-> - **applyChangesCore**：从零抽取（v2.6 已删 applyModChanges），现**单调用方** = `LdmApplyService`（hook='ldm_apply'）；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑，未接入 applyChangesCore；`modpack_apply` 为预留第三处（当前不存在）。§5.6「mod_apply / ldm_apply 共用」承诺**未兑现**——文档标注待后续接入
+> - **applyChangesCore**：从零抽取（v2.6 已删 applyModChanges），现**双调用方** = `LdmApplyService`（hook='ldm_apply'）+ `ServerManager.restartAndApplyMods`（hook='mod_apply'，由 `POST /api/servers/:id/restart` 路由调用）；§5.6「mod_apply / ldm_apply 共用」承诺已兑现。`modpack_apply` 仍为预留第三处（当前不存在）
 > - **applyChangesCore 时序**：`postStartHook` 在 `startInternal` 后**等实例 RUNNING** 再执行（新增 `waitForState`，15s 超时降级）——审计 P0-1 修复（此前 STARTING 执行导致 LDM `/p reload` 永远不执行）
 > - **PUT /rocket-unturned-config**：Phase 2 P0-3 已补路由（此前 `writeRocketUnturnedConfig` 是死代码，9 字段编辑器前端无法保存）
 > - **serializeRocketUnturnedConfig**：Phase 2 P0-2 已修（此前 `findElement` 找根元素永远找不到 → 字段修改不写回）
 > - **端点形态**：详情端点是 `GET /api/ldm/community-plugins/:owner/:repo`（**非 `:slug`**——Express `:slug` 不匹配 `/`，设计 §6.1 表第 13 行需按此为准）
-> - **readmePreview 语义**：实际截断的是 GitHub **release body**（非仓库 README）——老插件无 Release 时恒 null；§12.4「README 截断预览」表述待修正
+> - **releaseNotes 字段**：契约 `CommunityPluginDetail.releaseNotes`——GitHub **release body** 截断（≤ 500 字，非仓库 README）；老插件无 Release 时恒 null；UI 标题「发布说明（Release Notes）」
 > - **状态卡「是否有更新」字段**：未落地（`LdmStatus` 只含 3 字段）；「模块加载状态」拆到 `/modules-state`（LdmAboutCard）——§12.4 范围缩减标注
 > - **错误码命名**：搜索端点统一 `status-invalid`（设计稿原案）
 > - **Phase 5 范围缩减（2026-08-16 用户拍板）**：本期只做 3 个结构化编辑器（Rocket.config.xml / Rocket.Unturned.config.xml / Permissions.config.xml）；**Monaco XML 原文编辑器**（权限组 Tab 备选）推到「权限组编辑器 V2」；**插件配置 `.configuration.xml` 编辑器**（每插件 schema 不同）留独立 Phase。详细决策见 `ldm-editor-design.md` §10。后端 5 个 Phase 5 改动（`d03d432`）全部就绪——3 GET 读端点 + LdmConfigReader + LdmConfigWriter 内层 Zod 校验 + 权限组未知键保留。
@@ -726,7 +726,7 @@ export type ApplyProgressEvent =
   | { type: 'ldm_apply_progress'; serverId: string; stage: LdmApplyStage; ... };
 ```
 
-**重构影响**（审计修订：**未兑现**——v2.6 已删 `applyModChanges`，`applyChangesCore` 从零抽取，现唯一调用方 = `LdmApplyService`；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑，`modpack_apply` 不存在）：
+**重构影响**（2026-08-16 已兑现：`applyChangesCore` 现双调用方 = `LdmApplyService`（hook='ldm_apply'）+ `ServerManager.restartAndApplyMods`（hook='mod_apply'，由 `POST /api/servers/:id/restart` 路由调用，preStartHook = `workshopApply.applyStaged`）；`modpack_apply` 仍为预留第三处）：
 
 - ~~`ServerManager.applyModChanges` → 改为薄壳调 `applyChangesCore` + `kind: 'mod_apply'`~~（已失效——applyModChanges 已删）
 - `LdmApplyService` 调 `applyChangesCore`（hook='ldm_apply'）
@@ -745,7 +745,7 @@ export type ApplyProgressEvent =
 - [x] `LdmApplyService` 实现 + 单测
 - [x] WS 事件类型扩展为联合
 - [x] `composition-root.ts` 注入 `LdmApplyService`
-- [ ] ~~mod_apply 接入~~（未兑现——applyStaged 仍在 startInternal 内，非 applyChangesCore）
+- [x] `mod_apply` 接入 `applyChangesCore`（2026-08-16：`ServerManager.restartAndApplyMods`，hook='mod_apply'，preStartHook = `workshopApply.applyStaged`；由 `POST /api/servers/:id/restart` 路由调用）
 
 ---
 
@@ -1315,7 +1315,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **能力**     | G2（外链 GitHub Releases）+ G3（详情页跳转）+ I1（5 步 SOP 引导卡片）+ F4（兼容信息只展示）                                                                                                                        |
 | **端点**     | + 2 端点 = **12 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）<br>`GET /api/ldm/community-plugins/:owner/:repo`（详情页：GitHub Releases 外链 + 最近版本） |
-| **前端**     | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...）+ 「插件来源 Tab」增强（详情抽屉 + 版本时间线 + README 截断预览）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新）       |
+| **前端**     | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...）+ 「插件来源 Tab」增强（详情抽屉 + 版本时间线 + 发布说明（Release Notes）预览）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新）       |
 | **后端模块** | 无新模块——纯前端 + 复用 `LdmDiscoveryService` 增 1 方法 `getLdmStatus(serverId)`                                                                                                                                   |
 | **依赖**     | 必须 Phase 2 完成（状态卡片依赖 Discovery 完整数据）                                                                                                                                                               |
 | **不做**     | 自动下载 .dll / Tebex 集成 / 兼容性矩阵自动校验                                                                                                                                                                    |

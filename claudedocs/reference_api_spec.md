@@ -124,7 +124,7 @@
 | **Console** | 发送命令 | `POST /servers/:id/execute`（PTY 终端 owner-trust） | ✅ |
 | **Console** | 实时输出 | WS `console_line` | ❌ 订阅空 + LogStreamer 未启动 |
 | **Mods** | 添加 Mod | `GET /workshop/mods/:fileId` | ❌ 恒 404（Steam HTML） |
-| **Mods** | 应用变更 | `PUT /servers/:id/config/workshop` + `POST /servers/:id/restart`（用户手动触发） | ✅ 保存与重启解耦：`PUT` 仅写，`/restart` 走 `startInternal` 自动 `applyStaged` |
+| **Mods** | 应用变更 | `PUT /servers/:id/config/workshop` + `POST /servers/:id/restart`（用户手动触发） | ✅ 保存与重启解耦：`PUT` 仅写，`/restart` 走 `restartAndApplyMods`（preStartHook = `applyStaged`）|
 | **Config·Commands** | 读取 | `GET /servers/:id/config/commands` | ⚠️ 读到 `{}` |
 | **Config·Commands** | 保存 | `PUT /servers/:id/config/commands` | ❌ 500 |
 | **Config·Txt** | 读取 | `GET /servers/:id/config/txt` | ❌ 永远默认值 |
@@ -159,7 +159,7 @@
 | C2 | Config.txt 契约：后端 `sections: ConfigSection[]`（数组），前端当 map（`sections['浏览器']`）用 | `ConfigPage.tsx:106` vs `domain.ts:21-36` | 前端永远读默认值 | 统一为 map：`Record<sectionName, Record<key, value>>` 或前端改数组遍历 |
 | C3 | Commands.dat 写：前端传普通对象，后端 `serializeCommandsDat` 对 `record.known` 做 `for...of` | `ConfigPage.tsx:141` vs `ConfigService.ts:198` | 保存必 500 | `domain.ts` 改 `Record<string,string>` |
 | C4 | Commands.dat 读：后端返回 Map → `JSON.stringify` 成 `{}` | `routes/config.ts:12` vs `ConfigPage.tsx:93-96` | 前端读空 | 同 C3，路由层 `Object.fromEntries` |
-| C5 | 保存 Mod：ModsPage 调 PUT /servers/:id/config/workshop 写 File_IDs + POST /:id/restart 触发 startInternal 自动 applyStaged | ModsPage.tsx:96 | 保存与重启解耦 | 配置保存与移动分离 |
+| C5 | 保存 Mod：ModsPage 调 PUT /servers/:id/config/workshop 写 File_IDs + POST /:id/restart 触发 restartAndApplyMods（preStartHook = applyStaged） | ModsPage.tsx:96 | 保存与重启解耦 | 配置保存与移动分离 |
 | C6 | Steam `?xml=1` 返回 HTML 非 XML | 实测 3 个 Mod ID 全部 HTML | `GET /workshop/mods/:fileId` 恒 404 | 用 IPublishedFileService/GetDetails + QueryFiles（需 WebAPI Key） |
 | C7 | 上传二进制经 `TextEncoder` 破坏 | `FilesPage.tsx:186`(base64) → `files.ts:44` | `.unity3d` 无法上传 | `createUploadStream` 分块 + Buffer |
 | C8 | WS 无订阅协议 | `gateway.ts:40,60` + 前端从不发消息 | 实时功能全哑 | 补 subscribe 协议 + 前端发消息 |

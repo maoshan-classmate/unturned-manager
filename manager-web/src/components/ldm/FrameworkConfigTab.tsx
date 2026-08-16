@@ -33,7 +33,7 @@ export function FrameworkConfigTab({ serverId }: FrameworkConfigTabProps) {
       <Card title="Rocket.config.xml 编辑器">
         <div className="flex items-center gap-2 text-xs" style={{ color: "#94A3B8" }}>
           <Settings size={12} />
-          结构化字段编辑器（语言 / 帧预算 / 自动关服 / 远程同步 16 字段）将在后续版本上线
+          结构化字段编辑器（语言 / 帧预算 / 自动关服 / 远程同步 9 字段）将在后续版本上线
         </div>
       </Card>
 

@@ -546,7 +546,7 @@ ServerManager.startInternal(serverId)
         │
         ├─ ① state === RUNNING → return（保证 U3DS 已停，「移动时无进程在读 content」）
         │
-        ├─ ② WorkshopApplyService.applyStaged（v2.6：挪到 start 顶部）：
+        ├─ ② preStartHook → WorkshopApplyService.applyStaged（v2.6 → 2026-08-16：挪到 restartAndApplyMods.preStartHook）：
         │    ├─ 解析 staging acf → staging mod 元数据（空则直接 return）
         │    ├─ acf.addItem（每个新 mod，内部自带备份+回滚）
         │    ├─ mv staging/content/<id>/ → content/<id>/（跨设备降级 cp -r + rm）

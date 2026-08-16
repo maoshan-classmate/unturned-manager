@@ -204,7 +204,7 @@ export class LdmPluginSourceService implements ILdmPluginSourceService {
     if (pat) headers.Authorization = `token ${pat}`;
 
     let latestTag = base.latestVersion;
-    let readmePreview: string | null = null;
+    let releaseNotes: string | null = null;
     try {
       const releaseRes = await fetch(
         `${GITHUB_API_RELEASES}/${owner}/${repo}/releases/latest`,
@@ -214,7 +214,7 @@ export class LdmPluginSourceService implements ILdmPluginSourceService {
         const release = (await releaseRes.json()) as { tag_name?: string; body?: string };
         if (release.tag_name) latestTag = release.tag_name;
         if (release.body) {
-          readmePreview = release.body.slice(0, 500);
+          releaseNotes = release.body.slice(0, 500);
         }
       } else if (releaseRes.status !== 404) {
         // 404 = 无 Release（很多老插件无 Release），跳过
@@ -236,7 +236,7 @@ export class LdmPluginSourceService implements ILdmPluginSourceService {
       latestVersion: latestTag,
       updatedAtIso: base.updatedAtIso,
       releasesUrl: `${base.repoUrl}/releases/latest`,
-      readmePreview,
+      releaseNotes,
     };
   }
 }

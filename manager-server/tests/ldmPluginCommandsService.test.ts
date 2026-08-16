@@ -163,6 +163,37 @@ describe('LdmPluginCommandsService', () => {
     });
   });
 
+  it('6b. waitForMarker 调用时传 errorMessage，避免正则源码泄漏到前端', async () => {
+    const lines: string[] = [];
+    const deps = mockDeps({ lines });
+    // 覆盖 waitForMarker：记录调用参数 + 立即 reject 一个模拟的 pty-marker-timeout（模拟 PtyManager 超时）
+    const calls: Array<{ args: unknown[] }> = [];
+    (deps.pty as unknown as { waitForMarker: (...args: unknown[]) => Promise<void> }).waitForMarker =
+      async (...args: unknown[]) => {
+        calls.push({ args });
+        throw new Error('加载插件 Uconomy 超时未响应（10 秒内未收到 Mod 框架回显）');
+      };
+    const svc = new LdmPluginCommandsService(
+      deps.pty,
+      deps.serverManager,
+      deps.runtimeStatusReader,
+    );
+    // run() 内部 catch 不到 waitForMarker 的 rejection（Promise.race 第二个分支），所以 reject 直接冒泡
+    await expect(svc.loadPlugin('S1' as never, 'Uconomy')).rejects.toThrow(
+      /Uconomy/,
+    );
+    // 验证 waitForMarker 被调用且第 4 参数是 errorMessage（含插件名 + 用户可见文案）
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall.args.length).toBe(4); // serverId, marker, timeoutMs, errorMessage
+    const errorMessage = lastCall.args[3] as string;
+    expect(errorMessage).toContain('Uconomy');
+    expect(errorMessage).toContain('加载');
+    // 关键防御：message 不应含正则源码
+    expect(errorMessage).not.toMatch(/\\s\+/);
+    expect(errorMessage).not.toMatch(/\|/);
+  });
+
   it('7. per-server 互斥锁：同 serverId 并发 → 第二个抛 operation-conflict', async () => {
     const dep1 = mockDeps({ lines: ['Loading Uconomy'] });
     const svc = new LdmPluginCommandsService(dep1.pty, dep1.serverManager, dep1.runtimeStatusReader);

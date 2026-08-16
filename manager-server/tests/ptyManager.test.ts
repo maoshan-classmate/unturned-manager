@@ -612,6 +612,54 @@ describe("PtyManager — waitForMarker（ws-wrapper-design §2.4）", () => {
     }
   });
 
+  it("默认超时消息不暴露正则源码（backend-development.md §界面文案规范）", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = new FakePty();
+      spawnReturn = fake;
+      const mgr = new PtyManager();
+      await mgr.spawn("S1", "/bin/echo", []);
+
+      const marker = /Loading\s+|Unloading\s+|Unable to/;
+      const pending = mgr.waitForMarker("S1", marker, 5_000);
+      // 用 try/catch 拿 message（toMatchObject 不验证 message 字段）
+      const catchPromise = pending.catch((err: Error) => err);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const err = await catchPromise;
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toBe("等待控制台输出超时");
+      expect((err as Error).message).not.toContain("Loading");
+      expect((err as Error).message).not.toContain("\\s+");
+      expect((err as Error).message).not.toContain(marker.source);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("errorMessage 参数生效——覆盖默认消息", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = new FakePty();
+      spawnReturn = fake;
+      const mgr = new PtyManager();
+      await mgr.spawn("S1", "/bin/echo", []);
+
+      const customMsg = "加载插件 Uconomy 超时未响应（10 秒内未收到 Mod 框架回显）";
+      const pending = mgr.waitForMarker(
+        "S1",
+        /Loading/,
+        5_000,
+        customMsg,
+      );
+      const catchPromise = pending.catch((err: Error) => err);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const err = await catchPromise;
+      expect((err as Error).message).toBe(customMsg);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("settle 后自动退订：resolve 后再来数据不重复触发，exit 也不二次 settle", async () => {
     const fake = new FakePty();
     spawnReturn = fake;

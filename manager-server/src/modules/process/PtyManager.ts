@@ -338,11 +338,21 @@ export class PtyManager implements IPtyManager {
    *   ② 进程先退出 → reject pty-exited（输出流已断，marker 不可能再来）
    *   ③ 超时 → reject pty-marker-timeout
    * settle 后双向退订，一次性订阅不泄漏 callback。
+   *
+   * 错误文案规则：超时场景的 AppError.message 由 `errorMessage` 决定（调用方传用户友好文案）；
+   * 不传则用通用文案「等待控制台输出超时」——避免把正则源码暴露给前端 toast
+   * （backend-development.md §界面文案规范）。
+   *
+   * @param serverId - PTY key
+   * @param marker - 匹配正则（对切分后的单行文本 test）
+   * @param timeoutMs - 等待毫秒数
+   * @param errorMessage - 超时场景下用户可见的错误文案；不传则用通用文案
    */
   waitForMarker(
     serverId: PtyKey,
     marker: RegExp,
     timeoutMs: number,
+    errorMessage?: string,
   ): Promise<void> {
     if (!this.processes.has(serverId)) {
       return Promise.reject(
@@ -370,7 +380,7 @@ export class PtyManager implements IPtyManager {
         finish(
           new AppError(
             "pty-marker-timeout",
-            `等待控制台输出超时（${marker.source}）`,
+            errorMessage?.trim() || "等待控制台输出超时",
             504,
           ),
         );

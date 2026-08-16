@@ -10,7 +10,7 @@
 > - **PUT /rocket-unturned-config 路由**：P0-3 补充——原缺路由，`writeRocketUnturnedConfig` 是死代码
 > - **错误码**：`plugin-not-found`(404) / `pty-timeout`(500) / `operation-conflict`(409) 三码在 load/unload/reload 统一真的抛（设计 §3.2 错误码表以此为准）
 > - **Rocket.Unturned 测试**：round-trip 用例已补（原 0 覆盖）
-> - **mod_apply 共用未兑现**：`applyChangesCore` 唯一调用方是 `LdmApplyService`（hook='ldm_apply'）；`WorkshopApplyService.applyStaged` 仍只在 `startInternal` 内跑（ServerManager.ts:558），`modpack_apply` 不存在。§5.6「与 mod_apply 共用」是评审稿预期，现状是单调用方——正文多处「与 mod_apply 共用」表述以本修订为准
+> - **mod_apply 共用已兑现**（2026-08-16）：`applyChangesCore` 双调用方 = `LdmApplyService`（hook='ldm_apply'）+ `ServerManager.restartAndApplyMods`（hook='mod_apply'，由 `POST /api/servers/:id/restart` 路由调用，preStartHook = `workshopApply.applyStaged`）。`modpack_apply` 仍为预留第三处
 
 ## 0. 一句话结论
 
@@ -257,7 +257,8 @@ async applyChangesCore(
   opts: {
     hook: 'mod_apply' | 'ldm_apply' | 'modpack_apply';  // 预留第三处
     preStopHook?: () => Promise<void>;  // LdmApplyService.apply 在停止前做的
-    postStartHook?: () => Promise<void>; // 同上, 启动后做的
+    preStartHook?: () => Promise<void>; // ServerManager.restartAndApplyMods 把 staging 移入 content
+    postStartHook?: () => Promise<void>; // LdmApplyService.apply 在启动后调 /p reload
   }
 ): Promise<void>;
 ```

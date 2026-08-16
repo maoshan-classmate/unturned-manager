@@ -214,8 +214,8 @@ export interface CommunityPluginDetail {
   updatedAtIso: string;
   /** GitHub Releases URL——前端「下载 .dll」外链按钮用（由 caller 判定是否有 Release） */
   releasesUrl: string;
-  /** README 截断预览（≤ 500 字）——详情抽屉展示 */
-  readmePreview: string | null;
+  /** GitHub Releases body 截断（≤ 500 字）——详情抽屉「发布说明」展示 */
+  releaseNotes: string | null;
 }
 
 /**

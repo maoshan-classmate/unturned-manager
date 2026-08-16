@@ -156,10 +156,11 @@ mv Servers/<ID>/Server/WorkshopDownloadConfig.json Servers/<ID>/WorkshopDownload
   → 不触发状态机变化、不动 PTY、不动 staging
 
 【第二步：手动重启生效】
-用户在控制台/首页手动点 [重启]（POST /api/servers/:id/{start, restart}）
-  → ServerManager.startInternal(serverId)
+用户在控制台/首页手动点 [重启]（POST /api/servers/:id/restart）
+  → ServerManager.restartAndApplyMods(serverId, reason)
+  → ServerManager.applyChangesCore(serverId, { hook: 'mod_apply', preStartHook })
   ├─ ① state != RUNNING 守卫（RUNNING 直接 return）——保证「移动时 U3DS 已停」
-  ├─ ② WorkshopApplyService.applyStaged(serverId)  ← 自动在启动前执行
+  ├─ ② preStartHook：WorkshopApplyService.applyStaged(serverId)
   │     ├─ 解析 staging/appworkshop_304930.acf
   │     ├─ WorkshopAcfService.addItem（内部自带备份 + 回滚）
   │     ├─ mv staging/content/304930/<id>/ → content/304930/<id>/

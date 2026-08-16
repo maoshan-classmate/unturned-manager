@@ -405,7 +405,11 @@ export class ServerManager implements IServerManager {
    * @returns Promise 在新 bash spawn 后 resolve（不等待 U3DS 就绪）
    * @throws {AppError} 操作冲突 409
    */
-  async restart(serverId: ServerId, reason: string): Promise<void> {
+  async restart(
+    serverId: ServerId,
+    reason: string,
+    opts?: { preStartHook?: () => Promise<void> },
+  ): Promise<void> {
     const entry = this.ensureServer(serverId);
 
     // CLAUDE.md §4.7: restart 全过程由一个 activeOperation 覆盖，防止竞态
@@ -424,18 +428,46 @@ export class ServerManager implements IServerManager {
     try {
       // 内部 stop（绕过 stop() 的 activeOperation 检查）
       await this.stopInternal(serverId, reason);
-      // 内部 start
-      await this.startInternal(serverId);
+      // 内部 start——调用方可传 preStartHook（如把 staging Mod 移入 content）。
+      // 默认无钩子，与启动实例（POST /start）行为对齐：单纯重启不搬运 staging。
+      await this.startInternal(serverId, opts?.preStartHook);
     } finally {
       entry.activeOperation = { type: "none" };
     }
   }
 
   /**
+   * 重启实例并应用 staging Mod（Phase 2b 设计复用 applyChangesCore 流水线本体）。
+   *
+   * 与 restart 的区别：
+   *   - activeOperation.type 用 'mod_apply'（与 ldm_apply 共用同一流水线标识）
+   *   - preStartHook 把 staging 里已下载的 Mod 移入 content/304930/（U3DS 只在启动时读 content）
+   *
+   * 由 POST /:id/restart 路由调用——保持「用户重启即应用 Mod 列表」既有语义，
+   * 同时显式走 applyChangesCore 流水线本体（与 modpack_apply / ldm_apply 共用）。
+   *
+   * @param serverId - 实例标识
+   * @param reason - 重启原因（日志 + Shutdown 命令参数用）
+   * @throws AppError('operation-conflict') 已有 activeOperation
+   */
+  async restartAndApplyMods(serverId: ServerId, reason: string): Promise<void> {
+    await this.applyChangesCore(serverId, {
+      hook: "mod_apply",
+      preStartHook: async () => {
+        if (this.workshopApply) {
+          // ★ U3DS 必然 STOPPED（preStartHook 在 startInternal 内 transition STARTING 之前执行），
+          //   移动零冲突（SOP：写入 content 必须停服）。失败则上抛，阻止 spawn。
+          await this.workshopApply.applyStaged(serverId);
+        }
+      },
+    });
+  }
+
+  /**
    * 配置变更后的「保存-关-启」流水线本体——Phase 2b 抽出（与 mod_apply / ldm_apply 共用）。
    *
    * 与 restart 的区别：activeOperation.type 用调用方 hook 名（mod_apply/ldm_apply/modpack_apply），
-   * 并支持 preStopHook + postStartHook 钩子（让各 hook 模块在关/启前后执行业务逻辑）。
+   * 并支持 preStopHook + preStartHook + postStartHook 三个钩子（让各 hook 模块在关/启前后执行业务逻辑）。
    *
    * 复用 stopInternal + startInternal（与 restart 共用底层）。
    * 重入保护：activeOperation 与 restart/stop/start 共用同一锁。
@@ -443,6 +475,7 @@ export class ServerManager implements IServerManager {
    * @param serverId 实例 ID
    * @param opts.hook 调用方身份（用于 activeOperation.type + 日志）
    * @param opts.preStopHook 停止前同步任务（如移动 staging 内容 / 备份当前配置）—— 抛错则流水线 abort
+   * @param opts.preStartHook spawn 前同步任务（U3DS 已 STOPPED；如把 staging Mod 移入 content）—— 抛错则阻止 spawn
    * @param opts.postStartHook 启动后同步任务（如调 /p reload 触发权限重载）—— 抛错仅记录，不阻止（启动已完成）
    * @throws AppError('operation-conflict') 已有 activeOperation
    * @throws AppError('server-not-running') 实例不在 RUNNING 状态
@@ -452,6 +485,7 @@ export class ServerManager implements IServerManager {
     opts: {
       hook: "mod_apply" | "ldm_apply" | "modpack_apply";
       preStopHook?: () => Promise<void>;
+      preStartHook?: () => Promise<void>;
       postStartHook?: () => Promise<void>;
     },
   ): Promise<void> {
@@ -486,10 +520,12 @@ export class ServerManager implements IServerManager {
       }
       // 2. 内部 stop（与 restart 共用底层）
       await this.stopInternal(serverId, "配置变更");
-      // 3. 内部 start——先启动，再等 RUNNING（stdout ready 提前 / 3s 兜底），最后 postStartHook。
-      //    ★ Phase 2 审计 P0-1：postStartHook（如 LDM /p reload）依赖实例 RUNNING（LdmPluginCommandsService
-      //      查 getState()===RUNNING），若在 STARTING 执行会抛 server-not-running 被吞 → 永远不执行。
-      await this.startInternal(serverId);
+      // 3. 内部 start——preStartHook 在 spawn 前执行（U3DS 已 STOPPED，可写 content/304930/），
+      //    再等 RUNNING（stdout ready 提前 / 3s 兜底），最后 postStartHook。
+      //    ★ Phase 2 审计 P0-1：postStartHook（如 LDM /p reload）依赖实例 RUNNING
+      //    （LdmPluginCommandsService 查 getState()===RUNNING），若在 STARTING 执行会抛
+      //    server-not-running 被吞 → 永远不执行。
+      await this.startInternal(serverId, opts.preStartHook);
       await this.waitForState(serverId, ServerState.RUNNING, 15_000);
       // 4. postStartHook（启动后任务；抛错仅记录——实例已启动不能让其崩溃）
       if (opts.postStartHook) {
@@ -546,16 +582,27 @@ export class ServerManager implements IServerManager {
     }
   }
 
-  /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。 */
-  private async startInternal(serverId: ServerId): Promise<void> {
+  /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。
+   *
+   * preStartHook：在 transition STARTING + PTY spawn **之前**执行的钩子（U3DS 必然 STOPPED）。
+   * 设计意图：让调用方（restart / applyChangesCore）在 spawn 前把 staging Mod 移入 content、
+   * 备份关键文件等——避免在 RUNNING 实例写运行中读的位置。
+   *
+   * ★ P2 #4 改动：v2.6 直接调 `workshopApply.applyStaged` 已被移除（隐式耦合）。
+   *   由 restart / applyChangesCore 通过 preStartHook 显式传入，保持调用方可观测可重入。
+   *
+   * @param serverId - 实例标识
+   * @param preStartHook - spawn 前钩子（抛错则阻止 spawn）
+   */
+  private async startInternal(
+    serverId: ServerId,
+    preStartHook?: () => Promise<void>,
+  ): Promise<void> {
     const entry = this.ensureServer(serverId);
     if (entry.state === ServerState.RUNNING) return;
 
-    // ★ v2.6：启动前先把 staging 里已下载的 Mod 移入 content/304930/。
-    // U3DS 只在启动时读 content 目录，此处必然 STOPPED（RUNNING 已在上方 return），
-    // 移动零冲突（SOP：写入 content 必须停服）。失败则上抛，阻止用缺 Mod 的旧内容启动。
-    if (this.workshopApply) {
-      await this.workshopApply.applyStaged(serverId);
+    if (preStartHook) {
+      await preStartHook();
     }
 
     this.transition(serverId, ServerState.STARTING);

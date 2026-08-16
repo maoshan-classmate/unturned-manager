@@ -210,8 +210,8 @@ export const CommunityPluginDetailSchema = z.object({
   updatedAtIso: z.string().datetime(),
   /** GitHub Releases URL——前端「下载 .dll」外链按钮用 */
   releasesUrl: z.string().url(),
-  /** README 截断预览（≤ 500 字）——详情抽屉展示 */
-  readmePreview: z.string().nullable(),
+  /** GitHub Releases body 截断（≤ 500 字）——详情抽屉「发布说明」展示 */
+  releaseNotes: z.string().max(500).nullable(),
 });
 export type CommunityPluginDetail = z.infer<typeof CommunityPluginDetailSchema>;
 

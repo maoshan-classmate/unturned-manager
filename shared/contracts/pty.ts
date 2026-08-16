@@ -144,6 +144,8 @@ export interface IPtyManager {
    * @param serverId - PTY key
    * @param marker - 匹配正则（对切分后的单行文本 test）
    * @param timeoutMs - 等待毫秒数
+   * @param errorMessage - 超时场景下用户可见的错误文案（避免把正则源码暴露给前端 toast）
+   *   不传则用通用文案「等待控制台输出超时」
    * @throws {AppError} code=pty-not-running, status=409 进程不存在时
    * @throws {AppError} code=pty-exited, status=409 等到之前进程退出时
    * @throws {AppError} code=pty-marker-timeout, status=504 超时未命中时
@@ -152,6 +154,7 @@ export interface IPtyManager {
     serverId: PtyKey,
     marker: RegExp,
     timeoutMs: number,
+    errorMessage?: string,
   ): Promise<void>;
 
   /**

@@ -403,22 +403,35 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     expect(mgr.getState("T12" as ServerId)).toBe(ServerState.RUNNING);
   });
 
-  it("v2.6：startInternal 先调 applyStaged 再 spawn PTY（移动在 STOPPED 态执行）", async () => {
+  it("v2.6：restartAndApplyMods 先调 applyStaged 再 spawn PTY（移动在 STOPPED 态执行）", async () => {
     vi.useFakeTimers();
     const { pty, mgr } = setup();
-    // ★ v2.6 测试：startInternal 必须先 move（applyStaged）再 transition STARTING
-    // 验证：依赖图谱顺序 = applyStaged.moveDir → 启动 bash（spawn）
+    // 注入追踪 workshopApply（验证 preStartHook 真的被调）
+    const applyCalls: string[] = [];
+    const trackingApply = {
+      applyStaged: vi.fn(async (serverId: string) => {
+        applyCalls.push(serverId);
+      }),
+    };
+    (mgr as any).workshopApply = trackingApply;
     await createServer(mgr, "S1");
     await mgr.start("S1" as ServerId);
-    // 让 fake timers 推进，使 startCommand 注入完成
     await vi.advanceTimersByTimeAsync(3000);
     expect(mgr.getState("S1" as ServerId)).toBe(ServerState.RUNNING);
+    // ★ P2 #4 改动：startInternal 默认不调 applyStaged；applyStaged 由 restartAndApplyMods 显式调
+    expect(trackingApply.applyStaged).not.toHaveBeenCalled();
     expect(pty.spawn).toHaveBeenCalled(); // bash 已 spawn
-    // 注意：移动由 workshopApply 完成（本测试没注入 workshopApply，故为空跳过）。
-    // 这里只断言「start 没崩、移动空跳过也算成功」。具体移动断言见 workshopApplyService.test.ts
+    // 现在调 restartAndApplyMods——验证 preStartHook 真的触发 + spawn 顺序
+    pty.spawn.mockClear();
+    const restartPromise = mgr.restartAndApplyMods("S1" as ServerId, "测试重启");
+    // 推进 stopPty（30s timeout）+ startCommand 3s 延迟
+    await vi.advanceTimersByTimeAsync(40_000);
+    await restartPromise;
+    expect(trackingApply.applyStaged).toHaveBeenCalledWith("S1");
+    expect(pty.spawn).toHaveBeenCalled();
   });
 
-  it("v2.6：startInternal 中 applyStaged 失败 → 上抛、不 spawn（不拿残缺 content 启动）", async () => {
+  it("v2.6：restartAndApplyMods 中 applyStaged 失败 → 上抛、不 spawn（不拿残缺 content 启动）", async () => {
     vi.useFakeTimers();
     const { pty, mgr } = setup();
     // 注入会抛错的 workshopApply
@@ -430,11 +443,13 @@ describe("ServerManager — 状态机（ADR-0004 Phase 2 PTY）", () => {
     // 注：workshopApply 是 TS private，运行时是普通字段——用 as any 强写
     (mgr as any).workshopApply = failingApply;
     await createServer(mgr, "S2");
-    // ★ 2026-08-14 修复测试 bug：`start` 走 startPty 路径，不经过 startInternal；
-    // 验证 startInternal 中 applyStaged 失败行为必须走 `restart`（start → stop → startInternal）。
-    await expect(mgr.restart("S2" as ServerId)).rejects.toThrow(
-      /staging 移动失败/,
-    );
+    await mgr.start("S2" as ServerId);
+    await vi.advanceTimersByTimeAsync(3000);
+    pty.spawn.mockClear();
+    // ★ P2 #4 改动：applyStaged 失败行为改由 restartAndApplyMods（preStartHook）触发上抛
+    await expect(
+      mgr.restartAndApplyMods("S2" as ServerId, "用户手动重启"),
+    ).rejects.toThrow(/staging 移动失败/);
     expect(failingApply.applyStaged).toHaveBeenCalledTimes(1);
     expect(pty.spawn).not.toHaveBeenCalled(); // ★ spawn 没发生——不拿残缺 content 启动
   });
