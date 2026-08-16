@@ -3,12 +3,6 @@
   "version": "1.0",
   "always": [
     {
-      "id": "no-code-name-jargon",
-      "title": "Claude Code输出内容规则",
-      "file": "always/no-code-name-jargon.md",
-      "tags": ["output-style", "communication"]
-    },
-    {
       "id": "small-feature-validation",
       "title": "小功能走最小验证",
       "file": "always/small-feature-validation.md",

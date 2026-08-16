@@ -12,8 +12,9 @@ md/
 ├── index.json                      ← 铁律清单（每轮 UserPromptSubmit 注入哪些）
 ├── threshold.json                  ← 小功能判定阈值（Stop 用 git diff 累计检测）
 └── always/
-    ├── no-code-name-jargon.md      ← 铁律 1：禁止代码名+中文描述
-    └── small-feature-validation.md ← 铁律 2：小功能走最小验证（量化版）
+    └── small-feature-validation.md ← 轻量级铁律：小功能走最小验证（量化版）
+
+CLAUDE.md 顶部「⚠️ 全局最高级别约束」段 ← 全局最高级铁律（任何输出必须先满足）
 ```
 
 ---
@@ -35,9 +36,11 @@ md/
 
 改完即时生效——下次 `Stop`（本轮工作收尾）触发就用新阈值。
 
-### ② 加新铁律（每轮对话都注入的规则）
+### ② 加新铁律（按重要性分两类）
 
-**两步**：
+#### ②-A 轻量级铁律（特定场景提醒，走 UserPromptSubmit 注入）
+
+适合「只在某些场景下需要」的提醒——比如禁止日志输出凭证、规范 commit message 措辞等。每条用户消息时注入。
 
 **第一步**——在 `always/` 下新建一个 `.md` 文件，**用 `<!-- INJECT -->` 标签包裹要注入的精炼指令**（标签外内容只给人看，不注入）：
 
@@ -61,7 +64,6 @@ EOF
 ```json
 {
   "always": [
-    { "id": "no-code-name-jargon", "title": "...", "file": "always/no-code-name-jargon.md", "tags": [...] },
     { "id": "small-feature-validation", "title": "...", "file": "always/small-feature-validation.md", "tags": [...] },
     { "id": "no-sensitive-log", "title": "禁止日志输出凭证", "file": "always/no-sensitive-log.md", "tags": ["security", "logging"] }
   ]
@@ -69,6 +71,16 @@ EOF
 ```
 
 下次用户提问时，新铁律自动注入。
+
+#### ②-B 全局最高级铁律（任何输出必须先满足，直接写进 CLAUDE.md）
+
+适合**最重要**的约束——比如禁止「代码名+中文」堆砌、代码注释不留历史叙述。这些是项目宪法级别，会话开始时就在 system 区固定位置加载，**比 UserPromptSubmit 注入更稳定**（位置不会被对话稀释）。
+
+直接编辑 `CLAUDE.md` 顶部的「⚠️ 全局最高级别约束」段，加新的铁律子段。**注意**：这类铁律必须用最强措辞（绝对禁止、违反即未完成），否则效果不如 always/ 注入。
+
+> **判据**：如果一条铁律「违反会让整个项目的输出可读性崩盘」（如代码名+中文堆砌让 commit message 像乱码），就放 CLAUDE.md；如果只是「特定场景下要小心」（如禁止日志凭证），就放 always/。
+
+**注意**：CLAUDE.md 是项目宪法入口，**不要**把 always/ 的内容**重复**放进 CLAUDE.md——同一铁律存两份反而稀释注意力。
 
 ### ⚠️ 注入标签语法（务必遵守）
 
