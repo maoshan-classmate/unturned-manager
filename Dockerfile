@@ -156,6 +156,6 @@ EXPOSE 3001
 EXPOSE 27015/udp 27016/udp 25545
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -fs http://localhost:3001/api/health || exit 1
+  CMD curl -fs --noproxy '*' http://localhost:3001/api/health || exit 1
 
 CMD ["node", "--import", "tsx", "manager-server/src/index.ts"]

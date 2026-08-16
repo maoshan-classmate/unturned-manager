@@ -1,24 +1,10 @@
-// 全局绕过系统 HTTP_PROXY——所有 fetch() 直连不走代理。
-// undici fetch 默认会读 HTTP_PROXY/HTTPS_PROXY 环境变量走代理，
-// 代理访问 Steam 会超时（实测：走代理 504，直连 0.7s）。
-// 强制删除代理环境变量，确保 node fetch 直连 Steam。
-delete process.env.HTTP_PROXY;
-delete process.env.HTTPS_PROXY;
-delete process.env.http_proxy;
-delete process.env.https_proxy;
-delete process.env.ALL_PROXY;
-delete process.env.all_proxy;
-process.env.NO_PROXY = "*";
-process.env.no_proxy = "*";
+// 出站代理遵循 Docker 标准环境变量 HTTP_PROXY/HTTPS_PROXY——配了即生效（Steam/GitHub API 走代理）。
+// 未配置 = 全局直连。不剥离代理环境变量：容器环境由 docker-compose 显式控制，
+// 但 compose 需配 NO_PROXY 兜住 localhost 保护健康检查 curl（见 utils/outboundProxy.ts）。
 
-import { setGlobalDispatcher, Agent } from "undici";
-setGlobalDispatcher(
-  new Agent({
-    connectTimeout: 30_000,
-    headersTimeout: 30_000,
-    bodyTimeout: 30_000,
-  }),
-);
+import { setGlobalDispatcher } from "undici";
+import { getOutboundAgent } from "./utils/outboundProxy.js";
+setGlobalDispatcher(getOutboundAgent());
 
 import path from "node:path";
 import fs from "node:fs";

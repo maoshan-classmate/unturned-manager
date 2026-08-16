@@ -42,6 +42,12 @@ services:
       INSTALL_DIR: /opt/unturned
       # SteamCMD 安装路径（挂载到宿主 ./steamcmd，首次启动 entrypoint 从镜像初始化）
       STEAMCMD_DIR: ${STEAMCMD_DIR:-/opt/steamcmd}
+       # 出站代理（Docker 标准变量）：Steam WebAPI / GitHub API 走代理连接（如国内网络直连超时）。
+      # 取消下面两行注释并填入实际代理地址即生效；留空 = 直连（默认）。
+      # 格式 http://[user:pass@]host:port；⚠️ 容器内 127.0.0.1 是容器自身，代理在宿主机需用局域网 IP。
+      # NO_PROXY 无需配置——本地/内部调用由代码默认兜底（见 outboundProxy.ts），健康检查 curl 自带 --noproxy。
+      # HTTP_PROXY: http://192.168.2.9:7890
+      # HTTPS_PROXY: http://192.168.2.9:7890
     ports:
       # 面板 HTTP
       - "3020:3001"
