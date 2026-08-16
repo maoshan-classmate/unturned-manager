@@ -66,6 +66,24 @@ const FLAG_KEYS = new Set([
   "PvE",
 ]);
 
+/**
+ * 面板拆写 Log/Votify 复合字段时遗留的独立子键（LogChat true / VotifyPassCooldown 5 等）。
+ * U3DS 不识别这些键（Unknown entry）；面板走合成单行 Log/Votify，这些子键是脏数据——
+ * 解析时直接丢弃，让下次保存自动清理文件中的残留行（保留未知键契约只适用于面板不认识的键）。
+ */
+const LEGACY_KEYS = new Set([
+  "LogChat",
+  "LogJoin",
+  "LogDeath",
+  "LogAnticheat",
+  "VotifyAllow",
+  "VotifyPassCooldown",
+  "VotifyFailCooldown",
+  "VotifyDuration",
+  "VotifyPercentage",
+  "VotifyPlayers",
+]);
+
 const BACKUP_DIR = "backups";
 
 /**
@@ -657,6 +675,7 @@ export function parseCommandsDatContent(content: string): CommandsDatRecord {
     if (spaceIdx === -1) {
       // 无空格：flag 型或单键
       const key = trimmed;
+      if (LEGACY_KEYS.has(key)) continue; // 拆写遗留子键——直接丢弃
       if (KNOWN_KEYS.has(key)) {
         known[key] = "";
       } else {
@@ -665,6 +684,9 @@ export function parseCommandsDatContent(content: string): CommandsDatRecord {
     } else {
       const key = trimmed.slice(0, spaceIdx);
       const value = trimmed.slice(spaceIdx + 1).trim();
+
+      // 拆写遗留子键（LogChat/VotifyPassCooldown 等）——直接丢弃，由合成单行 Log/Votify 替代
+      if (LEGACY_KEYS.has(key)) continue;
 
       // Loadout 重复行——结构化解析（CommandLoadout.cs:13-49）
       if (key === "Loadout") {

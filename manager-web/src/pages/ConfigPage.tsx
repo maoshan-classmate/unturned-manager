@@ -132,6 +132,24 @@ const FIELD_LABELS: Record<keyof CommandsFields, string> = {
  * - Log / Votify 复合字段填 SDK 默认值（CommandWindow.cs:49-52 / ChatManager.cs:76-81），
  *   handleSave 硬编码 known.set 不受 if(val) 过滤。
  */
+/**
+ * Log / Votify 复合字段的子字段——保存时由合成逻辑生成单行（`Log Y/Y/Y/N`、
+ * `Votify Y/5/60/15/75/3`），通用 known 循环必须跳过，否则会被拆写成独立键
+ * （如 `LogChat true`）导致 U3DS 报 Unknown entry。
+ */
+const COMPOSITE_SUBFIELDS = new Set([
+  "LogChat",
+  "LogJoin",
+  "LogDeath",
+  "LogAnticheat",
+  "VotifyAllow",
+  "VotifyPassCooldown",
+  "VotifyFailCooldown",
+  "VotifyDuration",
+  "VotifyPercentage",
+  "VotifyPlayers",
+]);
+
 const EMPTY_FIELDS: CommandsFields = {
   Name: "Unturned",
   Port: "27015",
@@ -436,8 +454,8 @@ function ConfigContent({ serverId }: { serverId: string }) {
       if (tab === "commands") {
         const known = new Map<string, string>();
         for (const [key, val] of Object.entries(fields)) {
-          // Loadout 走独立 loadouts 字段，不进 known（避免空数组变成空字符串行）
-          if (key === "Loadout") continue;
+          // Loadout 走独立 loadouts 字段；Log/Votify 子字段由下方合成单行——都跳过通用循环
+          if (key === "Loadout" || COMPOSITE_SUBFIELDS.has(key)) continue;
           if (
             [
               "PvE",

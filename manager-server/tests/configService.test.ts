@@ -42,6 +42,34 @@ describe("ConfigService — 5 种格式往返", () => {
     expect(second.unknown.UnknownKey).toBe("customValue");
   });
 
+  it("Commands.dat: 拆写遗留子键（LogChat/VotifyPassCooldown）解析时丢弃", async () => {
+    const input =
+      "Name MyServer\n" +
+      "Log Y/Y/Y/N\n" +
+      "LogChat true\n" +
+      "LogJoin true\n" +
+      "VotifyPassCooldown 5\n" +
+      "UnknownKey customValue\n";
+    await fs.writeFile(path.join(serverDir, "Server", "Commands.dat"), input);
+
+    const first = await svc.readCommandsDat(serverId);
+    // 合成单行正常进 known
+    expect(first.known.Log).toBe("Y/Y/Y/N");
+    // 拆写子键被丢弃——不进 unknown
+    expect(first.unknown.LogChat).toBeUndefined();
+    expect(first.unknown.VotifyPassCooldown).toBeUndefined();
+    // 真未知键仍保留
+    expect(first.unknown.UnknownKey).toBe("customValue");
+
+    // 保存后文件里不再有残留子键
+    await svc.writeCommandsDat(serverId, first);
+    const second = await svc.readCommandsDat(serverId);
+    expect(second.known.Log).toBe("Y/Y/Y/N");
+    expect(second.unknown.LogChat).toBeUndefined();
+    expect(second.unknown.VotifyPassCooldown).toBeUndefined();
+    expect(second.unknown.UnknownKey).toBe("customValue");
+  });
+
   it("Commands.dat: 乐观锁 mtime 冲突抛 config_conflict(409)", async () => {
     const absPath = path.join(serverDir, "Server", "Commands.dat");
     await fs.writeFile(absPath, "Name A\n");
