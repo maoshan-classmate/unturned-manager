@@ -828,7 +828,11 @@ function CommandsTab({
             <ConfigField
               key={k}
               label={FIELD_LABELS[k]}
-              value={String(fields[k])}
+              value={
+                k === "Bind" && fields[k] === "0"
+                  ? "0.0.0.0"
+                  : String(fields[k])
+              }
               onChange={(v) => onChange(k, v)}
               placeholder={
                 k === "Port"
