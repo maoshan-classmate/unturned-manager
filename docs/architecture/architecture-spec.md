@@ -5,6 +5,8 @@
 > **适用范围**：后端模块实现、前端页面实现、跨层契约变更的基准
 > **读取顺序**：`CLAUDE.md` → 本文档 → `design-system-mapping.md` → `claudedocs/reference_*.md`
 
+> **⚠ 2026-08-17 更新**：LDM 插件来源相关——`LdmPluginSourceService` 模块、契约 `ILdmPluginSourceService` / `CommunityPlugin` / `CommunityPluginDetail`、路由 `createLdmCommunityRouter`（端点 `/api/ldm/community-plugins`、`/community-plugins/:owner/:repo`、`/community-plugins/test-pat`）已整体下线。LdmPage 从 4 Tab 改为 3 Tab（已装插件 / 框架配置 / 权限组）。其他模块与契约保持现行。
+
 ---
 
 ## 0. 阅读指南

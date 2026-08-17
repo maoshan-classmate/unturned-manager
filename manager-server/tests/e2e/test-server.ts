@@ -16,6 +16,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS refresh_tokens (jti TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_enc TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS item_list (id INTEGER PRIMARY KEY, name TEXT NOT NULL, label TEXT, source TEXT NOT NULL DEFAULT 'custom', created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+  CREATE INDEX IF NOT EXISTS idx_item_list_source ON item_list(source);
+  CREATE INDEX IF NOT EXISTS idx_item_list_name   ON item_list(name);
 `);
 
 // ADR-0003 B2：实例身份=目录存在性。清空 Servers/——防上次 run 残留 Commands.dat

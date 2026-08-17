@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Shuffle, Shield, Key, Globe, FileText, Gamepad2, Wrench,
+  Shield, Key, Globe, FileText, Wrench,
   AlertCircle, Save, Check, Trash2,
 } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
@@ -12,7 +12,7 @@ import { apiClient } from '../api/client.js';
 /**
  * Settings 页面——Figma 23:19917 🎨 System Settings (P1)。
  *
- * 5 张设置卡片：账户安全 / 安全配置 / 网页设置 / 面板日志 / 游戏默认值。
+ * 4 张设置卡片：账户安全 / 安全配置 / 网页设置 / 面板日志。
  */
 export function SettingsPage() {
   const [passwordForm, setPasswordForm] = useState({ current: '', newPass: '', confirm: '' });
@@ -186,35 +186,6 @@ export function SettingsPage() {
               <span>结构化 JSON</span>
             </div>
           </div>
-        </Card>
-
-        {/* 游戏默认值——每个值对应的 SDK 真源行号见 claudedocs/reference_config_files.md §1「SDK 真源」列 */}
-        <Card icon={Gamepad2} title="游戏默认值" className="md:col-span-2">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" style={{ color: '#94A3B8' }}>
-            {[
-              ['默认端口', '27015'],
-              ['默认难度', 'Normal'],
-              ['默认视角', 'FIRST'],
-              ['默认地图', 'PEI'],
-              ['默认 PvP/PvE', 'PvP（开启）'],
-              ['最大玩家', '8'],
-              ['昼夜循环', '3600s'],
-              ['Ping 超时', '750ms'],
-              ['排队上限', '8'],
-              ['聊天冷却', '0.25s'],
-              ['服务器密码', '无（开放）'],
-              ['监听地址', '0.0.0.0'],
-            ].map(([label, value]) => (
-              <div key={label} className="p-2 rounded" style={{ backgroundColor: '#0F172A' }}>
-                <div className="text-xs" style={{ color: '#64748B' }}>{label}</div>
-                <div className="text-sm font-mono mt-0.5" style={{ color: '#F1F5FB' }}>{value}</div>
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] mt-3" style={{ color: '#64748B' }}>
-            每个值对应的 U3-SDK 真源行号见{' '}
-            <code>claudedocs/reference_config_files.md</code> §1「SDK 真源」列
-          </p>
         </Card>
 
         {/* Steam WebAPI Key — 模组页面依赖此项 */}

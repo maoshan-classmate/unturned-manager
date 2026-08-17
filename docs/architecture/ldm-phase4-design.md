@@ -27,7 +27,7 @@ Phase 4 拆 4a（单插件 reload，2-3 人天）+ 4b（插件搜索/筛选，1-
 
 | 期 | 已实现 |
 |---|---|
-| Phase 1 | 列表已装 + 加载/卸载 + LDM-Community 浏览 + GitHub PAT + 上传 .dll |
+| Phase 1 | 列表已装 + 加载/卸载 + 上传 .dll（LDM-Community 浏览 + GitHub PAT 于 2026-08-17 下线） |
 | Phase 2 | 结构化字段编辑器（XML 解析 + 原子写）+ 重启流水线 + 关于 LDM 卡 |
 | Phase 3 | 引导 SOP 卡 + 状态卡 + 详情抽屉 + 4 Tab 骨架 |
 

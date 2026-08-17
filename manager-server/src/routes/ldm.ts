@@ -1,9 +1,7 @@
 /**
- * LDM Mod 框架路由——Phase 1 + Phase 2a 端点。
+ * LDM Mod 框架路由——已装插件 / 配置读写 / 应用变更端点。
  *
- * 挂载：
- *   - /api/servers/:id/ldm/...   →  createLdmServerRouter（discovery + commands + config writer）
- *   - /api/ldm/...               →  createLdmCommunityRouter（community + PAT test）
+ * 挂载：/api/servers/:id/ldm/...   →  createLdmServerRouter（discovery + commands + config writer）
  *
  * 依赖通过 composition-root 注入（DI 容器）。
  */
@@ -21,7 +19,6 @@ import {
   type ILdmApplyService,
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
-  type ILdmPluginSourceService,
   type ILdmConfigWriter,
   type ILdmConfigReader,
   type ServerId,
@@ -75,7 +72,7 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
-  // GET /status — LDM 统一状态（Phase 3）——前端「LDM 状态」卡用
+  // GET /status — LDM 统一状态（）——前端「LDM 状态」卡用
   router.get(
     "/status",
     asyncHandler(async (req, res) => {
@@ -86,7 +83,7 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
-  // GET /version — LDM 主框架版本（Phase 3-3 D2）——前端「关于 LDM」卡用
+  // GET /version — LDM 主框架版本（）——前端「关于 LDM」卡用
   // 服务端必须 RUNNING 才能调 PTY；非 RUNNING 时 commands.readLdmVersion 抛 server-not-running 409
   router.get(
     "/version",
@@ -98,7 +95,7 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
-  // GET /modules-state — Rocket.Unturned 模块加载状态（Phase 3-3 D3）——前端「关于 LDM」卡用
+  // GET /modules-state — Rocket.Unturned 模块加载状态（）——前端「关于 LDM」卡用
   // 服务端必须 RUNNING；非 RUNNING 时 commands.readModulesState 抛 server-not-running 409
   router.get(
     "/modules-state",
@@ -319,7 +316,6 @@ export function createLdmServerRouter(deps: {
   );
 
   // PUT /rocket-unturned-config — 写 Rocket.Unturned.config.xml（9 字段）
-  // Phase 2 审计 P0-3：之前漏了此路由，writeRocketUnturnedConfig 是死代码——前端无法保存 Rocket.Unturned 配置
   router.put(
     "/rocket-unturned-config",
     validate(RocketUnturnedConfigWriteSchema, "body"),
@@ -369,7 +365,7 @@ export function createLdmServerRouter(deps: {
     }),
   );
 
-  // ─── Phase 5（编辑器配套）配置读取端点 ─────────────────────
+  // ─── （编辑器配套）配置读取端点 ─────────────────────
 
   // GET /rocket-config — 读 Rocket.config.xml（16 字段结构化 + 原文）
   router.get(
@@ -421,70 +417,6 @@ export function createLdmServerRouter(deps: {
         changedPlugins ? { changedPlugins } : undefined,
       );
       res.json({ data: result });
-    }),
-  );
-
-  return router;
-}
-
-// ─── 全局路由（community / PAT）───────────────────────────
-
-/**
- * 全局 LDM 路由：/api/ldm ...
- *
- * - GET  /community-plugins      拉取 LDM-Community 列表
- * - POST /community-plugins/test-pat  测试 GitHub PAT
- */
-export function createLdmCommunityRouter(svc: ILdmPluginSourceService): Router {
-  const router = Router();
-  router.use(authenticateToken);
-
-  // GET /community-plugins
-  router.get(
-    "/community-plugins",
-    asyncHandler(async (req, res) => {
-      // PAT 从 header 读（X-Github-Pat）—— 不入 store，仅当前请求使用
-      const pat = (req.headers["x-github-pat"] as string | undefined) ?? null;
-      const result = await svc.listCommunityPlugins(pat);
-      res.json({ data: result });
-    }),
-  );
-
-  // POST /community-plugins/test-pat
-  router.post(
-    "/community-plugins/test-pat",
-    asyncHandler(async (req, res) => {
-      const { pat } = req.body as { pat: string };
-      const result = await svc.testPat(pat);
-      res.json({ data: result });
-    }),
-  );
-
-  // GET /community-plugins/:owner/:repo — 详情页（Phase 3）——前端详情抽屉用
-  // 注意：Express `:slug` 不匹配 `/`，改用 `:owner/:repo` 两段参数
-  router.get(
-    "/community-plugins/:owner/:repo",
-    asyncHandler(async (req, res) => {
-      const owner = req.params.owner as string | undefined;
-      const repo = req.params.repo as string | undefined;
-      if (!owner || !repo) {
-        throw new AppError(
-          "plugin-slug-invalid",
-          `插件 slug 格式错误（需 owner/repo）：${owner ?? ""}/${repo ?? ""}`,
-          400,
-        );
-      }
-      const slug = `${owner}/${repo}`;
-      const pat = (req.headers["x-github-pat"] as string | undefined) ?? null;
-      const detail = await svc.getPluginDetail(slug, pat);
-      if (!detail) {
-        throw new AppError(
-          "plugin-detail-not-found",
-          `未找到插件 ${slug}（LDM-Community 列表中无此条目）`,
-          404,
-        );
-      }
-      res.json({ data: detail });
     }),
   );
 

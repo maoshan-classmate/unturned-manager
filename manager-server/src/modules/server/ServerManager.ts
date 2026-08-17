@@ -873,7 +873,6 @@ export class ServerManager implements IServerManager {
     const entry = this.ensureServer(serverId);
     logger.warn({ serverId }, "强制停止");
 
-    // ★ Phase 2：PTY forceKill（SIGKILL bash → 内核 SIGHUP 前台进程组 U3DS 兜底终止）。
     // stopRequested 置位防 onExit 误判崩溃重启。
     entry.stopRequested = true;
     this.ptyManager.forceKill(serverId);

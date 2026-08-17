@@ -1,5 +1,7 @@
 # ADR-0006：LDM Mod 框架接入（仅配置 + 启停 + 插件来源）
 
+> **⚠ 2026-08-17 更新——本 ADR 中「插件来源」相关章节（涉及 `LdmPluginSourceService` / `CommunityPlugin` / LDM-Community 列表浏览 / GitHub PAT 测试 / `/api/ldm/community-plugins` 端点族）已整体下线**（用户决策：面板不代下载 .dll；G5 不下载边界由 `OnboardingSopCard` 第 4 步文案承载）。其余接入范围（仅配置 + 启停、Commands.dat / Config.txt 正交、上传 .dll 走 Files API 等）保持有效。
+
 > **状态**：待评审 · **日期**：2026-08-12
 > **承接**：CLAUDE.md §1（钉死 LDM）+ ADR-0003 B2 目录扫描真源 + ADR-0004 PTY 终端 owner-trust
 > **驱动源**：用户 2026-08-12「LDM Mod 框架暂未实现，需要接入」+ Serena 记忆 `session-checkpoint-2026-08-12-ldm-framework.md`
@@ -43,7 +45,7 @@
 
 | 决策点 | 选择 | 拒绝方案 | 理由 |
 |---|---|---|---|
-| **接入范围** | 仅配置 + 启停 + 插件来源 | 全接管（编译/分发/热重载/兼容性矩阵） | 编译/分发超出面板职责；LDM 无官方热重载（钉死）；兼容性矩阵维护成本无限 |
+| **接入范围** | 仅配置 + 启停 | 全接管（编译/分发/热重载/兼容性矩阵） | 编译/分发超出面板职责；LDM 无官方热重载（钉死）；兼容性矩阵维护成本无限 |
 | **LDM 安装** | ❌ 不做（引导式：用户复制 U3DS 装包自带的 Extras 到 Modules 激活） | 面板自动 cp | 遵循「不自动装」决策 |
 | **插件 .dll 分发** | ⚠️ 仅用户主动上传（Files API）；**不自动下载/同步** | 自动从 GitHub/Workshop 同步 | 二进制风险 + 编译分发不是面板职责 |
 | **改 LDM 配置生效方式** | 抽 `LdmApplyService` 薄业务层 + `ServerManager.applyChangesCore` 9 步流水线共用 | 在 `ServerManager.applyChangesCore` 加 ldmApply 分支 | backend-development.md 「重复 ≥3 模块共用→新建共享」原则（现在是 2 个：mod_apply（v2.6 仅移动部分）+ ldm_apply；预留 modpack_apply 第三处）；模块意识 = 三层结构 + 依赖注入 + destroy()。<br>**ADR-0006 v2.6 修订**：原计划「在 `applyModChanges` 加 ldmApply 分支」因 v2.6 删除 `applyModChanges` 而作废；`applyChangesCore` 改为从零抽取，母体不复用已删除的 `applyModChanges`。Mod 移动（`WorkshopApplyService.applyStaged`）与 LDM 配置写入本来就是两个不同 hook，本来就不该共用一个带移动逻辑的流水线。 |
@@ -72,7 +74,6 @@
 | Rocket.Unturned.config.xml 结构化编辑 | ✅ | 子任务发现独立文件（AutomaticSave / CharacterNameValidation / LogSuspicious / Item/Vehicle Blacklist 9 字段） |
 | Permissions.config.xml 树形编辑 | ✅ | Groups / Members / Permissions / Color / ParentGroup / Priority / Prefix / Suffix / Permission Cooldown 全字段 |
 | 插件 Configuration.xml 编辑 | ✅ | 通用 Monaco XML 编辑器（原文写 + 实时校验；不解析字段） |
-| LDM 插件来源浏览 | ⚠️ 外链 + 列表展示 | 外链 [LDM-Community](https://ldm-community.github.io/pluginlist) + 面板本地缓存公开数据 |
 | LDM 日志观察 | ✅ | 复用现有 PTY 控制台（xterm.js 已实时渲染 U3DS stdout） |
 | 空参 `/rocket` 版本信息 | ✅ | 前端「关于 LDM」卡片（**无 `/rocket info` 命令**——2026-08-12 源码核对） |
 | `/modules` U3DS 原生命令验证 | ✅ | 验证 Rocket.Unturned 模块加载状态 |
@@ -88,7 +89,6 @@ manager-server/src/modules/ldm/
 ├── LdmDiscoveryService.ts        # 读 Rocket.config.xml + Rocket.Unturned.config.xml + Permissions.config.xml + Plugins/ 目录
 ├── LdmConfigWriter.ts            # 写上述 3 个 XML 文件（原子写 + 备份 + 回滚）
 ├── LdmApplyService.ts            # 薄业务层（activeOperation 类型 / WS 事件名 / 业务 hook），调 ServerManager.applyChangesCore
-├── LdmPluginSourceService.ts     # 拉取 [LDM-Community](https://ldm-community.github.io/pluginlist) 公开插件列表（本地缓存）
 ├── LdmPluginCommandsService.ts   # PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态
 ├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（自写流式解析，零依赖）
 ├── RocketConfigXmlParser.ts      # 自写 XML 解析（保留注释/属性顺序/CDATA/嵌套）
@@ -98,18 +98,17 @@ manager-server/src/modules/server/ServerManager.ts
 └── applyChangesCore(serverId, opts)   # §5.6 抽出的 9 步流水线本体（mod_apply / ldm_apply 共用，预留第三应用方）
 
 shared/
-├── types/domain.ts                # + RocketConfig / RocketUnturnedConfig / PermissionsConfig / InstalledPlugin / LdmState / CommunityPlugin
+├── types/domain.ts                # + RocketConfig / RocketUnturnedConfig / PermissionsConfig / InstalledPlugin / LdmState
 ├── schemas/ldm.schema.ts          # 9 个 Zod schema
-└── contracts/ldm.ts               # 6 个接口：ILdmDiscoveryService + ILdmConfigWriter + ILdmApplyService + ILdmPluginSourceService + ILdmPluginCommandsService + ILdmAssemblyVersionReader
+└── contracts/ldm.ts               # 5 个接口：ILdmDiscoveryService + ILdmConfigWriter + ILdmApplyService + ILdmPluginCommandsService + ILdmAssemblyVersionReader
 
 manager-web/src/
-├── pages/LdmPage.tsx              # 4 Tab（已装插件 / 框架配置 / 权限组 / 插件来源）
+├── pages/LdmPage.tsx              # 3 Tab（已装插件 / 框架配置 / 权限组）
 ├── components/ldm/
 │   ├── InstalledTab.tsx
 │   ├── FrameworkConfigTab.tsx     # Rocket.config.xml + Rocket.Unturned.config.xml 双卡片（结构化编辑器）
 │   ├── PermissionsTab.tsx         # Permissions.config.xml 树形编辑器
-│   ├── ~~PluginConfigDialog.tsx~~  # 通用 Monaco XML 编辑器（2026-08-16 推迟到独立 Phase——每插件 schema 不同）
-│   └── PluginSourceTab.tsx        # LDM-Community 列表 + 外链到 GitHub Releases
+│   └── ~~PluginConfigDialog.tsx~~  # 通用 Monaco XML 编辑器（2026-08-16 推迟到独立 Phase——每插件 schema 不同）
 └── lib/utils.ts                   # + formatPluginVersion / parseRocketStatus 等
 ```
 
@@ -124,10 +123,7 @@ PUT    /api/servers/:id/ldm/permissions-config → ILdmConfigWriter.writePermiss
 POST   /api/servers/:id/ldm/load-plugin       → LdmPluginCommandsService（PTY /rocket load，不停服）
 POST   /api/servers/:id/ldm/unload-plugin     → LdmPluginCommandsService（PTY /rocket unload，不停服）
 POST   /api/servers/:id/ldm/apply             → ILdmApplyService.applyChanges（重启流水线）
-GET    /api/ldm/community-plugins             → ILdmPluginSourceService（LDM-Community 列表，本地缓存）
-POST   /api/ldm/community-plugins/test-pat    → ILdmPluginSourceService（PAT 测连通性，Phase 1）
 GET    /api/servers/:id/ldm/status            → ILdmDiscoveryService.getLdmStatus（Phase 3）
-GET    /api/ldm/community-plugins/:owner/:repo → ILdmPluginSourceService.getCommunityPlugin（Phase 3；`:slug` 不匹配 `/`，改两段参数）
 POST   /api/servers/:id/ldm/reload-plugin     → LdmPluginCommandsService.reloadPlugin（Phase 4，二次确认）
 GET    /api/servers/:id/ldm/plugins/search    → LdmDiscoveryService.searchPlugins（Phase 4）
 POST   /api/servers/:id/files                 → FilesService 复用（.dll 上传）

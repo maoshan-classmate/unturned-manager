@@ -181,23 +181,3 @@ export interface InstalledPlugin {
   modifiedAtIso: string;
   runtimeStatus: PluginRuntimeStatus;
 }
-
-/**
- * LDM-Community 公开插件条目（Phase 1 单端点）。
- * @field slug 唯一键（用于详情抽屉——Phase 3 才接）
- * @field name 显示名
- * @field author GitHub 仓库 owner
- * @field description 截断前 280 字
- * @field repoUrl GitHub Releases 页（点击外链）
- * @field latestVersion 来自 GitHub API releases/latest 的 tag_name；无 release 或拉取失败 = 'unknown'
- * @field updatedAtIso 仓库最近 push 时间（GitHub API /repos/{owner}/{repo} pushed_at）
- */
-export interface CommunityPlugin {
-  slug: string;
-  name: string;
-  author: string;
-  description: string;
-  repoUrl: string;
-  latestVersion: string;
-  updatedAtIso: string;
-}

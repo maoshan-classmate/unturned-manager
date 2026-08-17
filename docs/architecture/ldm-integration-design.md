@@ -1,6 +1,8 @@
 # LDM Mod 框架接入设计规格
 
 > **状态**：v0.1 设计稿（**v2.6 部分过期**——本文中所有引用 `ServerManager.applyModChanges` 的位置已随 v2.6 改动而失效：`applyModChanges` 已删除，LDM 配置应用计划改为从零抽取 `applyChangesCore`；详见 ADR-0006 §2「决策摘要」v2.6 修订栏。LDM Phase 2 实施时须重新对齐 v2.6 的 startInternal + applyStaged + writeWorkshopFileIds 三件套。） · **日期**：2026-08-12
+
+> **⚠ 2026-08-17 更新——本文 §7.5「插件来源 Tab」与对应端点（`GET /api/ldm/community-plugins`、`POST /api/ldm/community-plugins/test-pat`、`GET /api/ldm/community-plugins/:owner/:repo`）、模块 `LdmPluginSourceService`、契约 `ILdmPluginSourceService` / `CommunityPlugin` / `CommunityPluginDetail` 全部下线**（用户决策：面板不代下载 .dll，由用户自行到 GitHub Releases / 开发者官网取；G5 不下载边界保留到 `OnboardingSopCard` 第 4 步文案中）。其余章节（§7.1–§7.4 已装插件 / 框架配置 / 权限组 Tab 设计，§11 全功能盘点，§12 多期规划）保持有效。
 > **承接**：CLAUDE.md §1（钉死 LDM）+ ADR-0003 B2 目录扫描真源 + ADR-0004 PTY 终端 owner-trust
 > **驱动源**：用户 2026-08-12 诉求「LDM Mod 框架暂未实现，需要接入」
 > **关系**：`mod-management-design.md` v2.5（Steam Workshop 资源包）— 本文档**平行但独立**，不修改资源包链路
@@ -71,8 +73,8 @@
 **部署形态**：
 
 - **LDM 主框架** = U3DS 安装包内 `Extras/Rocket.Unturned/` 已自带（无需额外下载）；用户首次装 U3DS 后 `cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/` 即激活
-- **LDM 插件 .dll** = 走 **GitHub Releases + LDM-Community 列表**分发，**不上 Steam Workshop**（Workshop Asset Type 不含 Plugin 类）
-- 面板提供 Web 上传 .dll 通道 + 外链到 LDM-Community 插件市场
+- **LDM 插件 .dll** = 由用户自行下载（GitHub Releases / 开发者官网），**不上 Steam Workshop**（Workshop Asset Type 不含 Plugin 类）
+- 面板提供 Web 上传 .dll 通道（Files API）—— 不下载、不分发
 
 ### 2.2 LDM 配置文件目录布局（用户已拍板的 ServerID 内布局）
 
@@ -293,14 +295,14 @@
 | ------------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **LDM 主框架安装（首次激活）**             | ⚠️ **面板可引导 + 不自动跑 cp**    | 显示 5 步 SOP：① U3DS 装包自带 Extras/Rocket.Unturned/ ② `cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/` ③ 首次启动 U3DS 自动生成 `Servers/<ID>/Rocket/` ④ 编辑配置 ⑤ 重启生效；遵循 `decision-no-auto-install-steamcmd-u3ds.md` 决策                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **LDM 主框架更新**                         | ❌ 不做                            | U3DS 装包跟随更新；面板只读不写                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **插件 .dll 安装**                         | ⚠️ **Web 上传 .dll**（Files API）  | 走 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist) 外链 + GitHub Releases 下载 → 拖拽上传；不上 Steam Workshop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **插件 .dll 安装**                         | ⚠️ **Web 上传 .dll**（Files API）  | 用户自行从 GitHub Releases / 开发者官网下载 .dll → 拖拽上传到 `Rocket/Plugins/<Name>.dll`；不上 Steam Workshop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **插件 .dll 升级/删除**                    | ⚠️ Files API（替换/删除）          | 同上                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **插件清单展示**                           | ✅ 做                              | `readdir Servers/<ID>/Rocket/Plugins/` → `[{name, version, sizeBytes, hasConfig, modifiedAtIso, runtimeStatus}]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | **插件启用/禁用**                          | ✅ 做                              | 通过 LDM 框架：`/rocket load <name>` 或 `/rocket unload <name>` 经 PTY 终端；或改 Rocket.config.xml + 重启                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | **插件配置编辑**（Configuration.xml）      | ✅ 做                              | 各插件字段由插件 schema 决定；面板做**通用 Monaco XML 编辑器**（不做字段 schema 自动发现——schema 演进跟插件版本走，维护成本高）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **Rocket.config.xml 结构化编辑**           | ✅ 做                              | 字段表已确认（16 字段），逐字段控件                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **Permissions.config.xml 树形编辑**        | ✅ 做                              | Groups / Members / Permissions / Color / ParentGroup / Priority 全字段结构化                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **LDM 插件来源浏览**                       | ⚠️ 外链 + 列表展示                 | **外链到 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)**（不上 Steam Workshop）；面板本地缓存 LDM-Community 公开插件列表供浏览。<br>**双源融合**（2026-08-12 用户拍板）：LDM-Community 上游**无公开 JSON API**（静态 HTML 主页），**Phase 1 走 HTML 解析 + GitHub API 批量补充**——HTML 解析拿 `slug` / `name` / `author` / `description` / `repoUrl`；GitHub API 拿 `tag_name`（`latestVersion`）+ `pushed_at`（`updatedAtIso`）。**GitHub PAT 配置位置在 LdmPage「插件来源」Tab 顶部**（不是 SettingsPage）。调研报告：`claudedocs/research_ldm_community_source_2026-08-12.md` |
+| **LDM 插件来源浏览**                       | ❌ 不做                            | 面板不下载、不浏览、不缓存插件列表；引导文案改写到 `<OnboardingSopCard>` 第 4 步（"由用户自行下载"）承载                                                                                                  |
 | **改 LDM 配置生效方式**                    | ✅ PTY 终端 owner-trust 重启流水线 | `Say "保存 LDM 变更"` + `Save` + `Shutdown 10 "LDM 变更重启"` → spawn 新进程；**不调 `/rocket reload` 全局**（Issue #1794 + prohibitions 钉死）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **日志观察 LDM 启动加载/错误**             | ✅ 复用现有 PTY 控制台             | 真源锚点（2026-08-12 源码核对）：模块启动 banner = `CommandWindow.Log("Rocket Unturned v... for Unturned v...")`（`U.cs:151`）；插件加载失败日志 = `RocketPlugin.cs:132` `Logger.LogError("Failed to load X, unloading now...")`（主要路径）+ `U.cs:200` `Logger.LogException(ex, "Failed to load plugin X.")`（次要路径）；**插件加载成功无 stdout 行**——不存在 `[LDM] Loaded plugin X.Y.Z`（该字符串无源码）。前端 xterm.js 实时渲染                                                                                                                                                                                                                             |
 | **`/rocket` 命令输出解析**（插件状态列表） | ✅ 做                              | 解析 `Loaded` / `Unloaded` / `Failure` / `Cancelled` 4 状态                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -333,9 +335,8 @@ cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
 #    重要：Rocket/ 必须由首次启动自动生成，不可手写预创建
 /opt/unturned/ServerHelper.sh +InternetServer/<ServerID> -ThreadedConsole
 
-# ④ 从 LDM-Community 插件列表 (https://ldm-community.github.io/pluginlist) 下载插件 .dll
-#    或从 GitHub Releases 商业插件（Tebex 等）下载
-#    通过面板的「Mod 框架 > 已装插件 > 上传插件」拖拽上传到 Rocket/Plugins/<Name>.dll
+# ④ 由用户自行下载插件 .dll（从 GitHub Releases / 开发者官网）
+#    通过「Mod 框架 > 已装插件 > 上传插件」拖拽上传到 Rocket/Plugins/<Name>.dll
 
 # ⑤ 编辑 Rocket.config.xml / Permissions.config.xml / 各 <Plugin>.configuration.xml
 #    通过面板的「Mod 框架 > 框架配置」/「权限组」/「插件配置」结构化编辑器
@@ -365,7 +366,6 @@ manager-server/src/modules/ldm/
 ├── LdmDiscoveryService.ts        # 读 Rocket.config.xml + Rocket.Unturned.config.xml + Permissions.config.xml + Plugins/ 目录
 ├── LdmConfigWriter.ts            # 写上述 3 个 XML + 各 Configuration.xml（原子写 + 备份 + 回滚）
 ├── LdmApplyService.ts            # 薄业务层，调 ServerManager.applyChangesCore（§5.6 抽出的核心流水线）
-├── LdmPluginSourceService.ts     # 拉取 LDM-Community 公开插件列表（本地缓存，供前端展示/外链）
 ├── LdmPluginCommandsService.ts   # PTY 写 /rocket load/unload/reload + 解析 stdout 插件状态
 ├── LdmAssemblyVersionReader.ts   # PE 元数据解析读 .dll 版本号（§5.5 准确方案，零依赖）
 ├── RocketConfigXmlParser.ts      # 自写 XML 解析（保留注释/属性顺序/嵌套，与 VdfParser 同思路）
@@ -617,12 +617,12 @@ async listInstalledPlugins(serverId: ServerId): Promise<InstalledPlugin[]> {
 
 **调研结论（关键）**：LDM 插件走 **GitHub Releases + LDM-Community 列表**分发，**不上 Steam Workshop**（[Steam Workshop 主站](https://steamcommunity.com/app/304930/workshop/) Asset Type 清单里没有 Plugin 类）。前端 `ModsPage` 现有的 Workshop 浏览与 LDM 插件无关。
 
-**修改原设计**：
+**修改原设计**（2026-08-17 减法后此段已过时，保留以备历史参考）：
 
 - ❌ 删除 `?ldm=true` 端点
 - ❌ 删除 `LdmWorkshopService`
-- ✅ 新增 `LdmPluginSourceService`：定期拉取 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist) 公开数据（JSON API），面板本地缓存；前端展示 + 外链到 GitHub Releases 下载页
-- ✅ 插件下载与上传：用户从 GitHub 下载 .dll 后，通过 **Files API** 拖拽上传到 `Rocket/Plugins/<Name>.dll`
+- ❌ 删除 `LdmPluginSourceService`（LDM-Community 列表浏览 / PAT 测试 / 详情端点族已下线）
+- ✅ 插件下载由用户自行到 GitHub Releases / 开发者官网取；面板仅做 **Files API** 拖拽上传到 `Rocket/Plugins/<Name>.dll`
 
 ### 5.6 与 `applyModChanges` 的对接（A2 拍板：抽 `LdmApplyService`）
 
@@ -763,13 +763,10 @@ export type ApplyProgressEvent =
 | 6   | POST | `/api/servers/:id/ldm/load-plugin`          | 加载插件（PTY 写 `/rocket load <name>`）                  | `LoadPluginSchema`                                    | `OperationResponseSchema`               | **不停服**（LDM 支持运行时 load）       |
 | 7   | POST | `/api/servers/:id/ldm/unload-plugin`        | 卸载插件（PTY 写 `/rocket unload <name>`）                | `UnloadPluginSchema`                                  | `OperationResponseSchema`               | **不停服**                              |
 | 8   | POST | `/api/servers/:id/ldm/apply`                | 应用配置变更（重启流水线）                                | `LdmApplyRequestSchema`（{changedPlugins: string[]}） | `OperationResponseSchema`               | 走 PTY 重启                             |
-| 9   | GET  | `/api/ldm/community-plugins`                | LDM-Community 公开插件列表（缓存）                        | —                                                     | `CommunityPluginListSchema`             | 复用 LdmPluginSourceService             |
-| 10  | POST | `/api/servers/:id/files`                    | 插件 .dll 上传（Files API 复用）                          | multipart                                             | `FileUploadResponseSchema`              | **复用** FilesService；Linux 大小写校验 |
-| 11  | POST | `/api/ldm/community-plugins/test-pat`       | PAT 测连通性                                              | `X-GitHub-PAT` 请求头                                 | `OperationResponseSchema`               | Phase 1                                 |
-| 12  | GET  | `/api/servers/:id/ldm/status`               | 统一状态（LDM 主框架装没装 / Rocket/ 存在 / 插件总数）    | —                                                     | `LdmStatusSchema`                       | Phase 3                                 |
-| 13  | GET  | `/api/ldm/community-plugins/:owner/:repo`   | 插件详情（GitHub Releases 外链 + 最近版本）               | path: owner/repo                                       | `CommunityPluginDetailSchema`           | Phase 3                                 |
-| 14  | POST | `/api/servers/:id/ldm/reload-plugin`        | 单插件 reload（二次确认）                                 | `ReloadPluginSchema`                                  | `OperationResponseSchema`               | Phase 4                                 |
-| 15  | GET  | `/api/servers/:id/ldm/plugins/search`       | 按 .dll 名 / 版本筛选                                     | query: q                                              | `InstalledPlugin[]`                     | Phase 4                                 |
+| 9   | POST | `/api/servers/:id/files`                    | 插件 .dll 上传（Files API 复用）                          | multipart                                             | `FileUploadResponseSchema`              | **复用** FilesService；Linux 大小写校验 |
+| 10  | GET  | `/api/servers/:id/ldm/status`               | 统一状态（LDM 主框架装没装 / Rocket/ 存在 / 插件总数）    | —                                                     | `LdmStatusSchema`                       | Phase 3                                 |
+| 11  | POST | `/api/servers/:id/ldm/reload-plugin`        | 单插件 reload（二次确认）                                 | `ReloadPluginSchema`                                  | `OperationResponseSchema`               | Phase 4                                 |
+| 12  | GET  | `/api/servers/:id/ldm/plugins/search`       | 按 .dll 名 / 版本筛选                                     | query: q                                              | `InstalledPlugin[]`                     | Phase 4                                 |
 | 16  | WS   | `ldm_apply_progress`                        | 重启进度事件                                              | —                                                     | 见 §6.4                                 | —                                       |
 
 ### 6.2 Zod Schema（`shared/schemas/ldm.schema.ts`）
@@ -1013,8 +1010,7 @@ export interface ILdmApplyService {
 LdmPage
 ├── Tab "已装插件"   ← 插件列表 + 加载/卸载按钮（走 /rocket 命令）+ 配置按钮
 ├── Tab "框架配置"   ← Rocket.config.xml + Rocket.Unturned.config.xml 双卡片（结构化）
-├── Tab "权限组"     ← Permissions.config.xml 树形编辑器
-└── Tab "插件来源"   ← LDM-Community 列表 + 外链 GitHub Releases + .dll 上传
+└── Tab "权限组"     ← Permissions.config.xml 树形编辑器
 ```
 
 **侧栏导航**：在现有侧栏加「Mod 框架」入口（与「模组管理」并列）。
@@ -1071,12 +1067,11 @@ LdmPage
 
 树形编辑器：权限组（Groups）→ 成员（Members）→ 权限（Permissions）+ 颜色 / 父组 / 优先级 / 前后缀 / 冷却。直接映射 XML 结构，保存走结构化写接口（`PUT /ldm/permissions-config`）。
 
-### 7.5 插件来源 Tab（替换旧「工作坊 Tab」——LDM 不上 Workshop）
+### 7.5 ~~插件来源 Tab（替换旧「工作坊 Tab」——LDM 不上 Workshop）~~【2026-08-17 下线】
 
-**不复用 `ModsPage`**（Workshop 搜索只含资源包，Asset Type 无 Plugin 类）：
-
-- 展示 [LDM-Community 插件列表](https://ldm-community.github.io/pluginlist)（`GET /api/ldm/community-plugins`，本地缓存）
-- 每行外链「前往 GitHub Releases 下载」→ 用户下载 .dll
+> 整段设计已于 2026-08-17 废弃。原先计划在 LdmPage 第 4 Tab 提供 LDM-Community 列表浏览、详情抽屉、PAT 测试、上一键 .dll。**现改为：在 LdmPage 顶部 `<OnboardingSopCard>` 第 4 步以纯文案告知「由用户自行下载 .dll」，无独立后端端点 / 模块 / 契约。** G5 不下载边界保留（写到 `OnboardingSopCard.tsx`）。
+>
+> 保留此节作为历史设计备查——若未来恢复，需先写新 ADR 推翻当前决策。
 - 拖拽上传 .dll 到 `Rocket/Plugins/<Name>.dll`（Files API 复用；配置目录 `Plugins/<Name>/` 由框架首次加载自动创建，目录名须与 .dll 同名）
 
 **架构决策**（2026-08-12 用户拍板）：
@@ -1212,8 +1207,8 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | F3                                | LDM 主框架版本（空参 `/rocket`）                                                                                                  | stdout 解析                                                                | ✅                    | **与 D2 同一能力，归 Phase 2**（Phase 1 前端 2 Tab 无落位）；「关于 LDM」卡片显示 |
 | F4                                | 各插件兼容 U3DS 版本信息                                                                                                          | 插件仓库 README / GitHub Releases                                          | ⚠️ 只展示不验证       | 不接管兼容性矩阵（每 LDM × 每插件 × 每 U3DS = O(n³)，维护成本无限）               |
 | **G. 插件来源 / 生态**            |                                                                                                                                   |                                                                            |                       |                                                                                   |
-| G1                                | LDM-Community 公开插件列表                                                                                                        | https://ldm-community.github.io/pluginlist                                 | ✅                    | 进程内缓存 5min（与 mod 浏览同模式）                                              |
-| G2                                | 外链到 GitHub Releases 下载页                                                                                                     | 列表项点击外链                                                             | ✅                    | 浏览器新标签打开，**面板不下载 .dll**（二进制风险）                               |
+| G1                                | LDM-Community 公开插件列表                                                                                                        | https://ldm-community.github.io/pluginlist                                 | ❌                    | 面板不下载、不浏览、不缓存插件列表（2026-08-17 减法下线）                                |
+| G2                                | 外链到 GitHub Releases 下载页                                                                                                     | 列表项点击外链                                                             | ⚠️ 仅文案指引         | 用户自行在浏览器打开；面板不下载 .dll（保留为「OnboardingSopCard 第 4 步」文案）       |
 | G3                                | Web 上传 .dll                                                                                                                     | Files API（已存在）                                                        | ✅                    | 见 B1                                                                             |
 | G4                                | Steam Workshop 插件分发                                                                                                           | Steam Workshop                                                             | ❌                    | Workshop Asset Type 不含 Plugin 类，实测 0 结果                                   |
 | G5                                | 自动从 GitHub Releases 同步 .dll                                                                                                  | GitHub API                                                                 | ❌                    | 二进制风险 + 编译/分发不是面板职责                                                |
@@ -1252,7 +1247,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 | 控制台命令 D1–D5   | PTY stdout 解析                  | ADR-0004 Phase 3 终端（已存在）                         |
 | 多实例隔离 E1      | `pathResolver.resolveServerPath` | 已存在                                                  |
 | 信息查询 F1–F4     | PTY + PE 元数据                  | 新增 `LdmAssemblyVersionReader`（自写流式解析，零依赖） |
-| 插件来源 G1–G3     | 缓存列表 + Files API             | 同 mod 浏览 5min 缓存模式                               |
+| 插件来源 G1–G3     | 缓存列表 + Files API             | G1/G3 2026-08-17 下线（面板不下载）；仅保留 G2 文案引导 |
 | 日志 H1–H2         | PTY 控制台复用                   | ConsolePage（已存在）                                   |
 
 **与 `mod-management-design.md` v2.5 的边界**：
@@ -1273,7 +1268,7 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 期                     | 主题              | 能力切片                                                | 端点                | 前端组件                                                                 | 后端模块                                                                                                   | 工作量         |
 | ---------------------- | ----------------- | ------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------- |
-| **Phase 1 — MVP**      | 看得到 + 启停得了 | F1 / F2 + B1 / B3 + **G1 双源融合** + D1                | 4 端点 + 1 PAT-test | `LdmPage` **2 Tab**（已装插件 / 插件来源，Tab 2 顶部固定 GitHub PAT 卡） | `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` / `LdmPluginSourceService` | 10–12 人天     |
+| **Phase 1 — MVP**      | 看得到 + 启停得了 | F1 / F2 + B1 / B3 + D1                | 4 端点 + 1 PAT-test | `LdmPage` **1 Tab**（已装插件）| `LdmDiscoveryService` / `LdmPluginCommandsService` / `LdmAssemblyVersionReader` | 10–12 人天     |
 | **Phase 2 — 完整配置** | 改得了配置        | A1 / A2 / A3 / A4 / C1–C4 + B2 / D2 / D3 / D4 / H1      | +6 端点（=10）      | 4 Tab 齐                                                                 | + `LdmConfigWriter` / `RocketConfigXmlParser` / `LdmApplyService` / `applyChangesCore` 抽出                | +12–15 人天    |
 | **Phase 3 — 生态接入** | 找得到 + 下载方便 | G2 / G3 + 高级 UX（I1 引导 SOP 卡片 / F4 兼容信息展示） | +2 端点（=12）      | 引导卡片 + 详情链接                                                      | 无新模块（仅前端+已有模块拼接）                                                                            | +5–7 人天      |
 | **Phase 4 — 高级能力** | 已知边界的能力    | B4 单插件 reload + 插件搜索/筛选                        | +2 端点（=14）      | 二次确认弹窗 + 筛选 chip                                                 | `LdmPluginCommandsService` 增 reload 方法                                                                  | +3–5 人天      |
@@ -1285,13 +1280,13 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 维度         | 内容                                                                                                                                                                                                                                                                                                                               |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **能力**     | F1（运行时状态）+ F2（.dll 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ **G1 走 HTML 解析 + GitHub API 双源融合**（用户拍板 2026-08-12；PAT 放 LdmPage Tab 顶部）+ D1（`/rocket plugins` 解析）                                                                                                                                |
-| **端点**     | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`<br>`GET /api/ldm/community-plugins`（**双源融合**响应）<br>`POST /api/ldm/community-plugins/test-pat`（PAT 测连通性）                                                                                 |
-| **前端**     | `<LdmPage>` 2 Tab：①「已装插件」②「插件来源」**顶部固定 GitHub PAT 配置卡**（PAT 输入 + 测试按钮 + 限流状态显示）。架构层决策：PAT 不进 SettingsPage。<br>**B1 上传入口闭环（2026-08-15）**：「已装插件」Tab 顶部加 `UploadButton`（调 Files API `POST /files/raw` 传 .dll 到 `Rocket/Plugins/`，后端白名单允许）；「插件来源」Tab 顶部加 `InstallStepsCard`（复用 `components/shared/InfoCard`，参考 ConfigPage 「💡 配置提示」卡样式）说明 5 步下载-上传工作流；CommunityCard 加「上传到此实例」按钮。**G5 守住**：面板不下载 .dll，文件来自用户本地选择。 |
-| **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（PE 元数据流式解析，零依赖） / `LdmPluginSourceService`（HTML 解析 + GitHub API 批量补充 + 5min 进程内缓存）                                                                            |
-| **不做**     | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3）                                                                                                                                                                                                                                       |
-| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 8 用例 / `LdmPluginSourceService` ≥ 13 用例含双源融合 + 限流处理 / `LdmPluginCommandsService` ≥ 8 用例 / `LdmDiscoveryService` ≥ 7 用例 = 36 用例）；E2E「上传 .dll → 列表出现 → load → 状态徽章变更 → unload → 状态徽章变更」+ E2E「配 PAT → 拉双源列表 → 限流显示 5000/h」 |
-| **详细规格** | Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）<br>调研证据：`claudedocs/research_ldm_community_source_2026-08-12.md`                                                                                                                                                                                                |
+| **能力**     | F1（运行时状态）+ F2（.dll 版本）+ B1（.dll 上传/删除）+ B3（load/unload）+ D1（`/rocket plugins` 解析）                                                                                                                                |
+| **端点**     | `GET /api/servers/:id/ldm/installed`<br>`POST /api/servers/:id/ldm/load-plugin`<br>`POST /api/servers/:id/ldm/unload-plugin`                                                                                 |
+| **前端**     | `<LdmPage>` 1 Tab：「已装插件」。**B1 上传入口闭环（2026-08-15）**：「已装插件」Tab 顶部加 `UploadButton`（调 Files API `POST /files/raw` 传 .dll 到 `Rocket/Plugins/`）。**G5 守住**：面板不下载 .dll，文件来自用户本地选择（2026-08-17 减法后插件来源 Tab / CommunityCard / InstallStepsCard 全部下线，安装步骤改写到 `<OnboardingSopCard>` 第 4 步）。 |
+| **后端模块** | `LdmDiscoveryService`（只读 `Plugins/` 目录） / `LdmPluginCommandsService`（PTY `load/unload` + stdout 解析） / `LdmAssemblyVersionReader`（PE 元数据流式解析，零依赖）                                                                            |
+| **不做**     | 配置 XML 编辑（A1–A4 全部留给 Phase 2） / 重启流水线（Phase 2 才需要） / 引导 SOP（Phase 3） / LDM-Community 列表浏览（2026-08-17 减法）                                                                                                                                                                                                                                       |
+| **验证门槛** | typecheck 0；单测 ≥ 80%（`LdmAssemblyVersionReader` ≥ 8 用例 / `LdmPluginCommandsService` ≥ 8 用例 / `LdmDiscoveryService` ≥ 7 用例 = 23 用例）；E2E「上传 .dll → 列表出现 → load → 状态徽章变更 → unload → 状态徽章变更」 |
+| **详细规格** | Phase 1 实施落档（`LdmDiscoveryService.ts` + `LdmPluginCommandsService.ts` + `LdmAssemblyVersionReader.ts` + 测试）                                                                                                                                                                                                |
 
 ### 12.3 Phase 2 — 完整配置（+12–15 人天）
 
@@ -1313,9 +1308,9 @@ WS 推 ldm_apply_progress {stage: 'broadcasting' → ... → 'ready'}
 
 | 维度         | 内容                                                                                                                                                                                                               |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **能力**     | G2（外链 GitHub Releases）+ G3（详情页跳转）+ I1（5 步 SOP 引导卡片）+ F4（兼容信息只展示）                                                                                                                        |
-| **端点**     | + 2 端点 = **12 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）<br>`GET /api/ldm/community-plugins/:owner/:repo`（详情页：GitHub Releases 外链 + 最近版本） |
-| **前端**     | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...）+ 「插件来源 Tab」增强（详情抽屉 + 版本时间线 + 发布说明（Release Notes）预览）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新）       |
+| **能力**     | I1（5 步 SOP 引导卡片）+ F4（兼容信息只展示）                                                                                                                        |
+| **端点**     | + 1 端点 = **8 端点**：<br>`GET /api/servers/:id/ldm/status`（统一状态：LDM 主框架是否装 / Rocket/ 目录是否存在 / 插件总数）                                                                                  |
+| **前端**     | `<LdmPage>` 加「引导 SOP」卡片（5 步 + 复制按钮：cp -r ...；插件下载步骤改写到 SOP 第 4 步）+ 顶部「LDM 状态」卡片（显示 Rocket.Unturned 是否加载 + 插件总数 + 是否有更新）       |
 | **后端模块** | 无新模块——纯前端 + 复用 `LdmDiscoveryService` 增 1 方法 `getLdmStatus(serverId)`                                                                                                                                   |
 | **依赖**     | 必须 Phase 2 完成（状态卡片依赖 Discovery 完整数据）                                                                                                                                                               |
 | **不做**     | 自动下载 .dll / Tebex 集成 / 兼容性矩阵自动校验                                                                                                                                                                    |

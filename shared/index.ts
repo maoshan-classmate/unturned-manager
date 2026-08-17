@@ -65,10 +65,8 @@ export type { IU3dsStatusProvider } from "./contracts/u3ds.js";
 export type {
   ILdmDiscoveryService,
   ILdmPluginCommandsService,
-  ILdmPluginSourceService,
   ILdmAssemblyVersionReader,
   LdmRuntimeStatusReader,
-  // Phase 2a 新增
   IRocketConfigXmlParser,
   ILdmConfigWriter,
   RocketConfigFields,
@@ -78,13 +76,9 @@ export type {
   XmlNode,
   XmlNodeType,
   LdmConfigWriteResult,
-  // Phase 2b 新增
   ILdmApplyService,
   LdmApplyResult,
-  // Phase 3 新增
   LdmStatus,
-  CommunityPluginDetail,
-  // Phase 5（编辑器配套）新增
   ILdmConfigReader,
   LdmConfigReadResult,
 } from "./contracts/ldm.js";

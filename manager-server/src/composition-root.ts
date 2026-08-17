@@ -18,7 +18,6 @@ import {
   type IU3dsStatusProvider,
   type ILdmDiscoveryService,
   type ILdmPluginCommandsService,
-  type ILdmPluginSourceService,
   type ILdmConfigWriter,
   type ILdmConfigReader,
   type ILdmApplyService,
@@ -52,7 +51,6 @@ import { LdmConfigReader } from "./modules/ldm/LdmConfigReader.js";
 import { LdmConfigWriter } from "./modules/ldm/LdmConfigWriter.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
-import { LdmPluginSourceService } from "./modules/ldm/LdmPluginSourceService.js";
 import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
@@ -74,16 +72,12 @@ export interface AppContainer {
   ptyManager: IPtyManager;
   sessionManager: ISessionManager;
   u3dsStatus: IU3dsStatusProvider;
-  // LDM（Mod 框架）Phase 1——3 模块 + 1 个 reader（独立于 PtyManager/RocketRuntimeReader）
+  // LDM（Mod 框架）——3 模块 + 1 个 reader（独立于 PtyManager/RocketRuntimeReader）
   ldmVersionReader: LdmAssemblyVersionReader;
   ldmDiscovery: ILdmDiscoveryService;
   ldmCommands: ILdmPluginCommandsService;
-  ldmSource: ILdmPluginSourceService;
-  // Phase 2a：LDM 配置写入服务（依赖共享 AtomicFileWriter + RocketConfigXmlParser）
   ldmConfigWriter: ILdmConfigWriter;
-  // Phase 5：LDM 配置读取服务（编辑器配套，复用 RocketConfigXmlParser）
   ldmConfigReader: ILdmConfigReader;
-  // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送）
   ldmApplyService: ILdmApplyService;
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
   itemService: IItemService;
@@ -93,7 +87,7 @@ export function buildContainer(db: Database.Database): AppContainer {
   // ── 基础设施层 ──────────────────────────────────────
   const fileLock = new FileLockProvider();
   const processSupervisor = new ProcessSupervisor();
-  // ★ ADR-0004 Phase 1：U3DS 是 TTY-only 进程——PTY 模拟让 U3DS 走 ANSI 色彩进度条
+  // ★ ADR-0004 ：U3DS 是 TTY-only 进程——PTY 模拟让 U3DS 走 ANSI 色彩进度条
   // （GSM3 同款依赖）。ProcessSupervisor 保留作非 PTY spawn（SteamCMD execFile/进程）
   const ptyManager = new PtyManager();
 
@@ -124,16 +118,15 @@ export function buildContainer(db: Database.Database): AppContainer {
   const workshopDelete = new WorkshopDeleteService(workshopAcf, configService);
   const logStreamer = new LogStreamer(broadcaster, processSupervisor);
 
-  // Phase 7：终端会话持久化（1:1 GSM3 TerminalSessionManager）
   const sessionManager = new SessionManager(logger, config.dataDir);
 
   // Unturned 服务端（U3DS）安装状态查询器——读启动脚本 + Status.json + 安装清单
   const u3dsStatus = new U3dsStatusProvider(logger);
 
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
-  // ★ ADR-0004 Phase 2：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
-  // ★ ADR-0004 Phase 6：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
-  // ★ ADR-0005 Phase 7：注入 sessionManager——PTY spawn/exit 时调 saveSession / setSessionActive
+  // ★ ADR-0004 ：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
+  // ★ ADR-0004 ：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
+  // ★ ADR-0005 ：注入 sessionManager——PTY spawn/exit 时调 saveSession / setSessionActive
   serverManager = new ServerManager(
     db,
     new ServerDiscovery(),
@@ -151,10 +144,9 @@ export function buildContainer(db: Database.Database): AppContainer {
   const itemService = new ItemService(db);
   itemService.seedBuiltinItems();
 
-  // ── LDM Mod 框架 Phase 1 模块 ─────────────────────────────────
+  // ── LDM Mod 框架  模块 ─────────────────────────────────
   const ldmVersionReader = new LdmAssemblyVersionReader();
   // LdmRuntimeStatusReader 当前返回空对象（runtimeStatus 全部 unknown）——
-  // Phase 2 接 PtyManager 真实监听 /rocket plugins 输出解析。
   const ldmRuntimeStatusReader = async () => ({});
   const ldmDiscovery = new LdmDiscoveryService(
     ldmVersionReader,
@@ -165,17 +157,13 @@ export function buildContainer(db: Database.Database): AppContainer {
     serverManager as unknown as Pick<IServerManager, "getState">,
     ldmRuntimeStatusReader,
   );
-  const ldmSource = new LdmPluginSourceService();
 
-  // Phase 2a：LDM 配置写入服务（共享 AtomicFileWriter + RocketConfigXmlParser）
   const atomicFileWriter = new AtomicFileWriter(fileLock);
   const rocketConfigXmlParser = new RocketConfigXmlParser();
   const ldmConfigWriter = new LdmConfigWriter(atomicFileWriter, rocketConfigXmlParser);
 
-  // Phase 5：LDM 配置读取服务（编辑器配套，复用同一个 parser）
   const ldmConfigReader = new LdmConfigReader(rocketConfigXmlParser);
 
-  // Phase 2b：LDM 应用变更服务（薄业务层 + WS 推送 ldm_apply_progress）
   const ldmApplyService = new LdmApplyService(
     serverManager,
     ldmCommands,
@@ -321,7 +309,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmVersionReader,
     ldmDiscovery,
     ldmCommands,
-    ldmSource,
     ldmConfigWriter,
     ldmConfigReader,
     ldmApplyService,

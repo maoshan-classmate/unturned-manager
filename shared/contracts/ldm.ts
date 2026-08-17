@@ -1,5 +1,5 @@
 import type { ServerId } from "../types/branded.js";
-import type { InstalledPlugin, CommunityPlugin, PluginRuntimeStatus } from "../types/domain.js";
+import type { InstalledPlugin, PluginRuntimeStatus } from "../types/domain.js";
 
 /**
  * LDM 运行时状态读取器——实例 RUNNING 时同步解析一次 `/rocket plugins` 填充 runtimeStatus。
@@ -156,66 +156,6 @@ export interface ILdmPluginCommandsService {
   readModulesState(
     serverId: ServerId,
   ): Promise<{ rocketUnturnedLoaded: boolean; raw: string }>;
-}
-
-/**
- * LDM 插件来源服务（LDM-Community 公开列表）。
- */
-export interface ILdmPluginSourceService {
-  /**
-   * 拉取 LDM-Community 公开插件列表——HTML 解析 + GitHub API 双源融合，5min 进程内缓存。
-   * @param pat - GitHub PAT（可选；用户从 LdmPage 「插件来源」Tab 顶部配置）；null = 匿名调用
-   * @returns 列表 + 缓存元数据
-   * @throws AppError('community-source-unreachable') 上游不可达且无 stale 缓存
-   * @throws AppError('community-source-malformed') 上游 HTML 结构异常或 0 plugin
-   * @throws AppError('community-source-rate-limited') GitHub API 二次调用全部 403 限流
-   */
-  listCommunityPlugins(pat: string | null): Promise<{
-    plugins: CommunityPlugin[];
-    fetchedAtIso: string;
-    stale: boolean;
-  }>;
-
-  /**
-   * 测试 GitHub PAT 连通性——调 /rate_limit 返回限流配额。
-   * 测试路径不抛 AppError——前端按钮反馈专用结构。
-   * @param pat - GitHub PAT；空字符串视为匿名调用
-   * @returns ok / code / rateLimit / message（code 区分 github-pat-invalid | network-error）
-   */
-  testPat(pat: string): Promise<{
-    ok: boolean;
-    code: "github-pat-invalid" | "network-error" | null;
-    rateLimit: { limit: number; remaining: number; reset: number } | null;
-    message: string | null;
-  }>;
-
-  /**
-   * 插件详情（Phase 3）——前端详情抽屉用。
-   * @param slug - 仓库 slug（如 "XanderCodes/AppleAdminControl"）
-   * @param pat - GitHub PAT（可选；提升限流）
-   * @returns 详情；找不到 / 不可达返回 null
-   */
-  getPluginDetail(
-    slug: string,
-    pat: string | null,
-  ): Promise<CommunityPluginDetail | null>;
-}
-
-/**
- * LDM 社区插件详情——Phase 3 GET /api/ldm/community-plugins/:slug 响应。
- */
-export interface CommunityPluginDetail {
-  slug: string;
-  name: string;
-  author: string;
-  description: string;
-  repoUrl: string;
-  latestVersion: string;
-  updatedAtIso: string;
-  /** GitHub Releases URL——前端「下载 .dll」外链按钮用（由 caller 判定是否有 Release） */
-  releasesUrl: string;
-  /** GitHub Releases body 截断（≤ 500 字）——详情抽屉「发布说明」展示 */
-  releaseNotes: string | null;
 }
 
 /**

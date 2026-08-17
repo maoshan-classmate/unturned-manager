@@ -96,11 +96,6 @@ export function useConsole(
 
   const sendCommand = useCallback(
     async (command: string, _confirmed = false): Promise<string | null> => {
-      // RCON 通道已删除——命令经 PTY 终端 owner-trust 模型执行。
-      // 走 WS terminal_input（与按键输入同链路），不再 round-trip REST。
-      // 危险指令门控由前端 ConsolePage 的 ConfirmDialog 拦截（confirmed 参数保留兼容）。
-
-      // 照搬 MCSManager useTerminal.ts sendCommand 的 socket?.connected 检查：
       // 连接状态为 false 时直接拒绝发送，避免重连竞争窗口内的 silent fail。
       if (!connected) {
         sinks.onChunk?.("[错误] 控制台未连接，无法发送命令\n");
@@ -112,10 +107,6 @@ export function useConsole(
         historyRef.current.shift();
       }
 
-      // 命令末尾拼换行符——服务端控制台读取线程以 LF 为行终止符（Console.ReadLine()）。
-      // 回车符（\r）在终端模式改变后不再触发 ICRNL 映射、不触发行结束，命令会送达
-      // 服务端但 ReadLine 阻塞不返回，表现为「只有首条命令生效」。换行符与启动命令
-      // 同终止符，任何终端模式下都能触发行结束。
       // send 返回 false = 底层连接未就绪（兜底一层）
       const sent = send({
         type: "terminal_input",

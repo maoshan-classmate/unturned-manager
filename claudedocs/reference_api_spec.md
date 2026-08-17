@@ -16,7 +16,7 @@
 | Config | `pages/ConfigPage.tsx` | 基本设置/高级设置/Mod 列表 三 Tab 编辑器 | config/* |
 | Files | `pages/FilesPage.tsx` | 文件浏览/上传/新建/删除/重命名 | servers/:id (files 域) |
 | ServerSetup | `pages/ServerSetupPage.tsx` | 实例管理 + SteamCMD 状态/更新 | servers + steamcmd |
-| Settings | `pages/SettingsPage.tsx` | 5 张卡片（账户/安全/网页/日志/默认值） | — |
+| Settings | `pages/SettingsPage.tsx` | 4 张卡片（账户/安全/网页/日志） | — |
 | Permissions | `pages/`（路由重定向到 Files） | 占位 | — |
 
 ---
@@ -96,10 +96,10 @@
 | GET | `/api/servers/:id/ldm/installed` | 列已装插件（LDM 激活检测 + 插件目录扫描 + PE 元数据） |
 | POST | `/api/servers/:id/ldm/load-plugin` | PTY 写 `/rocket load <name>`，10s 超时 |
 | POST | `/api/servers/:id/ldm/unload-plugin` | PTY 写 `/rocket unload <name>`，10s 超时 |
-| GET | `/api/ldm/community-plugins` | LDM-Community 列表 + GitHub 元数据补全，5min 缓存 |
-| POST | `/api/ldm/community-plugins/test-pat` | 测试 GitHub PAT（X-Github-Pat header 传入） |
 
-**真实数据形态**：`InstalledPlugin` 6 字段（name/version/sizeBytes/hasConfig/modifiedAtIso/runtimeStatus）；runtimeStatus 5 值（loaded/unloaded/failure/cancelled/unknown）；`CommunityPlugin` 7 字段（slug/name/author/description/repoUrl/latestVersion/updatedAtIso）。
+> ⚠ 2026-08-17 更新：以下 2 端点（`/api/ldm/community-plugins`、`/api/ldm/community-plugins/test-pat`、`/api/ldm/community-plugins/:owner/:repo`）已下线；`LdmPluginSourceService` 模块、契约 `CommunityPlugin` / `CommunityPluginDetail` 同步删除。面板不再代下载 .dll，由用户到 GitHub Releases / 开发者官网自取，安装步骤在 LdmPage 顶部 `<OnboardingSopCard>` 第 4 步以纯文案说明。
+
+**真实数据形态**：`InstalledPlugin` 6 字段（name/version/sizeBytes/hasConfig/modifiedAtIso/runtimeStatus）；runtimeStatus 5 值（loaded/unloaded/failure/cancelled/unknown）。
 
 **前端入口**：左侧导航「Mod 框架」→ `/<serverId>/ldm`（LdmPage.tsx）。PAT 走 localStorage 兜底，不进后端。
 

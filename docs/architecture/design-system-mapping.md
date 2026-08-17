@@ -123,7 +123,7 @@ theme: {
 | `2:6` | 🎨 Config（5 子页 stack：Commands/Config.txt/Workshop/OpenMod/RocketMod） | `/config/[tab]` | ✅ P0（**做 Commands.dat 一栏；2026-08-12 LDM 选型后 OpenMod/RocketMod 两个 Tab 规划职责由 LdmPage 取代**（见 ldm-integration-design §7.5——LDM 插件不上 Workshop）；Workshop Tab 保留做 WorkshopDownloadConfig.json 下载管理） |
 | `3:117` | 🎨 Server Setup | `/server-setup` | ✅ P0（**核心差异化**） |
 | `12:16326` | 🎨 Files | `/files` | ✅ **P0**（**骨干功能**——文件管理/上传/上下文菜单/权限对话框都完整画了，收回 P0） |
-| `23:19917` | 🎨 System Settings | `/settings` | ⏳ **P1**（账户/安全/网页/日志/默认值 5 卡做完就上） |
+| `23:19917` | 🎨 System Settings | `/settings` | ⏳ **P1**（账户/安全/网页/日志 4 卡做完就上） |
 | `5:2` | 🧩 Components | — | （仅供 Figma 用） |
 | `8:1742` / `8:1563` | shadcn-ui-颜色 / 字体排版 | — | （参考） |
 | `9:15632` | 🧩 Icon Refs | — | （设计稿） |
@@ -138,7 +138,9 @@ theme: {
 
 **实现侧建议**：要么用同一个 Page + 5 个 Frame 互斥（visible 切换）；要么存 5 张图片备查。**代码侧只实现 Commands.dat 一个 Tab 做 v1 demo，其他 4 个 v1.1 后做**。
 
-> ⚠️ **2026-08-12 更新**：LDM 选型定死（commit `c5f2ac8`）后，Figma 的 Workshop/OpenMod/RocketMod 三个 Tab 的**规划职责已转移**——LDM 接入方案（ldm-integration-design §7）定义独立 `<LdmPage>`（4 Tab：已装插件/框架配置/权限组/插件来源），Config 页保持 Commands.dat + Config.txt + Workshop 下载管理。OpenMod/RocketMod Tab 不再实现。
+> ⚠️ **2026-08-12 更新**：LDM 选型定死（commit `c5f2ac8`）后，Figma 的 Workshop/OpenMod/RocketMod 三个 Tab 的**规划职责已转移**——LDM 接入方案（ldm-integration-design §7）定义独立 `<LdmPage>`（3 Tab：已装插件/框架配置/权限组），Config 页保持 Commands.dat + Config.txt + Workshop 下载管理。OpenMod/RocketMod Tab 不再实现。
+
+> ⚠️ **2026-08-17 更新**：原 LdmPage 第 4 Tab「插件来源」与对应的 `LdmPluginSourceService` / 4 后端端点 / 详情抽屉全部下线（用户决策：面板不代下载 .dll，由用户在 GitHub Releases 自取；LDM-Community 列表浏览、PAT 测试、上传到实例卡片均移除）。安装步骤改写到 `<OnboardingSopCard>` 第 4 步。
 
 ### 5.2 Files 页面真实结构（收回 P0）
 
@@ -180,13 +182,11 @@ theme: {
 | 安全配置 | `23:19978` | 550 × 240 | 凭据加密 / 速率限制 / CSP |
 | 网页设置 | `23:19979` | 550 × 160 | 主题 / 语言 / 默认页 |
 | 面板日志 | `23:19980` | 550 × 160 | 日志级别 / 滚动大小 / 导出按钮 |
-| 游戏默认值 | `23:19981` | 550 × 68 | 新开服时默认端口/难度/视角 |
 
 **P1 实现清单（按设计稿优先级）**：
 1. 改密码（用 Argon2id 重 hash）
 2. 日志级别切换（pino level enum）
 3. 主题切换（`light` / `dark` —— shadcn `next-themes` 集成）
-4. 默认值写入 `data/config.json` 文件
 
 **Settings 是 P1 不是 P0 的理由**：这些卡片**全部不阻塞 Mods / Server Setup / Files 的核心流程**。Settings 是「用得着、不紧急、还得对 UI 一遍跑一遍验证」。
 

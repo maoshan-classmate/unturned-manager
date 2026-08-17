@@ -75,14 +75,10 @@ export function useServer(): UseServerReturn {
   }, []);
 
   // 实例列表只挂载时拉取一次——增删后由 addServer/removeServer 内部 refresh，
-  // 避免轮询覆盖本地操作；状态实时变化由 WebSocket 推送（★ ADR-0004 Phase 5：listener 接管）。
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // ★ ADR-0004 Phase 5：订 WS state_change → 收到后只更新对应 serverId 的 state 字段
-  // （不发整张表重拉——后端 broadcast 一次 = 前端一次 setState）。
-  // ★ ws-wrapper-design §3.6：按类型订阅（事件总线按 type 分发，不再每条消息都过一遍过滤器）。
   useEffect(() => {
     const unsubscribe = subscribe("state_change", (msg) => {
       const serverId = msg.serverId;

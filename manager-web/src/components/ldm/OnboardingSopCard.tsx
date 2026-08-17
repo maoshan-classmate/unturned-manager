@@ -109,8 +109,8 @@ export function OnboardingSopCard() {
             </div>
           </li>
           <li>
-            从 LDM-Community 列表下载插件 .dll（GitHub Releases）→ 到「已装插件」Tab 点
-            「上传 .dll」按钮上传
+            由用户自行下载插件 .dll（从插件项目的 GitHub Releases 或开发者官网）→ 到「已装插件」Tab 点
+            「上传 .dll」按钮上传（面板不会自动下载 .dll，以避免引入不受信任的二进制）
           </li>
           <li>
             编辑框架配置 → 点「应用变更」，重启后生效

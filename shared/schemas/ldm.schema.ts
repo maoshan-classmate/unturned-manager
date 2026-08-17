@@ -53,41 +53,7 @@ export const PluginCommandResponseSchema = z.object({
 });
 export type PluginCommandResponse = z.infer<typeof PluginCommandResponseSchema>;
 
-/**
- * @phase1 GET /api/ldm/community-plugins 响应中的单条插件
- */
-export const CommunityPluginSchema = z.object({
-  slug: z.string(),
-  name: z.string(),
-  author: z.string(),
-  description: z.string(),
-  repoUrl: z.string().url(),
-  latestVersion: z.string(),
-  updatedAtIso: z.string().datetime(),
-});
-export type CommunityPluginDto = z.infer<typeof CommunityPluginSchema>;
-
-/**
- * @phase1 GET /api/ldm/community-plugins 响应包装
- */
-export const CommunityPluginsResponseSchema = z.object({
-  plugins: z.array(CommunityPluginSchema),
-  /** 缓存元数据：前端「刷新」按钮 hover 显示「N 分钟前更新」 */
-  fetchedAtIso: z.string().datetime(),
-  /** fetch 失败但用 stale 缓存兜底时 = true；UI 提示「LDM-Community 不可达，正在展示缓存」 */
-  stale: z.boolean(),
-});
-export type CommunityPluginsResponse = z.infer<typeof CommunityPluginsResponseSchema>;
-
-/**
- * @phase1 POST /api/ldm/community-plugins/test-pat 请求
- */
-export const TestPatRequestSchema = z.object({
-  pat: z.string().optional().default(''),
-});
-export type TestPatRequest = z.infer<typeof TestPatRequestSchema>;
-
-// ─── LDM Phase 2a 契约 ─────────────────────────────────
+// ─── LDM 配置写入契约 ─────────────────────────────────
 
 /**
  * @phase2a Rocket.config.xml 16 字段结构化写请求
@@ -196,26 +162,7 @@ export const LdmStatusSchema = z.object({
 });
 export type LdmStatus = z.infer<typeof LdmStatusSchema>;
 
-/**
- * @phase3 GET /api/ldm/community-plugins/:slug 响应
- * 社区插件详情——前端详情抽屉用
- */
-export const CommunityPluginDetailSchema = z.object({
-  slug: z.string(),
-  name: z.string(),
-  author: z.string(),
-  description: z.string(),
-  repoUrl: z.string().url(),
-  latestVersion: z.string(),
-  updatedAtIso: z.string().datetime(),
-  /** GitHub Releases URL——前端「下载 .dll」外链按钮用 */
-  releasesUrl: z.string().url(),
-  /** GitHub Releases body 截断（≤ 500 字）——详情抽屉「发布说明」展示 */
-  releaseNotes: z.string().max(500).nullable(),
-});
-export type CommunityPluginDetail = z.infer<typeof CommunityPluginDetailSchema>;
-
-// ─── LDM Phase 3-3 契约 ────────────────────────────────
+// ─── LDM 版本 + 模块状态契约 ────────────────────────────────
 
 /**
  * @phase3-3 GET /api/servers/:id/ldm/version 响应

@@ -505,7 +505,7 @@ export const LdmApplyRequestSchema = z.object({
 - ADR：`docs/adr/0006-ldm-framework-integration.md`
 - 资源包：`docs/architecture/mod-management-design.md` v2.5（共用 `applyChangesCore`）
 - SOP：`.claude/rules/unturned-sop.md` §LDM
-- 上一期：Phase 1 实施落档（`LdmPluginSourceService.ts` + 测试）
+- 上一期：Phase 1 实施落档（`LdmDiscoveryService.ts` + `LdmPluginCommandsService.ts` + `LdmAssemblyVersionReader.ts`）
 - 本期记忆：`.serena/memories/session-checkpoint-2026-08-15-ldm-b1-upload.md`
 
 ---

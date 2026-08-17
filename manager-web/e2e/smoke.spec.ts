@@ -496,9 +496,9 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     ).toHaveLength(0);
   });
 
-  // ─── LDM Phase 3-3 ─────────────────────────────────────
-  // 场景：登录 → 选实例 → 进 LdmPage → 4 Tab 都能渲染 + 引导卡默认展开 + 切 Tab 无 JS 错误
-  test("LdmPage 4 Tab 渲染 + 引导卡默认展开 + 切换无 JS 错误", async ({ page }) => {
+  // 场景：登录 → 选实例 → 进 LdmPage → 3 Tab 都能渲染 + 引导卡默认展开 + 切 Tab 无 JS 错误
+  // 「插件来源」Tab 已下线
+  test("LdmPage 3 Tab 渲染 + 引导卡默认展开 + 切换无 JS 错误", async ({ page }) => {
     // 登录
     await page.goto("/");
     await page.fill("#login-username", "admin");
@@ -526,8 +526,8 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
       timeout: 5_000,
     });
 
-    // 4 Tab 全部渲染
-    const tabs = ["已装插件", "框架配置", "权限组", "插件来源"];
+    // 3 Tab 全部渲染（「插件来源」Tab 已下线）
+    const tabs = ["已装插件", "框架配置", "权限组"];
     for (const tab of tabs) {
       await expect(page.getByRole("button", { name: tab }).first()).toBeVisible({
         timeout: 5_000,
@@ -546,11 +546,6 @@ test.describe("unturned-manager E2E 冒烟测试", () => {
     // 切「权限组」→ 占位卡「权限组编辑器」可见
     await page.getByRole("button", { name: "权限组" }).first().click();
     await expect(page.getByText(/权限组编辑器/)).toBeVisible({ timeout: 5_000 });
-
-    // 切「插件来源」→ PAT 卡 + InstallStepsCard 可见
-    await page.getByRole("button", { name: "插件来源" }).first().click();
-    await expect(page.getByText("GitHub PAT")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/插件安装步骤/)).toBeVisible({ timeout: 5_000 });
 
     // 切回「已装插件」→ 「LDM 状态」卡标题或「已装插件」Tab 内容
     await page.getByRole("button", { name: "已装插件" }).first().click();

@@ -10,7 +10,6 @@ import type { ServerId } from "@unturned-manager/shared";
  * - 单一真源 = `config.installDir`（`config.ts`）
  * - 路径分隔符由 `path.join` 跨平台处理
  *
- * 之前：每个模块都依赖 `db` 仅为了取 `install_dir`——本工具接管后，模块的 db 依赖可剪。
  * 路径布局对齐 `.claude/rules/unturned-sop.md`：
  *   <installDir>/Servers/<ServerID>/Server/Commands.dat
  *   <installDir>/Servers/<ServerID>/Config.txt

@@ -26,7 +26,7 @@ import { createAuthRouter } from "./routes/auth.js";
 import { createServersRouter } from "./routes/servers.js";
 import { createModsRouter } from "./routes/mods.js";
 import { createModBrowseRouter } from "./routes/mod-browse.js";
-import { createLdmServerRouter, createLdmCommunityRouter } from "./routes/ldm.js";
+import { createLdmServerRouter } from "./routes/ldm.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createFilesRouter, createPanelFilesRouter } from "./routes/files.js";
 import { createSteamCmdRouter } from "./routes/steamcmd.js";
@@ -49,10 +49,10 @@ setAuthService(
   container.authService as import("./modules/auth/AuthService.js").AuthService,
 );
 
-// ★ ADR-0005 Phase 7：终端会话管理器初始化（1:1 GSM3 TerminalSessionManager）
+// ★ ADR-0005 ：终端会话管理器初始化（1:1 GSM3 TerminalSessionManager）
 await container.sessionManager.initialize();
 
-// ─── LogStreamer 接线（Phase 0 修复——日志流此前从未启动）──
+// ─── LogStreamer 接线（ 修复——日志流此前从未启动）──
 for (const serverId of container.serverManager.listServersSync()) {
   container.logStreamer.startStreaming(serverId as never);
 }
@@ -61,7 +61,7 @@ logger.info(
   "LogStreamer 已启动所有已加载服务器",
 );
 
-// ─── 终端会话过期清理（ADR-0005 Phase 7：启用 GSM3 注释掉的 cleanupExpiredSessions）──
+// ─── 终端会话过期清理（ADR-0005 ：启用 GSM3 注释掉的 cleanupExpiredSessions）──
 const SESSION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 小时
 const sessionCleanupTimer = setInterval(() => {
   container.sessionManager
@@ -87,7 +87,7 @@ app.use(noCache);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: config.corsOrigin, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
-// 二进制文件 raw 上传（不解析为 JSON）—— Phase 0 /files/raw 配套
+// 二进制文件 raw 上传（不解析为 JSON）——  /files/raw 配套
 app.use(express.raw({ type: "application/octet-stream", limit: "100mb" }));
 
 // 请求日志
@@ -126,7 +126,7 @@ app.use("/api/servers", createConfigRouter(container.configService));
 app.use("/api/servers", createFilesRouter(container.filesService));
 // 面板级文件浏览（sc:design §7.6）——不依赖具体实例，浏览 installDir 根目录
 app.use("/api/files", createPanelFilesRouter(container.filesService));
-// LDM Mod 框架（Phase 1）——useServers 维度 + 全局 LDM-Community
+// LDM Mod 框架（）——useServers 维度 + 全局 LDM-Community
 app.use("/api/servers/:id/ldm", createLdmServerRouter({
   discovery: container.ldmDiscovery,
   commands: container.ldmCommands,
@@ -134,11 +134,10 @@ app.use("/api/servers/:id/ldm", createLdmServerRouter({
   configReader: container.ldmConfigReader,
   applyService: container.ldmApplyService,
 }));
-app.use("/api/ldm", createLdmCommunityRouter(container.ldmSource));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
-// ★ ADR-0005 Phase 7：终端会话列表端点（1:1 GSM3 routes/terminal.ts:44 形态）
+// ★ ADR-0005 ：终端会话列表端点（1:1 GSM3 routes/terminal.ts:44 形态）
 app.use(
   "/api/sessions",
   createSessionsRouter(container.sessionManager, container.ptyManager),
@@ -152,7 +151,7 @@ app.use("/api/items", createItemsRouter(container.itemService));
 wsBroadcaster.init(
   server,
   container.authService as import("./modules/auth/AuthService.js").AuthService,
-  // ★ ADR-0004 Phase 3：terminal_input 事件需要 ptyManager 写 PTY stdin
+  // ★ ADR-0004 ：terminal_input 事件需要 ptyManager 写 PTY stdin
   container.ptyManager,
 );
 
@@ -199,7 +198,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, 30000);
 
   try {
-    // ★ ADR-0005 Phase 7：清理会话清理 cron + 标记所有活跃会话为 inactive（面板重启后用户能看到「PTY 已断开」）
+    // ★ ADR-0005 ：清理会话清理 cron + 标记所有活跃会话为 inactive（面板重启后用户能看到「PTY 已断开」）
     clearInterval(sessionCleanupTimer);
     for (const session of container.sessionManager.getSavedSessions()) {
       if (session.isActive) {
@@ -209,7 +208,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
     await wsBroadcaster.destroy();
     await container.processSupervisor.destroy();
-    await container.ptyManager.destroy(); // ★ P0-1 修复：Phase 1 PtyManager 缺优雅关闭钩子
+    await container.ptyManager.destroy(); // 
 
     server.close();
     closeDb();

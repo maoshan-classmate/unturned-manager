@@ -29,7 +29,7 @@
 | 后端**缺 GET 读端点**（3 个） | §3.1 待做 |
 | applyChangesCore 已抽出（与 mod_apply 共用） | Phase 2b commit `5cb7080` |
 | 「保存配置」与「应用变更」解耦（写运行时允许，不阻断 ServerManager 状态） | 用户 2026-08-15 拍板 |
-| LDM-Community 列表 `hasReleases` 字段 | 用户 2026-08-15 拍板「先不管」 |
+| LDM-Community 列表 `hasReleases` 字段 | 用户 2026-08-15 拍板「先不管」；2026-08-17 该列表功能整体下线 |
 | 插件配置 `<Plugin>.configuration.xml` 编辑器 | 每插件 schema 不同，留独立 Phase |
 
 ---
@@ -49,7 +49,7 @@
 
 - **插件配置 `.configuration.xml` 编辑器**（每插件 schema 不同，独立 Phase 设计）
 - **Monaco XML 原文编辑器**（权限组 Tab 备选方案）—— 推迟到「权限组编辑器 V2」
-- LDM-Community 列表 `hasReleases` 字段
+- ~~LDM-Community 列表 `hasReleases` 字段~~（2026-08-17 该列表功能整体下线）
 
 ---
 

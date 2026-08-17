@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import express from "express";
 import request from "supertest";
-import { createLdmServerRouter, createLdmCommunityRouter } from "../src/routes/ldm.js";
+import { createLdmServerRouter } from "../src/routes/ldm.js";
 import { setAuthService } from "../src/middleware/auth.js";
 
 // 全局 stub AuthService（让 authenticateToken 中间件放过测试请求）
@@ -96,31 +96,6 @@ const mockApplyService = {
     completedAtIso: "2026-08-15T06:00:05.000Z",
   }),
 };
-const mockSourceService = {
-  listCommunityPlugins: vi.fn().mockResolvedValue({
-    plugins: [],
-    fetchedAtIso: "2026-08-15T06:00:00.000Z",
-    stale: false,
-  }),
-  testPat: vi.fn().mockResolvedValue({
-    ok: true,
-    code: null,
-    rateLimit: null,
-    message: null,
-  }),
-  getPluginDetail: vi.fn().mockResolvedValue({
-    slug: "XanderCodes/AppleAdminControl",
-    name: "AppleAdminControl",
-    author: "XanderCodes",
-    description: "Admin control plugin",
-    repoUrl: "https://github.com/XanderCodes/AppleAdminControl",
-    latestVersion: "1.1.2",
-    updatedAtIso: "2026-03-07T14:15:06Z",
-    releasesUrl: "https://github.com/XanderCodes/AppleAdminControl/releases/latest",
-    releaseNotes: "AppleAdminControl is a plugin...",
-  }),
-};
-
 // 构造 app（authenticateToken 中间件由 setAuthService 全局 stub 放行）
 function makeApp() {
   const app = express();
@@ -135,19 +110,6 @@ function makeApp() {
     }),
   );
   // 全局错误 handler——把 AppError 序列化为 { error: { code, message } }
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    const e = err as { code?: string; message?: string; status?: number };
-    res.status(e.status ?? 500).json({
-      error: { code: e.code ?? "internal_error", message: e.message ?? "unknown" },
-    });
-  });
-  return app;
-}
-
-function makeAppCommunity() {
-  const app = express();
-  app.use(express.json());
-  app.use("/api/ldm", createLdmCommunityRouter(mockSourceService as never));
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const e = err as { code?: string; message?: string; status?: number };
     res.status(e.status ?? 500).json({
@@ -364,41 +326,6 @@ describe("LDM 路由 — Phase 2a 4 端点", () => {
     expect(res.body.data.pluginCount).toBe(3);
     expect(mockDiscovery.getStatus).toHaveBeenCalledWith("S1");
   });
-
-  it("GET /community-plugins/:slug happy path: 调 sourceService.getPluginDetail", async () => {
-    const app = makeAppCommunity();
-    const res = await request(app)
-      .get("/api/ldm/community-plugins/XanderCodes/AppleAdminControl")
-      .set("Authorization", "Bearer test-token");
-    expect(res.status).toBe(200);
-    expect(res.body.data.latestVersion).toBe("1.1.2");
-    expect(mockSourceService.getPluginDetail).toHaveBeenCalledWith(
-      "XanderCodes/AppleAdminControl",
-      null,
-    );
-  });
-
-  it("GET /community-plugins/:slug 错误码：getPluginDetail 返回 null → 404", async () => {
-    mockSourceService.getPluginDetail.mockResolvedValueOnce(null);
-
-    const app = makeAppCommunity();
-    const res = await request(app)
-      .get("/api/ldm/community-plugins/Unknown/Plugin")
-      .set("Authorization", "Bearer test-token");
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe("plugin-detail-not-found");
-  });
-
-  it("GET /community-plugins/:slug 错误码：单段 slug（缺 owner/） → 404 not-found", async () => {
-    const app = makeAppCommunity();
-    const res = await request(app)
-      .get("/api/ldm/community-plugins/invalid-no-slash")
-      .set("Authorization", "Bearer test-token");
-    // 单段不匹配 :owner/:repo 路由 → Express 404
-    expect(res.status).toBe(404);
-  });
-
-  // ─── Phase 3-3 端点（D2/D3：LDM 版本 + 模块状态）───────────────────────
 
   it("GET /version happy path: 调 commands.readLdmVersion → 包装 serverId", async () => {
     const app = makeApp();
