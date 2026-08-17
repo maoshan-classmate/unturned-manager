@@ -8,20 +8,20 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* 整体字号放大：text-sm 14→15px（表单/按钮/表格正文）；其余保持 Tailwind 默认比例 */
-  /* 字号档：1440px → 2560px 等比放大至 1.15x，1440px 处逐像素等同改造前；行高取当前像素比值以保证放大时等比跟随、避免撑破行盒 */
-  --text-xs: clamp(0.75rem, 0.6054rem + 0.001607vw, 0.8625rem);
+  /* 字号档：max() 保 12px 下限，主体纯 vw 随视口线性放大；1440px 处等同改造前值，3840px 处放大至 1.4×；3xl 单独封顶 32px（无障碍 + 防溢出）。行高取当前像素比值以保证放大时等比跟随、避免撑破行盒 */
+  --text-xs: max(0.75rem, calc(0.475rem + 0.00375vw));
   --text-xs--line-height: 1.3333;
-  --text-sm: clamp(0.9375rem, 0.7567rem + 0.002009vw, 1.0781rem);
+  --text-sm: max(0.9375rem, calc(0.7125rem + 0.0025vw));
   --text-sm--line-height: 1.3333;
-  --text-base: clamp(1rem, 0.8071rem + 0.002143vw, 1.15rem);
+  --text-base: max(1rem, calc(0.76rem + 0.002667vw));
   --text-base--line-height: 1.5;
-  --text-lg: clamp(1.125rem, 0.9080rem + 0.002411vw, 1.2938rem);
+  --text-lg: max(1.125rem, calc(0.855rem + 0.003vw));
   --text-lg--line-height: 1.5556;
-  --text-xl: clamp(1.25rem, 1.0089rem + 0.002679vw, 1.4375rem);
+  --text-xl: max(1.25rem, calc(0.95rem + 0.003333vw));
   --text-xl--line-height: 1.4;
-  --text-2xl: clamp(1.5rem, 1.2107rem + 0.003214vw, 1.725rem);
+  --text-2xl: max(1.5rem, calc(1.14rem + 0.004vw));
   --text-2xl--line-height: 1.3333;
-  --text-3xl: clamp(1.875rem, 1.7143rem + 0.001786vw, 2rem);
+  --text-3xl: max(1.875rem, calc(1.8rem + 0.000833vw));
   --text-3xl--line-height: 1.2;
 
   --color-background: hsl(222 47% 11%);
@@ -78,7 +78,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  font-size: clamp(1.0625rem, 0.8576rem + 0.002277vw, 1.2219rem);
+  font-size: max(1.0625rem, calc(0.8075rem + 0.002833vw));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
