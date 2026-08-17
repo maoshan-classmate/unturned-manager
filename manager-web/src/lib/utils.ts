@@ -15,6 +15,24 @@ export function formatSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** 字节数自适应：B / KB / MB / GB——大文件场景（下载进度、Mod 大小）展示用 */
+export function formatBytes(bytes?: number): string {
+  if (bytes === undefined || bytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 100 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+/** 千分位格式化——仅展示型，StatCard / 表格 / 卡片用；输入框不格式化 */
+export function formatNumber(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 /** ISO 日期 → YYYY-MM-DD */
 export function formatDate(iso: string): string {
   try {
