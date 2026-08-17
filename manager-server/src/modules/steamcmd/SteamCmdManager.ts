@@ -682,6 +682,14 @@ export class SteamCmdManager implements ISteamCmdManager {
             ...(currentFileId ? { currentFileId } : {}),
           });
         });
+        // SteamCMD 的 ERROR! 行走 stderr（fprintf(stderr)）——仅监听 stdout 收不到，
+        // 会导致 lastSteamCmdError 永远 undefined、用户永远看到兜底文案「未找到文件内容」。
+        this.processSupervisor.onStderr(jobId, (line: string) => {
+          const errorMatch = STEAMCMD_ERROR_RE.exec(line);
+          if (errorMatch) {
+            lastSteamCmdError = errorMatch[1]!.trim();
+          }
+        });
 
         // 失败时清理 staging 内的失败 mod 残渣（仅删 content/<id>/ 子目录 + 脚本文件，
         // 不删 appworkshop_<appid>.acf 保留其他成功 mod 的元数据，下个 mod 不丢）
@@ -699,6 +707,33 @@ export class SteamCmdManager implements ISteamCmdManager {
               await fs.promises.rm(itemDir, { recursive: true, force: true });
             } catch {
               /* best-effort：清理失败不影响主错误抛出 */
+            }
+            // 下载残留一并清理——SteamCMD 失败留下的 downloads/state_*.patch + 半成品目录
+            // 会让后续重试直接判失败（残留状态污染），即使网络恢复也下不动。
+            const appid = STEAM_APP_IDS.UNTURNED_GAME;
+            const downloadsDir = path.join(
+              stagingDir,
+              "steamapps",
+              "workshop",
+              "downloads",
+            );
+            const tempDir = path.join(
+              stagingDir,
+              "steamapps",
+              "workshop",
+              "temp",
+            );
+            const residues = [
+              path.join(downloadsDir, `state_${appid}_${appid}_${id}.patch`),
+              path.join(downloadsDir, appid, id),
+              path.join(tempDir, appid, id),
+            ];
+            for (const p of residues) {
+              try {
+                await fs.promises.rm(p, { recursive: true, force: true });
+              } catch {
+                /* best-effort */
+              }
             }
           }
           try {

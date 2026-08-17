@@ -31,6 +31,15 @@ export interface IProcessSupervisor {
   destroy(): Promise<void>;
 
   onStdout(serverId: ProcessKey, callback: (line: string) => void): void;
+  /**
+   * 订阅进程 stderr 行事件。
+   * SteamCMD 的 `ERROR! ...` 行走 stderr（fprintf(stderr)），仅监听 stdout 会丢真实下载失败原因
+   * （SteamCmdManager 只收到兜底文案）。该回调用于把错误行也纳入失败原因收集。
+   *
+   * @param serverId - 托管进程 ID（ServerId 或 SteamCMD jobId）
+   * @param callback - stderr 行回调；进程退出后自动移除
+   */
+  onStderr(serverId: ProcessKey, callback: (line: string) => void): void;
   onCrash(
     callback: (serverId: ServerId, exitCode: number | null) => void,
   ): void;

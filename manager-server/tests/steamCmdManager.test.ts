@@ -16,6 +16,7 @@ import type {
 const fakeProcessSupervisor = {
   spawn: vi.fn(),
   onStdout: vi.fn(),
+  onStderr: vi.fn(),
   waitForExit: vi.fn().mockResolvedValue(undefined),
   forceKill: vi.fn(),
   onCrash: vi.fn(),

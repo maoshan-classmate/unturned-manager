@@ -54,6 +54,7 @@ const execAsync = promisify(exec);
 export class ProcessSupervisor implements IProcessSupervisor {
   private processes = new Map<ServerId, ManagedProcess>();
   private stdoutCallbacks = new Map<ServerId, StdoutCallback[]>();
+  private stderrCallbacks = new Map<ServerId, StdoutCallback[]>();
   private crashCallbacks: CrashCallback[] = [];
 
   constructor(private timings: TerminateTimings = DEFAULT_TIMINGS) {}
@@ -125,11 +126,21 @@ export class ProcessSupervisor implements IProcessSupervisor {
       });
     }
 
-    // stderr → 日志
+    // stderr → 日志 + 回调转发（SteamCMD 的 ERROR! 行走 stderr，必须转给订阅方）
     if (child.stderr) {
       const rl = createInterface({ input: child.stderr });
       rl.on("line", (line: string) => {
         logger.warn({ serverId, line }, "U3DS stderr");
+        const cbs = this.stderrCallbacks.get(serverId);
+        if (cbs) {
+          for (const cb of cbs) {
+            try {
+              cb(line);
+            } catch (err) {
+              logger.error({ err, serverId }, "stderr 回调异常");
+            }
+          }
+        }
       });
     }
 
@@ -138,6 +149,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
       logger.info({ serverId, exitCode }, "U3DS 进程退出");
       this.processes.delete(serverId);
       this.stdoutCallbacks.delete(serverId);
+      this.stderrCallbacks.delete(serverId);
       for (const cb of this.crashCallbacks) {
         try {
           cb(serverId, exitCode);
@@ -150,6 +162,8 @@ export class ProcessSupervisor implements IProcessSupervisor {
     child.on("error", (err) => {
       logger.error({ serverId, err }, "U3DS 进程错误");
       this.processes.delete(serverId);
+      this.stdoutCallbacks.delete(serverId);
+      this.stderrCallbacks.delete(serverId);
     });
 
     return child.pid!;
@@ -221,6 +235,15 @@ export class ProcessSupervisor implements IProcessSupervisor {
       cbs.push(callback);
     } else {
       this.stdoutCallbacks.set(serverId, [callback]);
+    }
+  }
+
+  onStderr(serverId: ServerId, callback: (line: string) => void): void {
+    const cbs = this.stderrCallbacks.get(serverId);
+    if (cbs) {
+      cbs.push(callback);
+    } else {
+      this.stderrCallbacks.set(serverId, [callback]);
     }
   }
 
