@@ -479,6 +479,10 @@ export function ModsPage() {
             <li>回到面板「已下载」列表勾选启用该 Mod，点「重启」生效。</li>
           </ol>
           <p className="mt-2">
+            粘贴后刷新「已下载」列表会自动识别登记。手动放置的 Mod
+            不会自动更新——作者发布新版本后需手动替换文件。
+          </p>
+          <p className="mt-2">
             Mod 编号 = Steam 页面网址
             <PathCode>?id=</PathCode>
             后面的数字，也是内容文件夹名。也可在另一台电脑用 SteamCMD 下载：

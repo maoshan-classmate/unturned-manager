@@ -198,6 +198,8 @@ interface WorkshopRow {
   status: "enabled" | "disabled" | "pending_apply";
   selected: boolean;
   applied: boolean;
+  /** 手动放置的 Mod（无 manifest）——不能自动更新检测 */
+  manualPlacement: boolean;
 }
 
 /** 后端 GET /mods/downloaded 响应项（BUG-6 修复后含 applied 字段） */
@@ -208,6 +210,7 @@ interface DownloadedMod {
   applied?: boolean;
   timeupdated?: number;
   size?: number;
+  manifest?: string;
 }
 
 const PAGE_SIZE = 10;
@@ -431,6 +434,8 @@ function ConfigContent({ serverId }: { serverId: string }) {
             status: item.applied ? "enabled" : "pending_apply",
             applied: item.applied ?? false,
             selected: false,
+            // 无 manifest = 手动放置（未走 SteamCMD 下载，无自动更新检测）
+            manualPlacement: !item.manifest,
           })),
         );
       }
@@ -1445,6 +1450,15 @@ function WorkshopTab({
           className="w-4 h-4 rounded accent-emerald-500"
         />
         <span className="text-slate-200 truncate">{r.name}</span>
+        {r.manualPlacement && (
+          <span
+            title="手动放置，无自动更新"
+            className="shrink-0 px-1.5 py-0.5 rounded text-[10px]"
+            style={{ backgroundColor: "rgba(245,158,11,0.15)", color: "#F59E0B" }}
+          >
+            手动
+          </span>
+        )}
       </div>
     ),
     fileId: (
