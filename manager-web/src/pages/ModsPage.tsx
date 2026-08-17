@@ -14,6 +14,7 @@ import { ModCardSkeleton } from "../components/mods/ModCardSkeleton.js";
 import { ModDetailDialog } from "../components/mods/ModDetailDialog.js";
 import { PaginationBar } from "../components/shared/PaginationBar.js";
 import { SearchInput } from "../components/shared/SearchInput.js";
+import { InfoCard } from "../components/shared/InfoCard.js";
 import { Button } from "../components/ui/button.js";
 
 /** Mod 浏览元数据（GET /mods/search 返回） */
@@ -75,6 +76,18 @@ function getApiError(err: unknown, fallback: string): string {
     err as { response?: { data?: { error?: { message?: string } } } }
   )?.response?.data?.error?.message;
   return msg ?? (err instanceof Error ? err.message : fallback);
+}
+
+/** 路径/命令代码块——手动安装提示内联代码样式（仅 ModsPage 使用） */
+function PathCode({ children }: { children: React.ReactNode }) {
+  return (
+    <code
+      className="text-[11px] px-1.5 py-0.5 rounded font-mono mx-1"
+      style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
+    >
+      {children}
+    </code>
+  );
 }
 
 /**
@@ -441,6 +454,40 @@ export function ModsPage() {
           {searchQuery ? <>搜索「{searchQuery}」</> : <>浏览全部</>}
           {total > 0 && <> · 共 {total} 条</>}
         </span>
+      </div>
+
+      {/* 手动安装提示——网络下载失败时的兜底方案（常驻，玩家可提前了解） */}
+      <div className="shrink-0 mx-4 md:mx-6 mt-3">
+        <InfoCard title="💡 下载失败？试试手动安装" variant="warning">
+          <p className="mb-2">
+            面板下载依赖服务器到 Steam 下载服务器的网络；网络不稳定时下载会失败，可改用手动安装：
+          </p>
+          <ol className="space-y-1.5 list-decimal list-inside">
+            <li>
+              在能访问 Steam 的电脑上，打开该 Mod 的 Steam 页面，点「订阅」；
+            </li>
+            <li>
+              Steam 下载完成后，把本地内容文件夹（名字是 Mod 编号）从
+              <PathCode>Steam/steamapps/workshop/content/304930/</PathCode>
+              里复制出来；
+            </li>
+            <li>
+              粘贴到服务器的
+              <PathCode>Servers/你的服名/Workshop/Steam/content/304930/</PathCode>
+              目录；
+            </li>
+            <li>回到面板「已下载」列表勾选启用该 Mod，点「重启」生效。</li>
+          </ol>
+          <p className="mt-2">
+            Mod 编号 = Steam 页面网址
+            <PathCode>?id=</PathCode>
+            后面的数字，也是内容文件夹名。也可在另一台电脑用 SteamCMD 下载：
+            <PathCode>
+              steamcmd +force_install_dir ./mods +login anonymous +workshop_download_item 304930 编号 +quit
+            </PathCode>
+            ，再把下载的文件夹复制到服务器对应目录。
+          </p>
+        </InfoCard>
       </div>
 
       {/* 卡片网格 — 独立 loading（问题 8） */}
