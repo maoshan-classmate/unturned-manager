@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { motion } from "motion/react";
 import {
   LayoutDashboard,
   Terminal,
@@ -26,9 +27,12 @@ import { ServerSelector } from "./ServerSelector.js";
  *
  * 行为要点：
  *   - 八个菜单标签永远渲染、永远能点
- *   - 路由表已重排到纯路径，侧栏不再拼接前缀
+ *   - 路由表为纯路径，侧栏不拼接前缀
  *   - 未选实例时不显示引导按钮——点击实例类菜单后由内容区占位卡引导（NoInstanceGuide）
  *   - 文件菜单归全局级（不依赖具体实例）
+ *
+ * 动效：active 项左侧 3px 竖条用 motion 共享布局动画在两项之间滑动（layoutId = sidebar-active-bar）。
+ * 选中切换时 motion 在新旧位置之间插值；全局已包 MotionConfig reducedMotion="user"，系统减弱动效偏好开启时退化为无动画。
  */
 interface NavItem {
   to: string;
@@ -55,15 +59,12 @@ export function Sidebar() {
     >
       {/* ── Logo ── */}
       <div className="px-6 pt-5">
-        <span
-          className="text-xs font-normal tracking-normal"
-          style={{ color: "#22C55E" }}
-        >
+        <span className="text-xs font-normal tracking-normal text-emerald-500">
           UNTURNED MANAGER
         </span>
       </div>
 
-      {/* ── 服务器选择器（取代旧的假按钮）── */}
+      {/* ── 服务器选择器 ── */}
       <ServerSelector />
 
       {/* ── 导航 ── */}
@@ -84,14 +85,15 @@ export function Sidebar() {
           >
             {({ isActive }) => (
               <>
-                <span
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-[22px] transition-colors"
-                  style={{
-                    width: 3,
-                    backgroundColor: isActive ? "#22C55E" : "transparent",
-                  }}
-                  aria-hidden="true"
-                />
+                {isActive && (
+                  <motion.span
+                    layoutId="sidebar-active-bar"
+                    data-testid="sidebar-active-bar"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 h-[22px] w-[3px] bg-emerald-500"
+                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                    aria-hidden="true"
+                  />
+                )}
                 <Icon size={16} className="shrink-0" />
                 <span className="ml-2">{label}</span>
               </>
@@ -107,10 +109,7 @@ export function Sidebar() {
       />
 
       {/* ── User ── */}
-      <div
-        className="flex items-center gap-2 px-6 h-[40px] shrink-0 text-[13px] font-normal"
-        style={{ color: "#94A3B8" }}
-      >
+      <div className="flex items-center gap-2 px-6 h-[40px] shrink-0 text-sm font-normal text-slate-400">
         <User size={16} className="shrink-0" />
         <span>管理员</span>
       </div>
