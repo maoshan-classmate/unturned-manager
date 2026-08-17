@@ -7,21 +7,21 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* 整体字号放大：text-sm 14→15px（表单/按钮/表格正文）；其余保持 Tailwind 默认比例 */
-  /* 字号档：max() 保 12px 下限，主体纯 vw 随视口线性放大；1440px 处等同改造前值，3840px 处放大至 1.4×；3xl 单独封顶 32px（无障碍 + 防溢出）。行高取当前像素比值以保证放大时等比跟随、避免撑破行盒 */
-  --text-xs: max(0.75rem, calc(0.475rem + 0.00375vw));
+  /* 整体字号放大：text-sm 14→17px（表单/按钮/表格正文）；最小档抬到 14px；其余按比例上调 1 档 */
+  /* 字号档：1440px 处整体抬 1 档（xs 12→14，sm 15→17，base 16→18，lg 18→20，xl 20→22，2xl 24→26，3xl 30→32），主体纯 vw 随视口线性放大至 1.4×；3xl 单独封顶 32px（无障碍 + 防溢出）。行高取当前像素比值以保证放大时等比跟随、避免撑破行盒 */
+  --text-xs: max(0.875rem, calc(0.665rem + 0.002333vw));
   --text-xs--line-height: 1.3333;
-  --text-sm: max(0.9375rem, calc(0.7125rem + 0.0025vw));
+  --text-sm: max(1.0625rem, calc(0.8075rem + 0.002833vw));
   --text-sm--line-height: 1.3333;
-  --text-base: max(1rem, calc(0.76rem + 0.002667vw));
+  --text-base: max(1.125rem, calc(0.855rem + 0.003vw));
   --text-base--line-height: 1.5;
-  --text-lg: max(1.125rem, calc(0.855rem + 0.003vw));
+  --text-lg: max(1.25rem, calc(0.95rem + 0.003333vw));
   --text-lg--line-height: 1.5556;
-  --text-xl: max(1.25rem, calc(0.95rem + 0.003333vw));
+  --text-xl: max(1.375rem, calc(1.045rem + 0.003667vw));
   --text-xl--line-height: 1.4;
-  --text-2xl: max(1.5rem, calc(1.14rem + 0.004vw));
+  --text-2xl: max(1.625rem, calc(1.235rem + 0.004333vw));
   --text-2xl--line-height: 1.3333;
-  --text-3xl: max(1.875rem, calc(1.8rem + 0.000833vw));
+  --text-3xl: max(2rem, calc(2rem + 0vw));
   --text-3xl--line-height: 1.2;
 
   --color-background: hsl(222 47% 11%);
@@ -78,7 +78,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  font-size: max(1.0625rem, calc(0.8075rem + 0.002833vw));
+  font-size: max(1.1875rem, calc(0.9025rem + 0.003167vw));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
