@@ -253,3 +253,102 @@ describe("WorkshopAcfService · parseStagingItem", () => {
     });
   });
 });
+
+// ─── scanContentDir ────────────────────────────────────
+
+describe("WorkshopAcfService · scanContentDir", () => {
+  it("content 目录不存在返回空数组", async () => {
+    const ids = await acfService.scanContentDir(SERVER_ID);
+    expect(ids).toEqual([]);
+  });
+
+  it("返回 content 目录下的 mod 文件夹名（过滤非目录文件）", async () => {
+    const contentDir = path.join(workshopDir, "content", "304930");
+    await fs.mkdir(path.join(contentDir, "1234567890"), { recursive: true });
+    await fs.mkdir(path.join(contentDir, "9876543210"), { recursive: true });
+    await fs.writeFile(path.join(contentDir, "note.txt"), "x", "utf-8");
+    const ids = await acfService.scanContentDir(SERVER_ID);
+    expect(ids.sort()).toEqual(["1234567890", "9876543210"]);
+  });
+});
+
+// ─── readStagingDetail ────────────────────────────────────
+
+describe("WorkshopAcfService · readStagingDetail", () => {
+  it("staging acf 不存在返回 null", async () => {
+    const item = await acfService.readStagingDetail(
+      SERVER_ID,
+      "1753134636" as WorkshopFileId,
+    );
+    expect(item).toBeNull();
+  });
+
+  it("staging acf 的 WorkshopItemDetails 有该 mod 时返回含 manifest 的元数据", async () => {
+    const stagingAcfDir = path.join(
+      serverDir,
+      "Workshop",
+      "staging",
+      "steamapps",
+      "workshop",
+    );
+    await fs.mkdir(stagingAcfDir, { recursive: true });
+    await fs.writeFile(
+      path.join(stagingAcfDir, "appworkshop_304930.acf"),
+      `"AppWorkshop"
+{
+	"appid"		"304930"
+	"WorkshopItemDetails"
+	{
+		"1753134636"
+		{
+			"manifest"		"4567890123456789"
+			"timeupdated"		"1722612345"
+			"BytesToDownload"		"12345678"
+		}
+	}
+}`,
+      "utf-8",
+    );
+    const item = await acfService.readStagingDetail(
+      SERVER_ID,
+      "1753134636" as WorkshopFileId,
+    );
+    expect(item).toEqual({
+      fileId: "1753134636" as WorkshopFileId,
+      timeupdated: 1722612345,
+      size: 12345678,
+      manifest: "4567890123456789",
+    });
+  });
+
+  it("staging acf 无该 fileId 返回 null", async () => {
+    const stagingAcfDir = path.join(
+      serverDir,
+      "Workshop",
+      "staging",
+      "steamapps",
+      "workshop",
+    );
+    await fs.mkdir(stagingAcfDir, { recursive: true });
+    await fs.writeFile(
+      path.join(stagingAcfDir, "appworkshop_304930.acf"),
+      `"AppWorkshop"
+{
+	"appid"		"304930"
+	"WorkshopItemDetails"
+	{
+		"9999999"
+		{
+			"manifest"		"1"
+		}
+	}
+}`,
+      "utf-8",
+    );
+    const item = await acfService.readStagingDetail(
+      SERVER_ID,
+      "1753134636" as WorkshopFileId,
+    );
+    expect(item).toBeNull();
+  });
+});

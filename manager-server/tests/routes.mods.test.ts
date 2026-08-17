@@ -91,6 +91,14 @@ beforeAll(async () => {
       key TEXT PRIMARY KEY, value_enc TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE item_list (
+      id INTEGER PRIMARY KEY, name TEXT NOT NULL, label TEXT,
+      source TEXT NOT NULL DEFAULT 'custom'
+        CHECK (source IN ('builtin','custom')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_item_list_source ON item_list(source);
+    CREATE INDEX IF NOT EXISTS idx_item_list_name ON item_list(name);
   `);
 
   // seed admin
@@ -318,7 +326,7 @@ describe("routes/mods · 8 端点", () => {
       .send({ fileId: "333" })
       .expect(202);
     expect(res.body.data.jobId).toBe("steamcmd-download-test");
-    expect(res.body.data.fileId).toBe("333");
+    expect(res.body.data.fileIds).toEqual(["333"]);
     expect(res.body.data.modTitle).toBe("Mod 333"); // GetDetails mock 动态返回
     // BUG-5/6：不再同步等下载完成/读 acf——前端靠 WS completed 刷新已下载列表
     expect(res.body.data.acfItem).toBeUndefined();

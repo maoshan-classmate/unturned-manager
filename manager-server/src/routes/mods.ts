@@ -9,6 +9,7 @@ import {
   type ISteamCmdManager,
   type ServerId,
   type WorkshopFileId,
+  type WorkshopModMeta,
 } from "@unturned-manager/shared";
 import { AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
@@ -66,16 +67,60 @@ export function createModsRouter(
       const serverId = req.params.id as ServerId;
       await resolveInstallDir(serverId);
 
-      // ★ BUG-5/6 修复：主 acf（已 apply）+ staging acf（刚下载待 apply）合并去重
+      // 三源合并：content 目录（手动放置的 mod 真源）∪ 主 acf ∪ staging acf
       const mainItems = await acfService.listItems(serverId);
       const stagingItems = await acfService.listStagingItems(serverId);
-      const itemsMap = new Map<string, (typeof mainItems)[number]>();
+      const contentIds = await acfService.scanContentDir(serverId);
+
+      // 手动放置但 acf 无记录的 mod 自动登记——补 acf 记录后 U3DS 启动时才能识别。
+      // 幂等：只对「content 有、主 acf 无」的编号处理，已登记的跳过。
+      const acfIds = new Set(mainItems.map((i) => i.fileId as string));
+      const missing = contentIds.filter((id) => !acfIds.has(id));
+      if (missing.length > 0) {
+        let metaById = new Map<string, WorkshopModMeta>();
+        try {
+          const metas = await workshopMeta.batchGetDetails(
+            missing,
+            reqLangToSteam(req),
+          );
+          metaById = new Map(metas.map((m) => [m.fileId, m]));
+        } catch (err) {
+          logger.warn(
+            { serverId, err },
+            "手动放置 mod 元数据拉取失败，按最小信息登记",
+          );
+        }
+        for (const id of missing) {
+          try {
+            // 元数据优先级：staging acf（SteamCMD 下载尝试时写入，含 manifest）→ WebAPI
+            const staging = await acfService.readStagingDetail(serverId, id);
+            const meta = metaById.get(id);
+            await acfService.addItem(serverId, id, {
+              fileId: id,
+              size: staging?.size ?? meta?.fileSize ?? 0,
+              timeupdated:
+                staging?.timeupdated ??
+                (meta?.updatedAt
+                  ? Math.floor(new Date(meta.updatedAt).getTime() / 1000)
+                  : 0),
+              ...(staging?.manifest ? { manifest: staging.manifest } : {}),
+            });
+          } catch (err) {
+            logger.warn({ serverId, id, err }, "手动放置 mod 登记 acf 失败");
+          }
+        }
+      }
+
+      // 合并：content 目录优先（手动放置的也显示），acf/staging 元数据覆盖
+      const mainAfter = await acfService.listItems(serverId);
+      const itemsMap = new Map<string, (typeof mainAfter)[number]>();
+      for (const id of contentIds) {
+        itemsMap.set(id, { fileId: id, size: 0, timeupdated: 0 });
+      }
       for (const item of stagingItems)
         itemsMap.set(item.fileId as string, item);
-      for (const item of mainItems) {
-        if (!itemsMap.has(item.fileId as string))
-          itemsMap.set(item.fileId as string, item);
-      }
+      for (const item of mainAfter)
+        itemsMap.set(item.fileId as string, item);
       const items = Array.from(itemsMap.values());
       const fileIds = items.map((i) => i.fileId);
 

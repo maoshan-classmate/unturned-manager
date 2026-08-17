@@ -45,6 +45,14 @@ const STAGING_ACF_REL_PATH = path.join(
   `appworkshop_${STEAM_APP_IDS.UNTURNED_GAME}.acf`,
 );
 
+/** content 目录（U3DS 实际加载的 mod 文件根，DedicatedUGC.cs:560） */
+const CONTENT_REL_PATH = path.join(
+  "Workshop",
+  "Steam",
+  "content",
+  STEAM_APP_IDS.UNTURNED_GAME,
+);
+
 /** acf 根 key（VDF 格式约束：根必须只有一个 key） */
 const ACF_ROOT_KEY = "AppWorkshop";
 
@@ -160,6 +168,66 @@ export class WorkshopAcfService implements IWorkshopAcfService {
     }
     const acf = this.parseContent(content);
     return acf.items.get(fileId) ?? null;
+  }
+
+  /**
+   * 扫描 content 目录，返回实际存在的 mod 文件夹编号。
+   * 手动粘贴的 mod 文件即使 acf 无记录也能被识别（`/mods/downloaded` 三源合并用）。
+   *
+   * @param serverId - 服务器实例 ID
+   * @returns 文件夹名（fileId）数组；目录不存在时返回空数组
+   */
+  async scanContentDir(serverId: ServerId): Promise<WorkshopFileId[]> {
+    const dir = resolveServerPath(serverId, CONTENT_REL_PATH);
+    let entries: Array<import("fs").Dirent<string>>;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name as WorkshopFileId);
+  }
+
+  /**
+   * 读 staging acf 的 WorkshopItemDetails，提取 mod 元数据。
+   * 下载尝试（含失败）时 SteamCMD 把元数据写进 Details 段（含 manifest）——这是
+   * 手动放置 mod 登记时拿完整元数据（尤其 manifest）的可靠本地来源。
+   *
+   * @param serverId - 服务器实例 ID
+   * @param fileId - Mod 编号
+   * @returns 该 mod 的元数据；staging acf 无记录时返回 null
+   */
+  async readStagingDetail(
+    serverId: ServerId,
+    fileId: WorkshopFileId,
+  ): Promise<WorkshopAcfItem | null> {
+    const stagingAcfPath = await this.resolveStagingAcfPath(serverId);
+    let content: string;
+    try {
+      content = await fs.readFile(stagingAcfPath, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
+    const root = parseVdf(content)[ACF_ROOT_KEY] as
+      | Record<string, unknown>
+      | undefined;
+    const details = root?.WorkshopItemDetails as
+      | Record<string, Record<string, string>>
+      | undefined;
+    const meta = details?.[fileId];
+    if (!meta || typeof meta !== "object") return null;
+    const timeupdated = parseInt(meta.timeupdated ?? "0", 10);
+    const size = parseInt(meta.BytesToDownload ?? meta.size ?? "0", 10);
+    return {
+      fileId,
+      timeupdated: Number.isFinite(timeupdated) ? timeupdated : 0,
+      size: Number.isFinite(size) ? size : 0,
+      ...(typeof meta.manifest === "string" ? { manifest: meta.manifest } : {}),
+    };
   }
 
   /**

@@ -105,6 +105,15 @@ export interface IWorkshopAcfService {
   /** 读 staging 目录的 acf，提取单个 mod 的元数据（下载完成后调） */
   parseStagingItem(serverId: ServerId, fileId: WorkshopFileId): Promise<WorkshopAcfItem | null>;
 
+  /** 扫描 content 目录 `Workshop/Steam/content/<appid>/`，返回实际存在的 mod 文件夹编号 */
+  scanContentDir(serverId: ServerId): Promise<WorkshopFileId[]>;
+
+  /** 读 staging acf 的 WorkshopItemDetails，提取 mod 元数据（下载尝试时 SteamCMD 写入，含 manifest） */
+  readStagingDetail(
+    serverId: ServerId,
+    fileId: WorkshopFileId,
+  ): Promise<WorkshopAcfItem | null>;
+
   /** 添加 mod 到 acf（apply 流水线内调用） */
   addItem(serverId: ServerId, fileId: WorkshopFileId, meta: WorkshopAcfItem): Promise<void>;
 
