@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.js";
 import { WebSocketProvider } from "./contexts/WebSocketContext.js";
 import { CurrentServerProvider } from "./contexts/CurrentServerContext.js";
@@ -16,6 +17,7 @@ import { Toaster } from "./components/ui/sonner.js";
 
 function AppLayout() {
   const { isAuthenticated, restoring } = useAuth();
+  const location = useLocation();
 
   // Session 恢复中——显示加载
   if (restoring) {
@@ -41,7 +43,15 @@ function AppLayout() {
         <div className="flex h-screen bg-slate-900">
           <Sidebar />
           <main className="flex-1 overflow-auto p-6">
-            <Routes>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
+                <Routes>
               {/* 首页 + 登录重定向 */}
               <Route path="/" element={<DashboardPage />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
@@ -82,7 +92,9 @@ function AppLayout() {
                 path="/:serverId/files"
                 element={<Navigate to="/files" replace />}
               />
-            </Routes>
+                </Routes>
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </WebSocketProvider>

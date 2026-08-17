@@ -10,26 +10,29 @@ import { cn } from '@/lib/utils';
  * - 色值：component-abstraction.md（#22C55E 强调 / #EF4444 危险 / #1E293B 卡片 / #334059 边框 / #94A3B8 次级）
  * - 圆角：Figma radius 6px（rounded-md）
  * - 尺寸：Figma 按钮高 36px（主流程 lg）/ 32px（卡片内 default）/ 28px（紧凑 sm）
- * - 动画：active 按压微缩 + transition-colors 过渡 + focus-visible ring
+ * - 动画：active 按压微缩 + transition-colors 过渡 + focus-visible ring + hover brightness
  */
 const buttonVariants = cva(
-  'group/button inline-flex shrink-0 items-center justify-center rounded-md text-sm font-medium whitespace-nowrap transition-colors duration-150 outline-none select-none active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=\'size-\'])]:size-4',
+  'group/button inline-flex shrink-0 items-center justify-center rounded-md text-sm font-medium whitespace-nowrap transition-colors duration-150 outline-none select-none active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=\'size-\'])]:size-4',
   {
     variants: {
       variant: {
         default:
-          'bg-emerald-500 text-white hover:bg-emerald-600',
+          'bg-emerald-500 text-white hover:bg-emerald-600 hover:brightness-110',
         secondary:
           // slate-700 明显比 Card 背景 #1E293B(slate-800)亮一档,有视觉差
-          'bg-slate-700 text-slate-100 border border-slate-600 hover:bg-slate-600',
+          'bg-slate-700 text-slate-100 border border-slate-600 hover:bg-slate-600 hover:brightness-110',
         outline:
           // outline 用 bg-slate-800(等于 Card 色) + 亮边框 + 高对比文字——透明 background 已被验证隐形,显式上色
-          'bg-slate-800 text-slate-100 border border-slate-500 hover:bg-slate-700 hover:text-white',
+          'bg-slate-800 text-slate-100 border border-slate-500 hover:bg-slate-700 hover:text-white hover:brightness-110',
         ghost:
           'bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white',
         destructive:
-          'bg-red-500 text-white hover:bg-red-600',
+          'bg-red-500 text-white hover:bg-red-600 hover:brightness-110',
         link: 'text-emerald-500 underline-offset-4 hover:underline',
+        glow:
+          // 启动/保存等关键 CTA 用：emerald 背景 + emerald 光晕，hover 时亮度+光晕双增
+          'bg-emerald-500 text-white shadow-[0_0_24px_rgba(34,197,94,0.5)] hover:brightness-110 hover:shadow-[0_0_32px_rgba(34,197,94,0.7)]',
       },
       size: {
         default:
@@ -50,12 +53,17 @@ const buttonVariants = cva(
   },
 );
 
+/** 动画档——本批只支持 normal 视觉；press-only / glow-pulse 类型预留，渲染等同 normal（P2 扩展） */
+export type ButtonAnimation = 'normal' | 'press-only' | 'glow-pulse';
+
 function Button({
   className,
   variant = 'default',
   size = 'default',
+  animation: _animation = 'normal',
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> & { animation?: ButtonAnimation }) {
   return (
     <ButtonPrimitive
       data-slot="button"
