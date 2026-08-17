@@ -68,7 +68,7 @@ export interface ModDeleteResult {
  */
 export interface IWorkshopMetadataService {
   /** 单个 Mod 详情——实时调 GetDetails/v1，0 缓存 */
-  getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null>;
+  getModDetails(modId: WorkshopFileId, lang?: number): Promise<WorkshopModMeta | null>;
 
   /** 浏览/搜索 Steam 工坊——实时两阶段（QueryFiles→GetDetails）+ 8s timeout */
   browseMods(
@@ -78,10 +78,11 @@ export interface IWorkshopMetadataService {
     searchType: ModSearchType,
     page: number,
     pageSize: number,
+    lang?: number,
   ): Promise<BrowseResult>;
 
   /** 批量 GetDetails——已下载列表显示用 */
-  batchGetDetails(fileIds: WorkshopFileId[]): Promise<WorkshopModMeta[]>;
+  batchGetDetails(fileIds: WorkshopFileId[], lang?: number): Promise<WorkshopModMeta[]>;
 }
 
 /**

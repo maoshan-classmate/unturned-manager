@@ -8,6 +8,7 @@ import {
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { reqLangToSteam } from '../utils/lang.js';
 
 /**
  * 全局 Mod 浏览路由（v2.3 — 拆分自 mods.ts）
@@ -33,7 +34,7 @@ export function createModBrowseRouter(workshopMeta: IWorkshopMetadataService): R
         range: 'day' | 'week' | 'month' | 'months3' | 'months6' | 'year' | 'all';
         type: 'text' | 'id';
       };
-      const result = await workshopMeta.browseMods(q, sort, range, type, page, pageSize);
+      const result = await workshopMeta.browseMods(q, sort, range, type, page, pageSize, reqLangToSteam(req));
       res.json({
         data: {
           total: result.total,
@@ -50,7 +51,7 @@ export function createModBrowseRouter(workshopMeta: IWorkshopMetadataService): R
     '/:fileId(\\d+)',
     asyncHandler(async (req, res) => {
       const fileId = req.params.fileId as WorkshopFileId;
-      const mod = await workshopMeta.getModDetails(fileId);
+      const mod = await workshopMeta.getModDetails(fileId, reqLangToSteam(req));
       if (!mod) {
         res.status(404).json({ error: { code: 'not_found', message: 'Mod 未找到' } });
         return;
@@ -65,7 +66,7 @@ export function createModBrowseRouter(workshopMeta: IWorkshopMetadataService): R
     validate(ModBatchDetailsRequestSchema),
     asyncHandler(async (req, res) => {
       const { fileIds } = req.body as { fileIds: WorkshopFileId[] };
-      const mods = await workshopMeta.batchGetDetails(fileIds);
+      const mods = await workshopMeta.batchGetDetails(fileIds, reqLangToSteam(req));
       res.json({ data: mods });
     }),
   );

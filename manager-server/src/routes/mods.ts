@@ -12,6 +12,7 @@ import {
 } from "@unturned-manager/shared";
 import { AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
+import { reqLangToSteam } from "../utils/lang.js";
 import { authenticateToken } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -89,7 +90,9 @@ export function createModsRouter(
       > = [];
       try {
         metas =
-          fileIds.length > 0 ? await workshopMeta.batchGetDetails(fileIds) : [];
+          fileIds.length > 0
+            ? await workshopMeta.batchGetDetails(fileIds, reqLangToSteam(req))
+            : [];
       } catch (err) {
         logger.warn(
           { serverId, err },
@@ -139,7 +142,7 @@ export function createModsRouter(
       // 元数据补 modTitle（多个时取第一个）
       let modTitle: string | undefined;
       try {
-        const meta = await workshopMeta.getModDetails(fileIds[0]!);
+        const meta = await workshopMeta.getModDetails(fileIds[0]!, reqLangToSteam(req));
         modTitle = meta?.title;
       } catch {
         // 元数据查不到不影响下载流程

@@ -101,6 +101,10 @@ apiClient.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+  // 界面语言透传给后端（用于 Steam WebAPI QueryFiles/GetDetails 的 `language` 参数；
+  // 默认 zh 与 DST 项目对齐，详见 .research/dst-management-platform-api/app/mod/utils.go:90-96）。
+  // 二期做 Settings 语言下拉时改为读用户偏好。
+  config.headers['X-I18n-Lang'] = 'zh';
   return config;
 });
 

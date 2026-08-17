@@ -11,6 +11,7 @@ import type {
 } from '@unturned-manager/shared';
 import { logger } from '../../utils/logger.js';
 import { AppError } from '../../utils/AppError.js';
+import { STEAM_LANG } from '../../utils/lang.js';
 import { getSteamWebApiKey } from '../settings/settingsStorage.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -26,7 +27,7 @@ const FETCH_TIMEOUT_MS = 45_000;
 /**
  * browseMods 进程内缓存 TTL（5 分钟）——重复访问同条件 0 Steam 调用。
  * 单用户系统（CLAUDE.md §2）+ 进程级 Map 足够，无需 Redis。
- * ★ 不影响 getModDetails / batchGetDetails——单 Mod 详情走 GetDetails（用户主动点详情弹窗，不在热路径）。
+ * 不影响 getModDetails / batchGetDetails——单 Mod 详情走 GetDetails（用户主动点详情弹窗，不在热路径）。
  */
 const BROWSE_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -53,7 +54,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
   constructor(private db: Database.Database) {}
 
   /**
-   * 单个 Mod 详情——实时调 Steam GetDetails/v1，**0 缓存**（v2.0 决策）
+   * 单个 Mod 详情——实时调 Steam GetDetails/v1，0 缓存
    *
    * @param modId - Workshop File ID
    * @returns Mod 元数据；未配置 Key 时抛 503
@@ -99,8 +100,8 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
    * 浏览/搜索 Steam 工坊——单次 QueryFiles 实时调用
    * QueryFiles 一次返回全字段（title/creator/description/preview/vote_data），无需二次调用
    *
-   * ★ 进程内缓存（5min TTL）：重复访问同条件 0 Steam 调用。
-   *   cacheKey 包含全部入参（query/sort/range/page/pageSize）——任一不同即新条目。
+   * 进程内缓存（5min TTL）：重复访问同条件 0 Steam 调用。
+   *   cacheKey 包含全部入参（query/sort/range/page/pageSize/lang）——任一不同即新条目。
    *   过期惰性清理（访问时判断 expiresAt，过期则删 + 重发 Steam）。
    *   不影响 getModDetails / batchGetDetails——单 Mod 详情不在热路径。
    *
@@ -118,8 +119,9 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     _searchType: ModSearchType = 'text',
     page: number = 1,
     pageSize: number = 10,
+    lang: number = STEAM_LANG.schinese,
   ): Promise<BrowseResult> {
-    const cacheKey = `${query}|${sort}|${timeRange}|${page}|${pageSize}`;
+    const cacheKey = `${query}|${sort}|${timeRange}|${page}|${pageSize}|${lang}`;
     const cached = browseCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       logger.debug({ cacheKey }, 'browseMods 命中缓存');
@@ -161,6 +163,8 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       qfUrl.searchParams.set('return_tags', 'true');
       qfUrl.searchParams.set('return_children', 'false');
       qfUrl.searchParams.set('query_type', sortToQueryType[sort] ?? '9');
+      // 语言：决定服务端返回 title/description 用哪个作者上传的语言版本（默认 schinese=6）
+      qfUrl.searchParams.set('language', String(lang));
       if (query) qfUrl.searchParams.set('search_text', query);
       const days = rangeToDays[timeRange] ?? 0;
       if (days > 0) qfUrl.searchParams.set('days', String(days));
@@ -225,9 +229,13 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
    * 批量 GetDetails——已下载列表显示用
    *
    * @param fileIds - Workshop File ID 列表（最多 100 个）
+   * @param lang - Steam ELanguage 整数值；默认 6 (schinese)
    * @returns Mod 元数据列表（过滤 result !== 1 的）
    */
-  async batchGetDetails(fileIds: WorkshopFileId[]): Promise<WorkshopModMeta[]> {
+  async batchGetDetails(
+    fileIds: WorkshopFileId[],
+    lang: number = STEAM_LANG.schinese,
+  ): Promise<WorkshopModMeta[]> {
     if (fileIds.length === 0) return [];
     const apiKey = getSteamWebApiKey(this.db);
     if (!apiKey) {
@@ -238,6 +246,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
       const url = new URL(API_GET_DETAILS);
       url.searchParams.set('key', apiKey);
       url.searchParams.set('strip_description_bbcode', 'true');
+      url.searchParams.set('language', String(lang));
       fileIds.forEach((id, i) => url.searchParams.append(`publishedfileids[${i}]`, id));
 
       const res = await fetch(url.toString(), {
