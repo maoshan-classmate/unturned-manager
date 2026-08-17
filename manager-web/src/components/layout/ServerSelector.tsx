@@ -129,7 +129,7 @@ export function ServerSelector() {
                     </span>
                     {selected && (
                       <span
-                        className="text-[10px] shrink-0"
+                        className="text-xs shrink-0"
                         style={{ color: "#22C55E" }}
                       >
                         当前

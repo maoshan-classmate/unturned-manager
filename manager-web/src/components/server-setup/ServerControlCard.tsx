@@ -160,7 +160,7 @@ export function ServerControlCard({
               onChange={(e) => setStartCommandDraft(e.target.value)}
               placeholder={`./ServerHelper.sh +InternetServer/${serverId} -ThreadedConsole`}
               disabled={startCommandSaving}
-              className="h-7 text-[11px] font-mono flex-1"
+              className="h-7 text-xs font-mono flex-1"
               spellCheck={false}
               aria-label="Unturned 服务端启动命令"
             />

@@ -91,7 +91,7 @@ export function LdmStatusCard({ serverId }: { serverId: string }) {
         </div>
       </div>
       <div
-        className="flex items-center gap-1 text-[11px] mt-2"
+        className="flex items-center gap-1 text-xs mt-2"
         style={{ color: "#64748B" }}
       >
         <Calendar size={11} />

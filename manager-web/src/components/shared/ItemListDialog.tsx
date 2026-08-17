@@ -115,7 +115,7 @@ function ItemFormDialog({
             className="w-full h-9 rounded text-xs px-3 font-mono bg-slate-950 border border-slate-700 text-slate-100"
           />
           {errors.id && (
-            <p role="alert" className="text-[11px] mt-1" style={{ color: "#EF4444" }}>
+            <p role="alert" className="text-xs mt-1" style={{ color: "#EF4444" }}>
               {errors.id.message}
             </p>
           )}
@@ -130,7 +130,7 @@ function ItemFormDialog({
             className="w-full h-9 rounded text-xs px-3 bg-slate-950 border border-slate-700 text-slate-100"
           />
           {errors.name && (
-            <p role="alert" className="text-[11px] mt-1" style={{ color: "#EF4444" }}>
+            <p role="alert" className="text-xs mt-1" style={{ color: "#EF4444" }}>
               {errors.name.message}
             </p>
           )}
@@ -147,7 +147,7 @@ function ItemFormDialog({
             className="w-full h-9 rounded text-xs px-3 bg-slate-950 border border-slate-700 text-slate-100"
           />
           {errors.label && (
-            <p role="alert" className="text-[11px] mt-1" style={{ color: "#EF4444" }}>
+            <p role="alert" className="text-xs mt-1" style={{ color: "#EF4444" }}>
               {errors.label.message}
             </p>
           )}
@@ -331,7 +331,7 @@ export function ItemListDialog({
                   className="flex items-center gap-2 px-3 py-2 bg-slate-900"
                 >
                   <span
-                    className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${
+                    className={`shrink-0 text-xs px-1.5 py-0.5 rounded ${
                       item.source === "builtin"
                         ? "bg-slate-800 text-slate-500"
                         : "bg-blue-500/10 text-blue-400"

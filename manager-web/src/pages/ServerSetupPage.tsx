@@ -205,7 +205,7 @@ export function ServerSetupPage() {
                         <div className="text-slate-100 truncate font-medium">
                           {s.name || s.id}
                         </div>
-                        <div className="text-slate-500 text-[11px]">
+                        <div className="text-slate-500 text-xs">
                           {stateLabel(s.state ?? "STOPPED")}
                         </div>
                       </div>
@@ -260,7 +260,7 @@ export function ServerSetupPage() {
                 <div className="flex flex-col items-center justify-center py-8 text-center text-xs text-slate-500 gap-3">
                   <Server size={28} className="text-slate-700" />
                   <span>尚未选择服务器实例</span>
-                  <span className="text-[11px] text-slate-600">
+                  <span className="text-xs text-slate-600">
                     在左侧「实例库」选择一个,或点击「新建」
                   </span>
                 </div>

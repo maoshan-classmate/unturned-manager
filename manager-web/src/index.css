@@ -8,12 +8,21 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* 整体字号放大：text-sm 14→15px（表单/按钮/表格正文）；其余保持 Tailwind 默认比例 */
-  --text-xs: 0.75rem;
-  --text-sm: 0.9375rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
+  /* 字号档：1440px → 2560px 等比放大至 1.15x，1440px 处逐像素等同改造前；行高取当前像素比值以保证放大时等比跟随、避免撑破行盒 */
+  --text-xs: clamp(0.75rem, 0.6054rem + 0.001607vw, 0.8625rem);
+  --text-xs--line-height: 1.3333;
+  --text-sm: clamp(0.9375rem, 0.7567rem + 0.002009vw, 1.0781rem);
+  --text-sm--line-height: 1.3333;
+  --text-base: clamp(1rem, 0.8071rem + 0.002143vw, 1.15rem);
+  --text-base--line-height: 1.5;
+  --text-lg: clamp(1.125rem, 0.9080rem + 0.002411vw, 1.2938rem);
+  --text-lg--line-height: 1.5556;
+  --text-xl: clamp(1.25rem, 1.0089rem + 0.002679vw, 1.4375rem);
+  --text-xl--line-height: 1.4;
+  --text-2xl: clamp(1.5rem, 1.2107rem + 0.003214vw, 1.725rem);
+  --text-2xl--line-height: 1.3333;
+  --text-3xl: clamp(1.875rem, 1.7143rem + 0.001786vw, 2rem);
+  --text-3xl--line-height: 1.2;
 
   --color-background: hsl(222 47% 11%);
   --color-foreground: hsl(210 40% 98%);
@@ -69,7 +78,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: clamp(1.0625rem, 0.8576rem + 0.002277vw, 1.2219rem);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

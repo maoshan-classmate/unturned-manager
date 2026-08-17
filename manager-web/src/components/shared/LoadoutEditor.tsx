@@ -185,7 +185,7 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
         <button
           type="button"
           onClick={() => setListDialogOpen(true)}
-          className="flex items-center gap-1 px-2 h-6 rounded text-[11px] text-slate-300 hover:bg-slate-800"
+          className="flex items-center gap-1 px-2 h-6 rounded text-xs text-slate-300 hover:bg-slate-800"
           aria-label="管理物品清单"
         >
           <Settings2 size={11} />
@@ -193,13 +193,13 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
         </button>
       }
     >
-      <p className="text-[11px] text-slate-500">
+      <p className="text-xs text-slate-500">
         配置玩家进入服务器时的默认背包物品。不填则没有任何额外物品。
       </p>
 
       {/* 255 互斥提示 */}
       {has255 && (
-        <p className="text-[11px] mt-1" style={{ color: "#F59E0B" }}>
+        <p className="text-xs mt-1" style={{ color: "#F59E0B" }}>
           已配置「所有技能组」通用包——具体技能组条目会被覆盖，实际不生效，已禁用编辑
         </p>
       )}
@@ -242,7 +242,7 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
                       return (
                         <span
                           key={`${id}-${i}`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-400"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-400"
                         >
                           <span>{id}</span>
                           <span>{resolveName(id)}</span>
@@ -313,7 +313,7 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
         </div>
       )}
       {addableSkillsets.length === 0 && (
-        <p className="text-[11px] mt-2 text-slate-500">
+        <p className="text-xs mt-2 text-slate-500">
           {has255
             ? "已配置所有技能组的通用包，无法再添加具体技能组"
             : "已为所有技能组配置开局物品"}

@@ -221,7 +221,7 @@ export function LoadoutItemDialog({
                 return (
                   <span
                     key={`${id}-${idx}`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-200"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-200"
                   >
                     <span>{id}</span>
                     <span className="text-slate-400">{resolveName(id)}</span>
@@ -295,12 +295,12 @@ export function LoadoutItemDialog({
                     </span>
                     <span>{item.label ?? item.name}</span>
                     {item.label && item.label !== item.name && (
-                      <span className="text-slate-500 text-[10px] truncate">
+                      <span className="text-slate-500 text-xs truncate">
                         {item.name}
                       </span>
                     )}
                     {item.source === "builtin" && (
-                      <span className="ml-auto text-[10px] text-slate-500 shrink-0">
+                      <span className="ml-auto text-xs text-slate-500 shrink-0">
                         内置
                       </span>
                     )}
@@ -309,7 +309,7 @@ export function LoadoutItemDialog({
               );
             })}
             {hasMore && (
-              <li className="px-3 py-1.5 text-[10px] text-center text-slate-500">
+              <li className="px-3 py-1.5 text-xs text-center text-slate-500">
                 已显示 {visible.length} / {filtered.length} 条——继续向下滚动加载
               </li>
             )}

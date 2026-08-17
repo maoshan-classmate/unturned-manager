@@ -22,7 +22,7 @@ export function ConfigSection({ title, subtitle, children, actions }: ConfigSect
           {actions}
         </div>
       </legend>
-      {subtitle && <p className="text-[11px] -mt-1 mb-2" style={{ color: '#475569' }}>{subtitle}</p>}
+      {subtitle && <p className="text-xs -mt-1 mb-2" style={{ color: '#475569' }}>{subtitle}</p>}
       <div className="space-y-3">{children}</div>
     </fieldset>
   );

@@ -82,7 +82,7 @@ function getApiError(err: unknown, fallback: string): string {
 function PathCode({ children }: { children: React.ReactNode }) {
   return (
     <code
-      className="text-[11px] px-1.5 py-0.5 rounded font-mono mx-1"
+      className="text-xs px-1.5 py-0.5 rounded font-mono mx-1"
       style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
     >
       {children}

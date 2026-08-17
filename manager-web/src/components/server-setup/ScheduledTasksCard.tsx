@@ -119,7 +119,7 @@ export function ScheduledTasksCard({ serverId }: ScheduledTasksCardProps) {
               pageRows.map((t) => (
                 <div key={t.id} className="grid grid-cols-[1fr_90px_1fr_60px_90px] gap-2 px-3 py-2 text-sm items-center">
                   <span className="text-slate-100 truncate">{t.name}</span>
-                  <span className="text-slate-400 font-mono text-[11px]">{cronExpr(t)}</span>
+                  <span className="text-slate-400 font-mono text-xs">{cronExpr(t)}</span>
                   <span className="text-slate-400 truncate">{t.shellCommand}</span>
                   <Switch checked={t.enabled} onCheckedChange={(v) => handleToggleEnabled(t, v)} />
                   <div className="flex items-center gap-1">

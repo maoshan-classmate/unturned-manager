@@ -110,7 +110,7 @@ export function ModCard({
                   </div>
                 );
               })}
-              <span className="ml-1 text-[11px] text-amber-500 tabular-nums">{voteScore.toFixed(1)}</span>
+              <span className="ml-1 text-xs text-amber-500 tabular-nums">{voteScore.toFixed(1)}</span>
             </div>
           )}
         </div>
@@ -147,7 +147,7 @@ export function ModCard({
             variant={downloaded ? 'outline' : 'default'}
             onClick={() => !downloaded && onDownload?.(fileId)}
             disabled={loading || downloaded}
-            className="h-7 text-[11px] gap-1 px-3"
+            className="h-7 text-xs gap-1 px-3"
           >
             {downloaded ? <Check size={12} /> : <Plus size={12} />}
             {downloaded ? '已下载' : '下载'}
@@ -156,7 +156,7 @@ export function ModCard({
             size="sm"
             variant="outline"
             onClick={() => onDetails?.(fileId)}
-            className="h-7 text-[11px] gap-1 px-3"
+            className="h-7 text-xs gap-1 px-3"
           >
             <Eye size={12} /> 详情
           </Button>

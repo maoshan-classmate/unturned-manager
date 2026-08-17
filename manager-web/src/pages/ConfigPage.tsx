@@ -966,7 +966,7 @@ function CommandsTab({
                   />
                   {k === "GSLT" && (
                     <p
-                      className="text-[11px] mt-1 leading-relaxed"
+                      className="text-xs mt-1 leading-relaxed"
                       style={{ color: "#64748B" }}
                     >
                       也可在「Config.txt → 浏览器」页签的「Steam
@@ -1237,7 +1237,7 @@ function RawSectionBlock({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="text-[11px] px-2 h-6 rounded"
+          className="text-xs px-2 h-6 rounded"
           style={{ color: "#94A3B8" }}
         >
           {open ? "收起" : "展开"}
@@ -1453,7 +1453,7 @@ function WorkshopTab({
         {r.manualPlacement && (
           <span
             title="手动放置，无自动更新"
-            className="shrink-0 px-1.5 py-0.5 rounded text-[10px]"
+            className="shrink-0 px-1.5 py-0.5 rounded text-xs"
             style={{ backgroundColor: "rgba(245,158,11,0.15)", color: "#F59E0B" }}
           >
             手动
@@ -1469,13 +1469,13 @@ function WorkshopTab({
       <div className="flex items-center gap-2">
         <button
           onClick={() => onToggleStatus(r.fileId)}
-          className={`px-2.5 py-0.5 rounded text-[11px] text-white ${r.status === "enabled" ? "bg-red-500" : "bg-emerald-500"}`}
+          className={`px-2.5 py-0.5 rounded text-xs text-white ${r.status === "enabled" ? "bg-red-500" : "bg-emerald-500"}`}
         >
           {r.status === "enabled" ? "禁用" : "启用"}
         </button>
         <button
           onClick={() => onRemove(r.fileId)}
-          className="px-2.5 py-0.5 rounded text-[11px] bg-red-500 text-black"
+          className="px-2.5 py-0.5 rounded text-xs bg-red-500 text-black"
         >
           移除
         </button>
@@ -1542,7 +1542,7 @@ function StatusBadge({ status }: { status: WorkshopRow["status"] }) {
   };
   return (
     <span
-      className={`inline-flex px-2.5 py-0.5 rounded text-[10px] font-medium text-white ${map[status]}`}
+      className={`inline-flex px-2.5 py-0.5 rounded text-xs font-medium text-white ${map[status]}`}
     >
       {text[status]}
     </span>

@@ -64,7 +64,7 @@ export function OnboardingSopCard() {
             复制 Unturned 服务端安装包自带的 Mod 框架到 Modules 目录：
             <div className="flex items-center gap-2 mt-1 ml-5">
               <code
-                className="text-[11px] px-2 py-0.5 rounded font-mono"
+                className="text-xs px-2 py-0.5 rounded font-mono"
                 style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
               >
                 cp -r /opt/unturned/Extras/Rocket.Unturned /opt/unturned/Modules/
@@ -88,7 +88,7 @@ export function OnboardingSopCard() {
             启动一次服务端，让 Mod 框架配置目录自动生成：
             <div className="flex items-center gap-2 mt-1 ml-5">
               <code
-                className="text-[11px] px-2 py-0.5 rounded font-mono"
+                className="text-xs px-2 py-0.5 rounded font-mono"
                 style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
               >
                 ServerHelper.sh +InternetServer/&lt;ServerID&gt; -ThreadedConsole
