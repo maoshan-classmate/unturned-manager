@@ -18,6 +18,7 @@ import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
 import { PageState } from "../components/shared/PageState.js";
 import { Terminal } from "../components/console/Terminal.js";
+import { HudDecoration } from "../components/shared/HudDecoration.js";
 import { toast } from "sonner";
 
 // ─── 预设命令 ──────────────────────────────────────────
@@ -406,13 +407,16 @@ function ConsoleContent({ serverId }: { serverId: string }) {
       </div>
 
       {/* ── Output：xterm.js 终端（Phase 3） ── */}
-      <Terminal
-        onReady={(term) => {
-          termRef.current = term;
-        }}
-        onInput={sendTerminalInput}
-        connected={connected}
-      />
+      <div className="relative flex-1 min-h-0">
+        <HudDecoration intensity="normal" />
+        <Terminal
+          onReady={(term) => {
+            termRef.current = term;
+          }}
+          onInput={sendTerminalInput}
+          connected={connected}
+        />
+      </div>
 
       {/* ── Input ── */}
       <div className="flex items-center gap-2 shrink-0">
