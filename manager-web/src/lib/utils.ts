@@ -53,6 +53,17 @@ export function stateLabel(state: string): string {
   return labels[state] ?? state;
 }
 
+/** 服务端状态 → 中文方括号徽章（铁律① 豁免，见 reference_ui_terms.md） */
+export function formatStateBadge(state: string): string {
+  const map: Record<string, string> = {
+    STOPPED: "【已停止】",
+    STARTING: "【启动中】",
+    RUNNING: "【运行中】",
+    STOPPING: "【停止中】",
+  };
+  return map[state] ?? state;
+}
+
 /** 服务端状态 → 颜色（ADR-0004 Phase 6：4 态，去 DEGRADED） */
 export function stateColor(state: string): string {
   const colors: Record<string, string> = {

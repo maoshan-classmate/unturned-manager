@@ -7,7 +7,7 @@ import { Input } from "../ui/input.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
 import { apiClient } from "@/api/client";
 import { useServer, useServerActions } from "@/hooks/useServer";
-import { stateColor, stateLabel } from "@/lib/utils";
+import { stateColor, formatStateBadge } from "@/lib/utils";
 import { LaunchCommandsDialog } from "./LaunchCommandsDialog.js";
 
 interface ServerControlCardProps {
@@ -142,8 +142,11 @@ export function ServerControlCard({
             <span>
               实例:<span className="text-slate-100 ml-1">{serverName}</span>
             </span>
-            <span style={{ color: stateColor(serverState) }}>
-              ● {stateLabel(serverState)}
+            <span
+              className="text-xs font-medium tracking-wider"
+              style={{ color: stateColor(serverState) }}
+            >
+              {formatStateBadge(serverState)}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -185,9 +188,11 @@ export function ServerControlCard({
         <div className="flex items-center gap-2 mt-4">
           <Button
             size="sm"
+            variant="glow"
+            animation="glow-pulse"
             onClick={handleStart}
             disabled={pending || isRunning}
-            className="h-9 text-sm gap-1 bg-emerald-500 text-white hover:bg-emerald-600"
+            className="h-9 text-sm gap-1"
           >
             {pending && !isRunning ? (
               <Loader2 size={12} className="animate-spin" />

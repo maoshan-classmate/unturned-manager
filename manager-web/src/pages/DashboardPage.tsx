@@ -13,7 +13,7 @@ import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
 import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
-import { cn } from "../lib/utils.js";
+import { cn, formatStateBadge } from "../lib/utils.js";
 
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
@@ -105,16 +105,10 @@ export function DashboardPage() {
     );
   }
 
-  // ── Server state helpers（ADR-0004 Phase 6：4 态，去 DEGRADED） ──
+  // ── Server state helpers ──
   const state = server.state ?? "STOPPED";
   const isRunning = state === "RUNNING";
   const isTransitioning = state === "STARTING" || state === "STOPPING";
-  const stateLabel: Record<string, string> = {
-    STOPPED: "已停止",
-    STARTING: "启动中",
-    RUNNING: "运行中",
-    STOPPING: "停止中",
-  };
   const stateColor: Record<string, string> = {
     STOPPED: "#64748B",
     STARTING: "#F59E0B",
@@ -138,8 +132,8 @@ export function DashboardPage() {
               className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: stateColor[state] }}
             />
-            <span className="text-sm" style={{ color: stateColor[state] }}>
-              {stateLabel[state] ?? state}
+            <span className="text-xs font-medium tracking-wider" style={{ color: stateColor[state] }}>
+              {formatStateBadge(state)}
             </span>
             <span className="text-xs" style={{ color: "#64748B" }}>
               {server.id} · 端口 <span className="font-mono tabular-nums">{server.gamePort}</span>
@@ -169,7 +163,7 @@ export function DashboardPage() {
         <StatCard
           icon={Server}
           label="服务器状态"
-          value={stateLabel[state] ?? state}
+          value={formatStateBadge(state)}
           status={
             isRunning ? "online" : isTransitioning ? "transitioning" : "neutral"
           }

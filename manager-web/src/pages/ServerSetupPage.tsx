@@ -11,7 +11,7 @@ import { PageState } from "../components/shared/PageState.js";
 import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { apiClient } from "../api/client.js";
 import { useServer } from "../hooks/useServer.js";
-import { stateColor, stateLabel } from "../lib/utils.js";
+import { stateColor, formatStateBadge } from "../lib/utils.js";
 import { SteamCmdCard } from "../components/server-setup/SteamCmdCard.js";
 import { U3dsCard } from "../components/server-setup/U3dsCard.js";
 import { ServerControlCard } from "../components/server-setup/ServerControlCard.js";
@@ -206,8 +206,8 @@ export function ServerSetupPage() {
                         <div className="text-slate-100 truncate font-medium">
                           {s.name || s.id}
                         </div>
-                        <div className="text-slate-500 text-xs">
-                          {stateLabel(s.state ?? "STOPPED")}
+                        <div className="text-slate-400 text-xs font-medium tracking-wider">
+                          {formatStateBadge(s.state ?? "STOPPED")}
                         </div>
                       </div>
                       {s.id === currentId && (

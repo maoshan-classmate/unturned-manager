@@ -661,7 +661,8 @@ function ConfigContent({ serverId }: { serverId: string }) {
               onClick={handleSave}
               disabled={!dirty || saving || !server}
               size="sm"
-              className={`h-8 text-xs gap-1.5 ${dirty ? "bg-emerald-500 text-white" : "bg-slate-800 text-slate-500"}`}
+              variant={dirty ? "glow" : "secondary"}
+              className="h-8 text-xs gap-1.5"
             >
               <Save size={14} /> {saving ? "保存中..." : "保存配置"}
             </Button>
