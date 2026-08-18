@@ -10,7 +10,7 @@
 | 页面 | 文件 | 核心功能 | 消费的 API 域 |
 |---|---|---|---|
 | Login | `pages/LoginPage.tsx` | 登录表单 | auth |
-| Dashboard | `pages/DashboardPage.tsx` | StatCard×4 + 启停重启 | servers + WS state_change |
+| Dashboard | `pages/DashboardPage.tsx` | StatCard×4 + 资源图 + 事件流 | servers + system/metrics + servers/:id/incidents + WS state_change / incident_created |
 | Console | `pages/ConsolePage.tsx` | 实时控制台 | servers/execute + WS console_line |
 | Mods | `pages/ModsPage.tsx` | Mod 卡片 + 添加 + 已下载列表 | config/workshop + workshop/mods |
 | Config | `pages/ConfigPage.tsx` | 基本设置/高级设置/Mod 列表 三 Tab 编辑器 | config/* |
@@ -111,6 +111,23 @@
 | `console_line` | ConsolePage `useConsole` | ✅ 后端 LogStreamer 有，但 startStreaming 未接线 + 订阅空 |
 | `steamcmd_progress` / `file_changed` | — | 契约已定义，后端未广播 |
 | `mod_apply_progress` | ConsolePage（启动前移动进度提示） | ✅ 后端在 `WorkshopApplyService.applyStaged` 广播 stage `'ready'`/`'failed'` |
+| `incident_created` | Dashboard `StatusBlock` | ✅ ServerManager transition 自动 record + 广播 |
+
+### 2.10 系统指标 `/api/system/metrics`
+
+**全局资源**——多实例共装下不分 ServerID，UI 文案「系统资源（多实例）」明示边界。
+
+| 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
+|---|---|---|---|---|---|
+| GET | `/?serverId=xxx&window=1m\|5m\|15m` | `MetricsService.getMetrics` | `MetricsQuerySchema`（window 枚举默认 5m）| Dashboard `SystemMonitorCard` 5s 轮询 | ✅ |
+
+### 2.11 事件流 `/api/servers/:id/incidents`
+
+**ServerID 嵌套路由**（与 `ldm` 同模式）——后端环形缓冲 100 条，重启清空。
+
+| 方法 | 路径 | 后端 handler | Zod | 前端消费点 | 状态 |
+|---|---|---|---|---|---|
+| GET | `/?limit=1-200` | `IncidentsService.getIncidents` | `IncidentsQuerySchema`（limit 默认 50 上限 200）| Dashboard `StatusBlock` 挂载拉历史 + WS 实时追加 | ✅ |
 
 ---
 
