@@ -9,3 +9,4 @@ export * from './files.schema.js';
 export * from './mod.schema.js';
 export * from './ldm.schema.js';
 export * from './items.schema.js';
+export * from './metrics.schema.js';

@@ -35,6 +35,7 @@ import { createSettingsRouter } from "./routes/settings.js";
 import { createSessionsRouter } from "./routes/sessions.js";
 import { createU3dsRouter } from "./routes/u3ds.js";
 import { createItemsRouter } from "./routes/items.js";
+import { createMetricsRouter } from "./routes/metrics.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
 
@@ -51,6 +52,9 @@ setAuthService(
 
 // ★ ADR-0005 ：终端会话管理器初始化（1:1 GSM3 TerminalSessionManager）
 await container.sessionManager.initialize();
+
+// 启动系统指标采集器（Dashboard 资源图后端支撑）——5s 间隔采样 CPU + 内存
+container.metricsService.start();
 
 // ─── LogStreamer 接线（ 修复——日志流此前从未启动）──
 for (const serverId of container.serverManager.listServersSync()) {
@@ -146,6 +150,8 @@ app.use(
 app.use("/api/u3ds", createU3dsRouter(container.u3dsStatus));
 // 物品清单（开局物品选择器 + 名称反查）——全局一份
 app.use("/api/items", createItemsRouter(container.itemService));
+// 系统指标（Dashboard 资源图后端支撑）——全进程一份资源，与 u3ds/steamcmd/items 等全局端点同级
+app.use("/api/system/metrics", createMetricsRouter(container.metricsService));
 
 // WebSocket
 wsBroadcaster.init(
@@ -208,7 +214,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
     await wsBroadcaster.destroy();
     await container.processSupervisor.destroy();
-    await container.ptyManager.destroy(); // 
+    await container.ptyManager.destroy(); //
+
+    // 优雅关闭指标采集器——停止定时器
+    container.metricsService.stop(); 
 
     server.close();
     closeDb();

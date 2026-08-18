@@ -87,6 +87,13 @@ export type {
   ItemRecord,
   ItemSource,
 } from "./contracts/items.js";
+export type {
+  IMetricsService,
+  MetricsWindow,
+  MetricsSample,
+  MetricsCurrent,
+  MetricsResponse,
+} from "./contracts/metrics.js";
 
 // Schemas (Sprint 2: zod-openapi 契约层)
 export * from "./schemas/index.js";

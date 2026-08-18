@@ -22,6 +22,7 @@ import {
   type ILdmConfigReader,
   type ILdmApplyService,
   type IItemService,
+  type IMetricsService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -52,6 +53,7 @@ import { LdmConfigWriter } from "./modules/ldm/LdmConfigWriter.js";
 import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
 import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
+import { MetricsService } from "./modules/metrics/MetricsService.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -81,6 +83,7 @@ export interface AppContainer {
   ldmApplyService: ILdmApplyService;
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
   itemService: IItemService;
+  metricsService: IMetricsService;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -143,6 +146,10 @@ export function buildContainer(db: Database.Database): AppContainer {
   // 物品清单服务——内置种子幂等播种（INSERT OR IGNORE，启动时执行一次）
   const itemService = new ItemService(db);
   itemService.seedBuiltinItems();
+
+  // 系统指标采集器——Dashboard 资源图（PR-2a / P3A）支撑；
+  // systeminformation 路线（D2 选项 B）——多实例共装下不分 ServerID
+  const metricsService = new MetricsService(logger);
 
   // ── LDM Mod 框架  模块 ─────────────────────────────────
   const ldmVersionReader = new LdmAssemblyVersionReader();
@@ -313,5 +320,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmConfigReader,
     ldmApplyService,
     itemService,
+    metricsService,
   };
 }

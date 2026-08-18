@@ -51,6 +51,7 @@ const { createFilesRouter } = await import("../../src/routes/files.js");
 const { createSteamCmdRouter } = await import("../../src/routes/steamcmd.js");
 const { createWorkshopRouter } = await import("../../src/routes/workshop.js");
 const { createSettingsRouter } = await import("../../src/routes/settings.js");
+const { createMetricsRouter } = await import("../../src/routes/metrics.js");
 const { errorHandler } = await import("../../src/middleware/errorHandler.js");
 const { noCache } = await import("../../src/middleware/noCache.js");
 
@@ -92,6 +93,7 @@ app.use("/api/servers", createFilesRouter(container.filesService));
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
+app.use("/api/system/metrics", createMetricsRouter(container.metricsService));
 app.use(errorHandler);
 
 // WebSocket
