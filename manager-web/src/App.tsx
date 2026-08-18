@@ -46,6 +46,7 @@ function AppLayout() {
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
+                className="h-full"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
