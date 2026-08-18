@@ -217,37 +217,25 @@ interface HudDecorationProps {
 
 **实现方式**：
 
-**方案 A：直接改 `STATE_LABELS` 映射值**
+**选定方案 B（用户 D2 拍板：仅中文方括号）**——新增 `formatStateBadge(state)` 工具函数，调用方显式选用。
 
 ```ts
-// lib/utils.ts
-export const STATE_LABELS = {
-  STOPPED: "[ STOPPED ]",
-  STARTING: "[ STARTING ]",
-  RUNNING: "[ RUNNING ]",
-  STOPPING: "[ STOPPING ]",
-} as const;
-```
-
-- 优点：改动小、单一来源
-- 缺点：状态文案变成「英文术语 + 方括号」——可能违反铁律①「行内术语堆砌」
-
-**方案 B：新增 `formatStateBadge(state)` 工具函数，调用方显式选用**
-
-```ts
-// lib/utils.ts
-export function formatStateBadge(state: ServerState): string {
-  const map = { ... };
-  return map[state];
+// manager-web/src/lib/utils.ts
+export function formatStateBadge(state: string): string {
+  const map: Record<string, string> = {
+    STOPPED: "【已停止】",
+    STARTING: "【启动中】",
+    RUNNING: "【运行中】",
+    STOPPING: "【停止中】",
+  };
+  return map[state] ?? state;
 }
 ```
 
-- 优点：保留现有 `STATE_LABELS` 不变；徽章语义独立
-- 缺点：调用方需要替换字符串渲染
+- 优点：保留现有 `STATE_LABELS`（纯中文状态文案）不变；徽章语义独立
+- 缺点：调用方需替换字符串渲染
 
-**推荐**：**方案 B**——保留界面文案规范（铁律① 不允许中英术语堆砌），但徽章是「装饰性语义」可豁免。
-
-**说明豁免**：徽章文案 `[ RUNNING ]` 类似英文 `命令参数`——表面像术语堆砌。需在 `reference_ui_terms.md` 加一行说明：「服务端状态徽章使用英文方括号格式作为视觉装饰」，作为正式豁免。
+**说明豁免**：徽章文案 `【运行中】` 是中文方括号作为视觉装饰。需在 `reference_ui_terms.md` 加一行说明：「服务端状态徽章使用中文方括号作为视觉装饰」，作为铁律① 正式豁免。
 
 **文件改动**：
 
@@ -264,12 +252,12 @@ export function formatStateBadge(state: ServerState): string {
 **验收**：
 
 - [ ] 4 处调用方统一为 `formatStateBadge`
-- [ ] 视觉：`[ RUNNING ]` 等徽章字体等宽、有间距
+- [ ] 视觉：`【运行中】` 等徽章中文方括号 + 中文字重（不强行等宽）
 - [ ] 现有中文 `STATE_LABELS` 保留（不破坏 SettingsPage / LDM 页文案）
 - [ ] `reference_ui_terms.md` 加豁免条目
 - [ ] typecheck 0 / vitest 全绿
 
-**风险**：低。纯字符串格式化 + 替换。**评审点**：是否真要英文方括号？中文方括号 `【运行中】` 是备选——纯视觉偏好。
+**风险**：低。纯字符串格式化 + 替换。**评审点**：已拍板为中文方括号 `【运行中】`。
 
 ---
 
@@ -308,7 +296,7 @@ export function formatStateBadge(state: ServerState): string {
 | 文件 | 改动 |
 |---|---|
 | `manager-web/src/components/ui/button.tsx` | buttonVariants 加 `animation` 变体；Component 用 cn 合并 class；+ glow-pulse keyframes 注入 |
-| `manager-web/src/components/ldm/LdmPage.tsx` | 应用变更按钮根据 isDirty 切换 `animation="glow-pulse"` / `animation="normal"` |
+| `manager-web/src/components/ldm/LdmPage.tsx` | **本批未实施**——LdmPage 暂无「应用变更」按钮 + isDirty 状态机（Phase 5 设计稿范围）。待 Phase 5 落地时按本设计接入 |
 
 **验收**：
 
