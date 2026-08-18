@@ -165,7 +165,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── StatCards (Figma 5:34) ── */}
-      <StaggerContainer className="grid grid-cols-4 gap-4 flex-1 content-start">
+      <StaggerContainer className="grid grid-cols-4 gap-4">
         <StatCard
           icon={Server}
           label="服务器状态"
