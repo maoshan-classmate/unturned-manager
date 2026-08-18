@@ -90,7 +90,9 @@
 - P0 已合入（commit 1d8f941 / c25ae7a / 7de96d1），后续 6732ca6 / 72b210b 字号抬档，b36c0af 文档收尾
 - P1 已合入（cf38633 / f2378a9 / ac01e09 / ec9068b），加上本系列的 UI 修正链（82b032b / 9239858 / 556547e / 2e61db5 / 2195a83）
 - P2 已合入（a770af0 / 80907cf / 55e0379）—— Button 动画档补齐 + ProgressBar 完成闪烁 + 状态徽章中文方括号 + Glow Button CTA + HUD 装饰组件上线；LdmPage 应用变更按钮 + isDirty 联动待 Phase 5 落地时按本文 §3.2 P2 表格「Glow Button CTA 接入」行接入
-- P3C 已合入（Cyberpunk Neon Folder，commit f08c76a）；P3A 资源图 System Monitor 化 / P3B Status Block 未启动
+- P3C 已合入（Cyberpunk Neon Folder，commit f08c76a）
+- P3A 已合入（资源图 System Monitor 化，commit 2f32326 后端 + 61452ca 前端）
+- P3B 已合入（Status Block，commit 0c76b8c 后端 + 74dedd4 前端）
 
 ### 3.2 动效优先级（按合并 PR 整理）
 
@@ -131,13 +133,15 @@
 
 **决策固化**：GSAP 不引入（D1）；中文方括号（D2）；HUD 原方案（D3）；glow-pulse 智能触发（D4 选项 3）。
 
-#### P3（P3C 已合入 · 资源图 + 状态块未启动）
+#### P3（全合入 · commit f08c76a / 2f32326 / 61452ca / 0c76b8c / 74dedd4）
 
-| 区域 | 改动 | 工时 |
-|---|---|---|
-| Dashboard 资源图 | System Monitor 化（CPU / 内存 / 网络 sparkline） | 6h |
-| Status Block | Dashboard 顶置实时状态 + incident 流 | 6h |
-| Cyberpunk Neon Folder | FilesPage 文件夹 hover 立体（克制用） | 2h |
+| 区域 | 改动 | 工时 | commit |
+|---|---|---|---|
+| Cyberpunk Neon Folder | FilesPage 文件夹 hover 立体（克制用） | 2h | f08c76a |
+| Dashboard 资源图后端 | MetricsService + `GET /api/system/metrics` | 4h | 2f32326 |
+| Dashboard 资源图前端 | SystemMonitorCard + useMetrics 5s 轮询 | 2h | 61452ca |
+| Status Block 后端 | IncidentsService 环形缓冲 + WS `incident_created` + ServerManager transition 集成 | 3h | 0c76b8c |
+| Status Block 前端 | StatusBlock 6 类事件 + 3 档严重程度 + useIncidents WS 订阅 | 3h | 74dedd4 |
 
 ### 3.3 动效 Token（沿用 + 扩展）
 
