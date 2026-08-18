@@ -13,7 +13,7 @@ interface CardProps {
  */
 export function Card({ icon: Icon, title, children, className = '' }: CardProps) {
   return (
-    <div className={`p-4 rounded-lg ${className}`}
+    <div className={`p-4 rounded-lg h-full ${className}`}
       style={{ backgroundColor: '#1E293B', border: '1px solid #334059' }}>
       {(Icon || title) && (
         <div className="flex items-center gap-2 mb-3">

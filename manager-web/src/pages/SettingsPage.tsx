@@ -116,7 +116,7 @@ export function SettingsPage() {
       )}
 
       <StaggerContainer
-        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 content-start"
         childClassNames={["", "", "", "", "md:col-span-2"]}
       >
         {/* 账户安全 */}

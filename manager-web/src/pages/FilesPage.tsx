@@ -446,7 +446,7 @@ export function FilesPage() {
       )}
 
       {/* ── File Grid (Figma: y=180, flex-1, 5 columns with 208px cards) ── */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="flex-1 overflow-auto px-6 py-4 content-start">
         {filtered.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-2">
@@ -455,7 +455,7 @@ export function FilesPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, 208px)', justifyContent: 'start' }}>
+          <div className="grid gap-3 content-start" style={{ gridTemplateColumns: 'repeat(auto-fill, 208px)', justifyContent: 'start' }}>
             {filtered.map((entry) => (
               <FileCardComp
                 key={entry.path}
