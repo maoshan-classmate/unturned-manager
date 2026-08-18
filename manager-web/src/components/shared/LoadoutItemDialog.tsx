@@ -299,11 +299,15 @@ export function LoadoutItemDialog({
                         {item.name}
                       </span>
                     )}
-                    {item.source === "builtin" && (
-                      <span className="ml-auto text-xs text-slate-500 shrink-0">
-                        内置
-                      </span>
-                    )}
+                    <span
+                      className={`ml-auto text-xs shrink-0 ${
+                        item.source === "builtin"
+                          ? "text-slate-500"
+                          : "text-blue-400"
+                      }`}
+                    >
+                      {item.source === "builtin" ? "内置" : "自定义"}
+                    </span>
                   </button>
                 </li>
               );

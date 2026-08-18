@@ -51,6 +51,37 @@ describe("LoadoutItemDialog — 物品选择", () => {
     expect(tags.getByText("军刀")).toBeInTheDocument();
   });
 
+  it("按 name 搜中文名命中自定义物品", async () => {
+    const user = userEvent.setup();
+    render(<LoadoutItemDialog {...baseProps()} />);
+    await user.type(screen.getByPlaceholderText(/搜索物品/), "自定义");
+    const list = screen.getByRole("list");
+    expect(within(list).getByText("自定义MOD物品")).toBeInTheDocument();
+    expect(within(list).queryByText("手枪")).not.toBeInTheDocument();
+  });
+
+  it("按 ID 搜自定义物品命中", async () => {
+    const user = userEvent.setup();
+    render(<LoadoutItemDialog {...baseProps()} />);
+    await user.type(screen.getByPlaceholderText(/搜索物品/), "9999");
+    const list = screen.getByRole("list");
+    expect(within(list).getByText("自定义MOD物品")).toBeInTheDocument();
+    expect(within(list).queryByText("手枪")).not.toBeInTheDocument();
+  });
+
+  it("默认下拉列表里自定义物品也在（无过滤时）", () => {
+    render(<LoadoutItemDialog {...baseProps()} />);
+    const list = screen.getByRole("list");
+    expect(within(list).getByText("自定义MOD物品")).toBeInTheDocument();
+  });
+
+  it("自定义物品显示来源徽章——与内置区分", () => {
+    render(<LoadoutItemDialog {...baseProps()} />);
+    const list = screen.getByRole("list");
+    expect(within(list).getByText("自定义")).toBeInTheDocument();
+    expect(within(list).getAllByText("内置").length).toBeGreaterThan(0);
+  });
+
   it("输入合法整数回车直接提交（Mod 物品）", async () => {
     const user = userEvent.setup();
     render(<LoadoutItemDialog {...baseProps()} />);

@@ -51,14 +51,19 @@ interface InstalledPluginsResponse {
 
 // ─── 组件 ────────────────────────────────────────────────
 
+/**
+ * 守卫壳——只做实例守卫，业务 hooks 全在 LdmContent 内。
+ * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建，统一走 PageState 显示加载中。
+ * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
+ * 本组件（不调业务 hooks），业务 hooks 在 LdmContent 内稳定执行。
+ */
 export function LdmPage() {
   const guard = useRequireServer();
 
-  const [activeTab, setActiveTab] = useState<
-    "installed" | "framework" | "permissions"
-  >("installed");
+  if (guard.status === "loading") {
+    return <PageState loading error={null} empty={false} loadingText="加载中...">{null}</PageState>;
+  }
 
-  // 无实例时内容区渲染占位卡引导（不再自动跳转 + toast）
   if (guard.status !== "ready") {
     return (
       <NoInstanceGuide
@@ -66,7 +71,15 @@ export function LdmPage() {
       />
     );
   }
-  const serverId = guard.serverId;
+
+  return <LdmContent serverId={guard.serverId} />;
+}
+
+/** LdmContent 持有全部业务 hooks 与 JSX；serverId 由守卫壳校验后传入，此处恒有效。 */
+function LdmContent({ serverId }: { serverId: string }) {
+  const [activeTab, setActiveTab] = useState<
+    "installed" | "framework" | "permissions"
+  >("installed");
 
   return (
     <div className="space-y-4">

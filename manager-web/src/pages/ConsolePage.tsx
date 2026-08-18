@@ -16,6 +16,7 @@ import { useSessionManager } from "../hooks/useSessionManager.js";
 import { Button } from "../components/ui/button.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
+import { PageState } from "../components/shared/PageState.js";
 import { Terminal } from "../components/console/Terminal.js";
 import { toast } from "sonner";
 
@@ -54,12 +55,18 @@ const DEFAULT_SHUTDOWN_DELAY_S = 10;
  */
 /**
  * 守卫壳组件——只做实例守卫，业务 hooks 全在 ConsoleContent 内。
- * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建，不再自动跳转 + toast。
+ * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建，统一走 PageState 显示加载中。
  * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
  * 本组件（不调业务 hooks），业务 hooks 在 ConsoleContent 内稳定执行。
  */
 export function ConsolePage() {
   const guard = useRequireServer();
+
+  // useServer 还在拉实例列表时统一返回 loading 占位——与 empty/missing 区分，
+  // 避免切菜单瞬间误显示「请先选择实例」引导卡
+  if (guard.status === "loading") {
+    return <PageState loading error={null} empty={false} loadingText="加载中...">{null}</PageState>;
+  }
 
   if (guard.status !== "ready") {
     return (
