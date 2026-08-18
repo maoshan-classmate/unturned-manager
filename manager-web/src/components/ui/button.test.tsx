@@ -83,6 +83,38 @@ describe("Button — 变体与动画档", () => {
     expect(() => render(<Button animation="glow-pulse">G</Button>)).not.toThrow();
   });
 
+  it("animation=press-only 覆盖 hover brightness（强制 brightness 100）", () => {
+    render(
+      <Button variant="default" animation="press-only">
+        仅按下
+      </Button>,
+    );
+    const btn = screen.getByRole("button", { name: "仅按下" });
+    expect(btn.className).toContain("hover:!brightness-100");
+  });
+
+  it("animation=glow-pulse + variant=glow 渲染呼吸光晕动画类", () => {
+    render(
+      <Button variant="glow" animation="glow-pulse">
+        关键操作
+      </Button>,
+    );
+    const btn = screen.getByRole("button", { name: "关键操作" });
+    expect(btn.className).toContain(
+      "animate-[button-glow-pulse_1.5s_ease-in-out_infinite]",
+    );
+  });
+
+  it("animation=glow-pulse + 非 glow variant 降级为 normal（无动画类）", () => {
+    render(
+      <Button variant="secondary" animation="glow-pulse">
+        不该闪
+      </Button>,
+    );
+    const btn = screen.getByRole("button", { name: "不该闪" });
+    expect(btn.className).not.toContain("animate-[button-glow-pulse");
+  });
+
   it("disabled 时禁用交互", () => {
     render(<Button disabled>不可用</Button>);
     const btn = screen.getByRole("button", { name: "不可用" }) as HTMLButtonElement;

@@ -45,32 +45,65 @@ const buttonVariants = cva(
         'icon-sm': 'size-7',
         'icon-lg': 'size-9',
       },
+      animation: {
+        normal: '',
+        'press-only': '[&:not(:hover)]:brightness-100 hover:!brightness-100',
+        'glow-pulse': 'animate-[button-glow-pulse_1.5s_ease-in-out_infinite]',
+      },
     },
     defaultVariants: {
       variant: 'default',
       size: 'default',
+      animation: 'normal',
     },
   },
 );
 
-/** 动画档——本批只支持 normal 视觉；press-only / glow-pulse 类型预留，渲染等同 normal（P2 扩展） */
+/** 动画档——normal 默认；press-only 仅 active scale 无 hover 亮度；glow-pulse 仅在 glow variant 生效（呼吸光晕） */
 export type ButtonAnimation = 'normal' | 'press-only' | 'glow-pulse';
 
 function Button({
   className,
   variant = 'default',
   size = 'default',
-  animation: _animation = 'normal',
+  animation = 'normal',
   ...props
 }: ButtonPrimitive.Props &
   VariantProps<typeof buttonVariants> & { animation?: ButtonAnimation }) {
+  // glow-pulse 仅在 variant="glow" 时生效；非 glow variant 降级为 normal（避免视觉混乱）
+  const effectiveAnimation: ButtonAnimation =
+    animation === 'glow-pulse' && variant !== 'glow' ? 'normal' : animation;
+
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(
+        buttonVariants({ variant, size, animation: effectiveAnimation, className }),
+      )}
       {...props}
     />
   );
+}
+
+// glow-pulse keyframes（运行时注入一次，与 ProgressBar 同模式）
+if (typeof document !== 'undefined') {
+  const STYLE_ID = 'button-glow-pulse-keyframes';
+  if (!document.getElementById(STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      @keyframes button-glow-pulse {
+        0%, 100% { box-shadow: 0 0 24px rgba(34, 197, 94, 0.5); }
+        50% { box-shadow: 0 0 36px rgba(34, 197, 94, 0.8); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .animate-\\[button-glow-pulse_1\\.5s_ease-in-out_infinite\\] {
+          animation: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 export { Button, buttonVariants };
