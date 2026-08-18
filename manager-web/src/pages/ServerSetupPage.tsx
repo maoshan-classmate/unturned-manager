@@ -237,7 +237,7 @@ export function ServerSetupPage() {
           </aside>
 
           {/* 主区域:4 卡片 2×2 */}
-          <StaggerContainer className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 content-start overflow-auto">
+          <StaggerContainer className="flex-1 grid grid-cols-1 lg:grid-cols-2 grid-rows-1fr-1fr gap-4 overflow-auto">
             {/* Card - SteamCMD(左上) */}
             <SteamCmdCard status={steamCmd} onStatusChange={setSteamCmd} />
 
