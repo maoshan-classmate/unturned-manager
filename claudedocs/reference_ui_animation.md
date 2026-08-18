@@ -78,7 +78,7 @@
 |---|---|---|---|
 | Motion v13（framer-motion） | 已引入（13 处用法） | 入场 / 退场 / stagger / layoutId | 继续 |
 | Tailwind `animate-spin` / `animate-pulse` | 已用（Loader2 / RefreshCw / ShieldCheck） | 简单加载 | 继续 |
-| **`@number-flow/react`** | 未引入 | 数字滚动插值 | **P1 推荐引入** |
+| **`@number-flow/react`** | 已引入（P1，数字滚动） | 数字滚动插值 | StatCard 启用 |
 | **GSAP** | 未引入 | 复杂时间线（HUD 扫描线 / dot-matrix） | **P2 必要时引入** |
 
 **推荐决策**：
@@ -86,40 +86,49 @@
 - **P1 数字滚动** → 引入 `@number-flow/react`（比手写 Number Ticker 干净，支持 locale / decimal / tabular）
 - **P2 HUD 扫描线** → 必要时引入 GSAP（DOM 性能更好，时间线 API 强）
 
+**当前状态**（2026-08-18）：
+- P0 已合入（commit 1d8f941 / c25ae7a / 7de96d1），后续 6732ca6 / 72b210b 字号抬档，b36c0af 文档收尾
+- P1 已合入（cf38633 / f2378a9 / ac01e09 / ec9068b），加上本系列的 UI 修正链（82b032b / 9239858 / 556547e / 2e61db5 / 2195a83）
+- P2 / P3 未启动
+
 ### 3.2 动效优先级（按合并 PR 整理）
 
-#### P0（首批 PR 必做）
+#### P0（已合入）
 
 | 区域 | 改动 | 工时 |
 |---|---|---|
 | Sidebar | active 条 layoutId 滑动 | 1h |
-| TabBar | 下划线 layoutId 滑动 | 1h |
-| PageState | 三态 fade-in 切换 | 1h |
-| Dialog | 入场 scale+fade，退出 AnimatePresence | 1h |
+| TabBar | 填充块 layoutId 滑动（指示器样式可切换） | 1h |
+| PageState | 三态 fade-in 切换（不动正常内容） | 1h |
+| Dialog | 入场 scale+fade，退出 AnimatePresence；DialogShell 抽公共遮罩 | 1h |
 | **多分辨率字号档** | §2 落地（贯穿全站） | 3h |
 
-#### P1（第二批 · 合并 PR）
+#### P1（已合入）
 
 | 区域 | 改动 | 工时 |
 |---|---|---|
-| 路由切换 | `<AnimatePresence>` 包 `<Outlet />`，fade | 1h |
-| Button | 全站统一 hover / active 反馈（active scale 0.98 + hover brightness） | 2h |
-| StatCard | 状态指示点第三件套：RUNNING pulse / STARTING 旋转环 / STOPPED 静默 | 2h |
-| StatCard | 数字滚动（`@number-flow/react`） | 1h |
-| 卡片网格 | stagger 入场（Dashboard / ServerSetup / Mods / Settings） | 2h |
-| ServerSetupPage | 4 卡按使用频率重排 | 0.5h |
-| **数字字段 mono + 千分位** | `formatNumber` + 全站 mono 字段清单化 | 2h |
+| 路由切换 | App.tsx 路由层 Location keyed fade；motion.div 需 h-full 传递 viewport 高度 | 1h |
+| Button | 补 hover brightness + glow variant + animation 档（press-only / glow-pulse 类型占位） | 1h |
+| StatCard | status 增 `transitioning`；enableStatusIndicator（pulse / spin）+ enableNumberTicker；清除 inline hex 违规 | 3h |
+| 卡片网格 | StaggerContainer 跨页面复用（4 页接入 + maxStaggeredItems 限制长列表） | 2h |
+| 数字字段 mono + 千分位 | utils 加 formatNumber / formatBytes；Dashboard 端口 + ModCard 订阅数 / 评分补齐 | 2h |
 
-#### P2（第三批）
+**未做**（本批范围外）：
+- ServerSetupPage 4 卡按使用频率重排 — 现状已与 §4.5 拍板顺序一致，工作量为 0
+- mono 字段清单化剩余位置（版本号 / 文件大小 / 更多端口） — 多位置改动留给后续 sprint 专项处理
+- `animation` Prop 的 `press-only` / `glow-pulse` 视觉差异 — 类型预留，渲染等同 normal（P2 扩展）
+
+#### P2（未启动 · 第三批）
 
 | 区域 | 改动 | 工时 |
 |---|---|---|
-| Glow Button | 启动服务器 / 保存配置 CTA | 2h |
+| Glow Button | 启动服务器 / 保存配置 CTA（variant="glow" 已存在但无调用方） | 2h |
 | ProgressBar | 完成时 fill 闪烁一次 | 1h |
 | HUD 装饰 | Dashboard 关键卡 + Console 顶部 dot-matrix + 扫描线（需评估 GSAP） | 4h |
 | `[ READY ]` 小标签徽章 | 状态文字方括号化 | 1h |
+| Button.press-only / glow-pulse 视觉差异 | 类型已定义，渲染补齐 | 0.5h |
 
-#### P3（第四批）
+#### P3（未启动 · 第四批）
 
 | 区域 | 改动 | 工时 |
 |---|---|---|
@@ -444,23 +453,13 @@ interface NavItem {
 
 ---
 
-## 9. 下一步（不在本会话范围）
+## 9. 下一步
 
-下一会话走 `/sc:design`，把规格细化：
-
-1. 每个变体组件的完整 Props 定义 + JSDoc
-2. 每个动效的精确时长 / 缓动 / 触发条件
-3. 多分辨率断点的 SCSS / Tailwind 配置
-4. Storybook 故事清单
-
-然后走 `/sc:workflow` 拆 PR：
-
-- **PR1**（P0）：Sidebar + TabBar + PageState + Dialog + 多分辨率字号档
-- **PR2**（P1）：路由 + Button + StatCard 三件套 + Number Ticker + stagger + 4 卡重排 + mono 字段
-- **PR3**（P2）：Glow Button + ProgressBar flash + HUD 装饰
-- **PR4**（P3）：Dashboard System Monitor + Status Block
+- 检查 `docs/architecture/design-system-mapping.md` 是否与 §1 配色与字号档同步更新
+- mono 字段剩余位置（版本号 / 文件大小 / 更多端口）留待后续 sprint 专项处理
+- P2 / P3 持续推进
 
 ---
 
 *创建日期：2026-08-17 · UI 动画现代化调研（/sc:brainstorm 输出）*
-*下一步：/sc:design 把规格细化*
+*更新：2026-08-18 · P0/P1 实施状态合入 + 章节编号修正*
