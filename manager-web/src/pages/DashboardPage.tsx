@@ -123,7 +123,7 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 h-full">
       {/* ── 页面标题 + 状态徽章 + 跳转入口 ── */}
       <div className="flex items-center justify-between">
         <div>
@@ -165,7 +165,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── StatCards (Figma 5:34) ── */}
-      <StaggerContainer className="grid grid-cols-4 gap-4">
+      <StaggerContainer className="grid grid-cols-4 gap-4 flex-1 content-start">
         <StatCard
           icon={Server}
           label="服务器状态"

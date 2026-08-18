@@ -53,7 +53,7 @@ export function StatCard({
   return (
     <div
       data-testid={`stat-card-${status}`}
-      className="flex flex-col gap-2 rounded-lg p-5 bg-slate-800 border border-slate-700"
+      className="flex flex-col h-full gap-2 rounded-lg p-5 bg-slate-800 border border-slate-700"
     >
       <div className="flex items-center gap-2">
         {enableStatusIndicator && (
@@ -80,7 +80,7 @@ export function StatCard({
         <Icon size={16} style={{ color: meta.icon }} />
         <span className="text-sm font-normal text-slate-400">{label}</span>
       </div>
-      <div className="flex items-baseline gap-1.5">
+      <div className="flex items-baseline gap-1.5 mt-auto">
         {typeof value === 'number' && enableNumberTicker ? (
           <NumberFlow
             value={value}
