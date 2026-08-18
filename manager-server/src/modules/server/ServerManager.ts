@@ -12,6 +12,7 @@ import type {
   WorkshopFileId,
   IWorkshopApplyService,
   ISessionManager,
+  IIncidentsService,
   CommandsDatRecord,
 } from "@unturned-manager/shared";
 import { ServerState } from "@unturned-manager/shared";
@@ -68,6 +69,8 @@ interface RuntimeServerState {
   stopRequested?: boolean;
   /** 会话代际（review-修复 BUG-2）：每次 startPty spawn 自增，1s timer 校验归属，防过期 timer 误写新会话 */
   sessionEpoch?: number;
+  /** 本次 STARTING transition 的时间戳（用于计算启动耗时） */
+  startTimestamp?: number;
 }
 
 /**
@@ -95,7 +98,8 @@ export class ServerManager implements IServerManager {
     private configService: IConfigService,
     private broadcaster: IBroadcaster,
     private workshopApply?: IWorkshopApplyService,
-    private sessionManager?: ISessionManager, // ★ ADR-0005 Phase 7：终端会话持久化（1:1 GSM3）
+    private sessionManager?: ISessionManager,
+    private incidentsService?: IIncidentsService,
   ) {
     this.loadServersFromDisk();
 
@@ -921,7 +925,82 @@ export class ServerManager implements IServerManager {
       /* 广播失败不影响主流程 */
     }
 
+    // Status Block 事件——记录 SPEC: STARTING/RUNNING/STOPPED 三个关键节点
+    this.recordIncidentForTransition(serverId, from, to, entry);
+
     logger.info({ serverId, from, to }, "状态转换");
+  }
+
+  /**
+   * 状态转换 → Status Block 事件映射。
+   *
+   * 关键设计：
+   * - STARTING 时记录"启动请求已发起" + 写 startTimestamp 用于后续计算 durationMs
+   * - RUNNING 时记录"启动完成" + durationMs（启动耗时）
+   * - STOPPED 时根据 stopRequested 区分 stop（用户主动） vs crash（异常退出）
+   * - STOPPING 不记录（噪声），统一以 STOPPED 终态记录
+   */
+  private recordIncidentForTransition(
+    serverId: ServerId,
+    from: ServerState,
+    to: ServerState,
+    entry: RuntimeServerState,
+  ): void {
+    if (!this.incidentsService) return;
+    try {
+      if (to === ServerState.STARTING) {
+        entry.startTimestamp = Date.now();
+        this.incidentsService.record(
+          serverId,
+          "start",
+          "info",
+          "启动请求已发起",
+        );
+        return;
+      }
+      if (to === ServerState.RUNNING) {
+        const durationMs =
+          entry.startTimestamp !== undefined
+            ? Date.now() - entry.startTimestamp
+            : undefined;
+        const details =
+          durationMs !== undefined ? { durationMs } : undefined;
+        this.incidentsService.record(
+          serverId,
+          "start",
+          "info",
+          "启动完成",
+          details,
+        );
+        entry.startTimestamp = undefined;
+        return;
+      }
+      if (to === ServerState.STOPPED) {
+        const wasRunning = from === ServerState.RUNNING;
+        const wasStarting = from === ServerState.STARTING;
+        if (wasRunning || wasStarting) {
+          if (entry.stopRequested) {
+            this.incidentsService.record(
+              serverId,
+              "stop",
+              "info",
+              "已停止",
+            );
+          } else {
+            this.incidentsService.record(
+              serverId,
+              "crash",
+              "error",
+              "服务器异常退出",
+            );
+          }
+        }
+        entry.startTimestamp = undefined;
+        return;
+      }
+    } catch {
+      /* 事件记录失败不影响主流程 */
+    }
   }
 
   /**

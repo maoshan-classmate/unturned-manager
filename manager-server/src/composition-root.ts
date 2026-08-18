@@ -23,6 +23,7 @@ import {
   type ILdmApplyService,
   type IItemService,
   type IMetricsService,
+  type IIncidentsService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -54,6 +55,7 @@ import { LdmDiscoveryService } from "./modules/ldm/LdmDiscoveryService.js";
 import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService.js";
 import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
 import { MetricsService } from "./modules/metrics/MetricsService.js";
+import { IncidentsService } from "./modules/incidents/IncidentsService.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -84,6 +86,7 @@ export interface AppContainer {
   // 物品清单（开局物品选择器 + 名称反查）——全局一份
   itemService: IItemService;
   metricsService: IMetricsService;
+  incidentsService: IIncidentsService;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -126,10 +129,15 @@ export function buildContainer(db: Database.Database): AppContainer {
   // Unturned 服务端（U3DS）安装状态查询器——读启动脚本 + Status.json + 安装清单
   const u3dsStatus = new U3dsStatusProvider(logger);
 
+  // ServerID 事件流服务——Dashboard Status Block 支撑
+  // 必须先于 ServerManager 实例化——注入到 ServerManager 触发 start/stop/crash 自动记录
+  const incidentsService = new IncidentsService(broadcaster);
+
   // ServerManager（聚合根）——目录扫描真源 + settings K-V 凭证
-  // ★ ADR-0004 ：U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
-  // ★ ADR-0004 ：RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
-  // ★ ADR-0005 ：注入 sessionManager——PTY spawn/exit 时调 saveSession / setSessionActive
+  // U3DS 实例进程走 PTY（ptyManager）；processSupervisor 只服务 SteamCMD 等非 PTY spawn
+  // RCON 通道已删除——所有命令通过 PTY 终端 owner-trust 模型执行
+  // 注入 sessionManager——PTY spawn/exit 时调 saveSession / setSessionActive
+  // 注入 incidentsService——transition 自动记录 start/stop/crash 事件
   serverManager = new ServerManager(
     db,
     new ServerDiscovery(),
@@ -138,6 +146,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     broadcaster,
     workshopApply,
     sessionManager,
+    incidentsService,
   );
 
   // AuthService
@@ -147,7 +156,7 @@ export function buildContainer(db: Database.Database): AppContainer {
   const itemService = new ItemService(db);
   itemService.seedBuiltinItems();
 
-  // 系统指标采集器——Dashboard 资源图（PR-2a / P3A）支撑；
+  // 系统指标采集器——Dashboard 资源图支撑；
   // systeminformation 路线（D2 选项 B）——多实例共装下不分 ServerID
   const metricsService = new MetricsService(logger);
 
@@ -321,5 +330,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     ldmApplyService,
     itemService,
     metricsService,
+    incidentsService,
   };
 }

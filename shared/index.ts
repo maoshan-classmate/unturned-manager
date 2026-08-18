@@ -94,6 +94,14 @@ export type {
   MetricsCurrent,
   MetricsResponse,
 } from "./contracts/metrics.js";
+export type {
+  IIncidentsService,
+  Incident,
+  IncidentType,
+  IncidentSeverity,
+  IncidentDetails,
+  IncidentsResponse,
+} from "./contracts/incidents.js";
 
 // Schemas (Sprint 2: zod-openapi 契约层)
 export * from "./schemas/index.js";

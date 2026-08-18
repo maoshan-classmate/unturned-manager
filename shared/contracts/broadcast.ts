@@ -52,7 +52,7 @@ export type ServerEvent =
       remainingSeconds?: number;
     }
   | { type: "file_changed"; serverId: ServerId; path: string }
-  // Phase 2b：LDM 应用变更进度（与 mod_apply_progress 同模式，分开类型便于前端过滤）
+  // LDM 应用变更进度（与 mod_apply_progress 同模式，分开类型便于前端过滤）
   | {
       type: "ldm_apply_progress";
       serverId: ServerId;
@@ -61,6 +61,12 @@ export type ServerEvent =
       percent?: number;
       /** 失败时的根因描述（仅 failed 事件携带）——前端 toast 显示 */
       errorMessage?: string;
+    }
+  // Status Block 事件流——事件写入时立即推送，前端无须轮询
+  | {
+      type: "incident_created";
+      serverId: ServerId;
+      incident: import("./incidents.js").Incident;
     }
   // Phase 0 异步化：jobId 关联单个 SteamCMD 长任务（前端按 jobId 过滤订阅）；
   // latestVersion 是 check-update completed 事件携带的 U3DS buildid。此前缺失导致

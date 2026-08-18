@@ -36,6 +36,7 @@ import { createSessionsRouter } from "./routes/sessions.js";
 import { createU3dsRouter } from "./routes/u3ds.js";
 import { createItemsRouter } from "./routes/items.js";
 import { createMetricsRouter } from "./routes/metrics.js";
+import { createIncidentsRouter } from "./routes/incidents.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
 
@@ -152,6 +153,11 @@ app.use("/api/u3ds", createU3dsRouter(container.u3dsStatus));
 app.use("/api/items", createItemsRouter(container.itemService));
 // 系统指标（Dashboard 资源图后端支撑）——全进程一份资源，与 u3ds/steamcmd/items 等全局端点同级
 app.use("/api/system/metrics", createMetricsRouter(container.metricsService));
+// ServerID 事件流（Status Block 后端支撑）——按 ServerID 嵌套路由，与 ldm 同模式
+app.use(
+  "/api/servers/:id/incidents",
+  createIncidentsRouter(container.incidentsService),
+);
 
 // WebSocket
 wsBroadcaster.init(
