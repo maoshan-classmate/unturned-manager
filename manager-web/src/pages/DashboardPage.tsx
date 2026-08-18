@@ -170,8 +170,9 @@ export function DashboardPage() {
           label="服务器状态"
           value={stateLabel[state] ?? state}
           status={
-            isRunning ? "online" : isTransitioning ? "warning" : "neutral"
+            isRunning ? "online" : isTransitioning ? "transitioning" : "neutral"
           }
+          enableStatusIndicator
         />
         <StatCard
           icon={Users}
@@ -188,8 +189,9 @@ export function DashboardPage() {
         <StatCard
           icon={Package}
           label="Mod 数"
-          value={modCount === null ? "—" : String(modCount)}
+          value={modCount === null ? "—" : modCount}
           status="neutral"
+          enableNumberTicker
         />
       </div>
 
