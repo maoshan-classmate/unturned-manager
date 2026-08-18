@@ -12,6 +12,7 @@ import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
 import { StaggerContainer } from "../components/shared/StaggerContainer.js";
+import { SystemMonitorCard } from "../components/dashboard/SystemMonitorCard.js";
 import { HudDecoration } from "../components/shared/HudDecoration.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
 import { cn, formatStateBadge } from "../lib/utils.js";
@@ -194,16 +195,9 @@ export function DashboardPage() {
         />
       </StaggerContainer>
 
-      {/* ── 资源使用图占位 ── */}
-      <div className="flex-1 rounded-lg border border-dashed flex flex-col items-center justify-center min-h-[200px]"
-        style={{ borderColor: "#334059" }}
-      >
-        <span className="text-sm" style={{ color: "#64748B" }}>
-          资源使用图
-        </span>
-        <span className="text-xs mt-1" style={{ color: "#475569" }}>
-          服务器运行后自动采集
-        </span>
+      {/* ── 资源使用图 ── */}
+      <div className="flex-1 min-h-[200px]">
+        <SystemMonitorCard serverId={server.id} />
       </div>
     </div>
   );
