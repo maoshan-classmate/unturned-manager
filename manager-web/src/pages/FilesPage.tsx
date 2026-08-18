@@ -10,7 +10,7 @@ import { Button } from '../components/ui/button.js';
 import { Dialog } from '../components/shared/Dialog.js';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog.js';
 import { SearchInput } from '../components/shared/SearchInput.js';
-import { formatSize, formatDate } from '@/lib/utils';
+import { formatSize, formatDate, cn } from '@/lib/utils';
 
 interface FileEntry {
   name: string;
@@ -50,7 +50,6 @@ function FileCardComp({
 }) {
   // Icon color per file type
   const getIconColor = () => {
-    if (entry.isDirectory) return '#3B82F6'; // blue (Figma)
     const ext = entry.name.split('.').pop()?.toLowerCase();
     if (ext === 'zip' || ext === 'rar' || ext === '7z') return '#F97316'; // orange
     if (ext === 'sh' || ext === 'yaml' || ext === 'yml') return '#6366F1'; // indigo
@@ -62,7 +61,12 @@ function FileCardComp({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
       onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e); }}
-      className="flex flex-col items-center rounded-lg transition-colors"
+      className={cn(
+        "group flex flex-col items-center rounded-lg transition-all duration-200",
+        // P3C 文件夹 hover 霓虹化（D9 选项 2 + D10 选项 1 + D11 选项 2）：
+        // 微旋转 + 蓝光晕；@2xl 大屏增强；motion-safe 兼容减弱动效偏好
+        entry.isDirectory && "motion-safe:hover:rotate-[-1.5deg] motion-safe:hover:shadow-[0_0_12px_rgba(59,130,246,0.45)] @2xl:motion-safe:hover:rotate-[-2deg] @2xl:motion-safe:hover:shadow-[0_0_20px_rgba(59,130,246,0.6)]",
+      )}
       style={{
         width: 208,
         height: 125,
@@ -74,7 +78,10 @@ function FileCardComp({
       }}
     >
       {entry.isDirectory ? (
-        <Folder size={32} style={{ color: getIconColor() }} />
+        <Folder
+          size={32}
+          className="text-blue-500 transition-colors duration-200 motion-safe:group-hover:text-blue-400"
+        />
       ) : (
         <File size={32} style={{ color: getIconColor() }} />
       )}

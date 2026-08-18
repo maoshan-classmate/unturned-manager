@@ -25,6 +25,8 @@
 | `status/online` | (同 accent/primary) | `#22C55E` | `text-emerald-500` | 在线徽章 |
 | `status/warning` | (0.961, 0.620, 0.043) | `#F59E0B` | `text-amber-500` | 警告徽章 |
 | `status/danger` | (0.937, 0.267, 0.267) | `#EF4444` | `text-red-500` / `bg-red-500` | 错误徽章 |
+| `accent/folder` | (0.231, 0.510, 0.965) | `#3B82F6` | `text-blue-500` | 文件夹图标底色 |
+| `accent/folder-hover` | (0.376, 0.647, 0.980) | `#60A5FA` | `text-blue-400` | 文件夹 hover 霓虹提亮色 |
 
 **主题落地**：`tailwind.config.ts`：
 
