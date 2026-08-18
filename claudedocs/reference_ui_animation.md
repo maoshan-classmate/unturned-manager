@@ -89,7 +89,7 @@
 **当前状态**（2026-08-18）：
 - P0 已合入（commit 1d8f941 / c25ae7a / 7de96d1），后续 6732ca6 / 72b210b 字号抬档，b36c0af 文档收尾
 - P1 已合入（cf38633 / f2378a9 / ac01e09 / ec9068b），加上本系列的 UI 修正链（82b032b / 9239858 / 556547e / 2e61db5 / 2195a83）
-- P2 已合入（a770af0 / 80907cf / 55e0379）—— Button 动画档补齐 + ProgressBar 完成闪烁 + 状态徽章中文方括号 + Glow Button CTA + HUD 装饰组件上线；LdmPage 应用变更按钮 + isDirty 联动待 Phase 5 落地时按 `design_ui_animation_p2_2026-08-18.md` §2.5 接入
+- P2 已合入（a770af0 / 80907cf / 55e0379）—— Button 动画档补齐 + ProgressBar 完成闪烁 + 状态徽章中文方括号 + Glow Button CTA + HUD 装饰组件上线；LdmPage 应用变更按钮 + isDirty 联动待 Phase 5 落地时按本文 §3.2 P2 表格「Glow Button CTA 接入」行接入
 - P3 未启动（资源图 System Monitor 化 / Status Block / Cyberpunk Neon Folder）
 
 ### 3.2 动效优先级（按合并 PR 整理）
@@ -129,7 +129,7 @@
 | Glow Button CTA 接入 | ServerControlCard 启动按钮常驻 glow-pulse（D4 拍板选项 3）；ConfigPage 保存按钮 dirty 时切 glow；LdmPage 应用变更按钮待 Phase 5 落地时接入 | 2h | 80907cf |
 | HUD 装饰组件 | 新建 HudDecoration（dot-matrix + emerald 扫描线 4s 循环 + prefers-reduced-motion）；Dashboard 「服务器状态」StatCard + Console 终端区域嵌入 | 4h | 55e0379 |
 
-**决策固化**：GSAP 不引入（D1）；中文方括号（D2）；HUD 原方案（D3）；glow-pulse 智能触发（D4 选项 3）。设计档见 `claudedocs/design_ui_animation_p2_2026-08-18.md`。
+**决策固化**：GSAP 不引入（D1）；中文方括号（D2）；HUD 原方案（D3）；glow-pulse 智能触发（D4 选项 3）。
 
 #### P3（未启动 · 第四批）
 

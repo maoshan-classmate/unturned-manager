@@ -56,7 +56,7 @@
 
 | 场景 | 豁免内容 | 适用范围 | 来源 |
 |---|---|---|---|
-| ServerState 状态徽章 | 中文方括号包裹（如 `【运行中】` / `【已停止】` / `【启动中】` / `【停止中】`） | 仅徽章视觉装饰（Dashboard 标题下、ServerSetupPage 实例列表、ServerControlCard 状态栏、ConfigPage 守卫壳） | `claudedocs/design_ui_animation_p2_2026-08-18.md` §2.4（D2 拍板） |
+| ServerState 状态徽章 | 中文方括号包裹（如 `【运行中】` / `【已停止】` / `【启动中】` / `【停止中】`） | 仅徽章视觉装饰（Dashboard 标题下、ServerSetupPage 实例列表、ServerControlCard 状态栏、ConfigPage 守卫壳） | `reference_ui_animation.md` §3.2 P2 表行 128（D2 拍板：状态徽章中文方括号） |
 
 **说明**：状态**文案本体**仍走 `已停止/启动中/运行中/停止中`（stateLabel 工具函数），**不加方括号**。徽章是装饰，与 P1 mono 字段、命令终端调性一致；普通交互文案不豁免。
 
