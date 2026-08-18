@@ -3,6 +3,10 @@ import { motion, type Variants } from "motion/react";
 
 interface StaggerContainerProps {
   children: ReactNode[];
+  /** 透传容器类名（grid / flex 等布局）；StaggerContainer 渲染 motion.div 承载布局 */
+  className?: string;
+  /** 按索引给单个子元素 wrapper 额外加 className（用于 grid 子项的 col-span 之类） */
+  childClassNames?: string[];
   /** 子元素 stagger 间隔（ms），默认 80 */
   staggerMs?: number;
   /** 入场动画时长（ms），默认 300 */
@@ -20,6 +24,8 @@ interface StaggerContainerProps {
  */
 export function StaggerContainer({
   children,
+  className = "",
+  childClassNames = [],
   staggerMs = 80,
   durationMs = 300,
   yOffset = 8,
@@ -31,12 +37,15 @@ export function StaggerContainer({
   if (!staggered) {
     return (
       <motion.div
+        className={className}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: durationMs / 1000, ease: "easeOut" }}
       >
         {items.map((child, i) => (
-          <div key={i}>{child}</div>
+          <div key={i} className={childClassNames[i] ?? ""}>
+            {child}
+          </div>
         ))}
       </motion.div>
     );
@@ -56,9 +65,14 @@ export function StaggerContainer({
   };
 
   return (
-    <motion.div variants={container} initial="hidden" animate="visible">
+    <motion.div
+      className={className}
+      variants={container}
+      initial="hidden"
+      animate="visible"
+    >
       {items.map((child, i) => (
-        <motion.div key={i} variants={item}>
+        <motion.div key={i} variants={item} className={childClassNames[i] ?? ""}>
           {child}
         </motion.div>
       ))}

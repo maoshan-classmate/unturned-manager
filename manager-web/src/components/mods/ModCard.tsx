@@ -110,7 +110,7 @@ export function ModCard({
                   </div>
                 );
               })}
-              <span className="ml-1 text-xs text-amber-500 tabular-nums">{voteScore.toFixed(1)}</span>
+              <span className="ml-1 text-xs text-amber-500 font-mono tabular-nums">{voteScore.toFixed(1)}</span>
             </div>
           )}
         </div>
@@ -119,7 +119,7 @@ export function ModCard({
         {subscriptions != null && subscriptions > 0 && (
           <div className="flex items-center gap-1 mt-1.5 text-xs text-slate-500">
             <Users size={11} />
-            {subscriptions.toLocaleString()} 订阅
+            <span className="font-mono tabular-nums">{subscriptions.toLocaleString()}</span>{" "}订阅
           </div>
         )}
 

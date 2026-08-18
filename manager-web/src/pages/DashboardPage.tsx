@@ -11,6 +11,7 @@ import {
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
+import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
 import { cn } from "../lib/utils.js";
 
@@ -141,7 +142,7 @@ export function DashboardPage() {
               {stateLabel[state] ?? state}
             </span>
             <span className="text-xs" style={{ color: "#64748B" }}>
-              {server.id} · 端口 {server.gamePort}
+              {server.id} · 端口 <span className="font-mono tabular-nums">{server.gamePort}</span>
             </span>
           </div>
         </div>
@@ -164,7 +165,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── StatCards (Figma 5:34) ── */}
-      <div className="grid grid-cols-4 gap-4">
+      <StaggerContainer className="grid grid-cols-4 gap-4">
         <StatCard
           icon={Server}
           label="服务器状态"
@@ -193,7 +194,7 @@ export function DashboardPage() {
           status="neutral"
           enableNumberTicker
         />
-      </div>
+      </StaggerContainer>
 
       {/* ── 资源使用图占位 ── */}
       <div className="flex-1 rounded-lg border border-dashed flex flex-col items-center justify-center min-h-[200px]"

@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { PasswordInput } from '../components/shared/PasswordInput.js';
 import { Card } from '../components/shared/Card.js';
+import { StaggerContainer } from '../components/shared/StaggerContainer.js';
 import { apiClient } from '../api/client.js';
 
 /**
@@ -114,7 +115,10 @@ export function SettingsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <StaggerContainer
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        childClassNames={["", "", "", "", "md:col-span-2"]}
+      >
         {/* 账户安全 */}
         <Card icon={Key} title="账户安全">
           <div className="space-y-3">
@@ -189,7 +193,7 @@ export function SettingsPage() {
         </Card>
 
         {/* Steam WebAPI Key — 模组页面依赖此项 */}
-        <Card icon={Wrench} title="Steam WebAPI Key" className="md:col-span-2">
+        <Card icon={Wrench} title="Steam WebAPI Key">
           <div className="space-y-3">
             <p className="text-xs" style={{ color: '#94A3B8' }}>
               用于从 Steam 创意工坊获取 Mod 元数据（名称、作者、预览图等）。
@@ -235,7 +239,7 @@ export function SettingsPage() {
             </p>
           </div>
         </Card>
-      </div>
+      </StaggerContainer>
     </div>
   );
 }

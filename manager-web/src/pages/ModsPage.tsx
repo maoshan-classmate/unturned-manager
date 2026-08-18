@@ -14,6 +14,7 @@ import { ModCardSkeleton } from "../components/mods/ModCardSkeleton.js";
 import { ModDetailDialog } from "../components/mods/ModDetailDialog.js";
 import { PaginationBar } from "../components/shared/PaginationBar.js";
 import { SearchInput } from "../components/shared/SearchInput.js";
+import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { InfoCard } from "../components/shared/InfoCard.js";
 import { Button } from "../components/ui/button.js";
 
@@ -540,7 +541,10 @@ export function ModsPage() {
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <StaggerContainer
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+            maxStaggeredItems={12}
+          >
             {(browse?.rows ?? []).map((mod) => {
               const fileProgress = progressByFile[mod.fileId];
               return (
@@ -565,7 +569,7 @@ export function ModsPage() {
                 />
               );
             })}
-          </div>
+          </StaggerContainer>
         )}
       </div>
 

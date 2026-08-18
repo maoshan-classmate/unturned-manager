@@ -57,12 +57,13 @@ describe('ModCard', () => {
 
   // 订阅数显示
   it('订阅数存在时显示', () => {
-    render(<ModCard {...BASE_PROPS} subscriptions={12345} />);
-    expect(screen.getByText(/12,345 订阅/)).toBeTruthy();
+    const { container } = render(<ModCard {...BASE_PROPS} subscriptions={12345} />);
+    // 订阅数与「订阅」字样被 span 拆开——直接断言容器 textContent 包含全文
+    expect(container.textContent).toContain("12,345 订阅");
   });
 
   it('订阅数为空时不显示', () => {
-    render(<ModCard {...BASE_PROPS} />);
-    expect(screen.queryByText(/订阅/)).toBeNull();
+    const { container } = render(<ModCard {...BASE_PROPS} />);
+    expect(container.textContent).not.toContain("订阅");
   });
 });

@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button.js";
 import { Card } from "../components/shared/Card.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { PageState } from "../components/shared/PageState.js";
+import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { apiClient } from "../api/client.js";
 import { useServer } from "../hooks/useServer.js";
 import { stateColor, stateLabel } from "../lib/utils.js";
@@ -236,7 +237,7 @@ export function ServerSetupPage() {
           </aside>
 
           {/* 主区域:4 卡片 2×2 */}
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-auto">
+          <StaggerContainer className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-auto">
             {/* Card - SteamCMD(左上) */}
             <SteamCmdCard status={steamCmd} onStatusChange={setSteamCmd} />
 
@@ -277,7 +278,7 @@ export function ServerSetupPage() {
                 </div>
               </Card>
             )}
-          </div>
+          </StaggerContainer>
         </div>
 
         {/* 创建实例 Dialog — 全页根级挂载；创建成功后自动选中新实例（侧栏/页面立即切换） */}
