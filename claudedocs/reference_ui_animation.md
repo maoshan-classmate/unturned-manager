@@ -17,12 +17,12 @@
 
 **12 色常量**（基线 11 + 1 个文件夹 hover 变体）：sidebar `#020617` / content `#0F172A` / card `#1E293B` / border `#334059` / 主文本 `#F1F5FB` / 次级 `#94A3B8` / 弱化 `#64748B` / 在线 `#22C55E` / 危险 `#EF4444` / 警告 `#F59E0B` / 文件夹 `#3B82F6` / 文件夹 hover `#60A5FA`。
 
-**新色值规则**：基线仍是 9 色常量；科技感装饰色（HUD 扫描线、glow 光晕、dot-matrix 网格、状态徽章变体等）允许新增，但**不与项目主题冲突**——评审标准：
+**新色值规则**：基线仍是 11 色常量；科技感装饰色（HUD 扫描线、glow 光晕、dot-matrix 网格、状态徽章变体等）允许新增，但**不与项目主题冲突**——评审标准：
 
 | 维度 | 要求 |
 |---|---|
 | 色相 | 与 emerald-500 强调色 / slate 灰阶**同一色相家族**或**纯灰阶** |
-| 饱和度 | 不引入高饱和警示色（避免与 9 色冲突） |
+| 饱和度 | 不引入高饱和警示色（避免与 11 色冲突） |
 | 透明度 | 优先用 `rgba` 透明度变体而非新色（如 `rgba(16, 185, 129, 0.1)`） |
 | 对比度 | 与 `#0F172A` 内容底色对比 ≥ 4.5:1（WCAG AA） |
 | 入库 | 新色值入 `design-system-mapping.md` §1 色板表（含 RGB / Hex / Tailwind / 用途） |
@@ -90,7 +90,7 @@
 - P0 已合入（commit 1d8f941 / c25ae7a / 7de96d1），后续 6732ca6 / 72b210b 字号抬档，b36c0af 文档收尾
 - P1 已合入（cf38633 / f2378a9 / ac01e09 / ec9068b），加上本系列的 UI 修正链（82b032b / 9239858 / 556547e / 2e61db5 / 2195a83）
 - P2 已合入（a770af0 / 80907cf / 55e0379）—— Button 动画档补齐 + ProgressBar 完成闪烁 + 状态徽章中文方括号 + Glow Button CTA + HUD 装饰组件上线；LdmPage 应用变更按钮 + isDirty 联动待 Phase 5 落地时按本文 §3.2 P2 表格「Glow Button CTA 接入」行接入
-- P3 未启动（资源图 System Monitor 化 / Status Block / Cyberpunk Neon Folder）
+- P3C 已合入（Cyberpunk Neon Folder，commit f08c76a）；P3A 资源图 System Monitor 化 / P3B Status Block 未启动
 
 ### 3.2 动效优先级（按合并 PR 整理）
 
@@ -131,7 +131,7 @@
 
 **决策固化**：GSAP 不引入（D1）；中文方括号（D2）；HUD 原方案（D3）；glow-pulse 智能触发（D4 选项 3）。
 
-#### P3（未启动 · 第四批）
+#### P3（P3C 已合入 · 资源图 + 状态块未启动）
 
 | 区域 | 改动 | 工时 |
 |---|---|---|

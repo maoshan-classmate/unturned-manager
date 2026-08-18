@@ -226,7 +226,7 @@ FilesPage 文件夹 hover 时立体霓虹化——赛博朋克霓虹边框 + 微
 | hover | 仅背景/边框色过渡 | **+ 霓虹边框**（`box-shadow: 0 0 12px rgba(59,130,246,0.5)`）+ **微旋转**（`rotate-[-1.5deg]`）+ **图标颜色加深**（`#3B82F6` → `#60A5FA`）|
 | selected | `rgba(34,197,94,0.12)` 背景 | 保留 |
 
-**色值合规**：`#3B82F6` 已在全局色板（folder icon = `#3B82F6`）；`#60A5FA` 是 Tailwind blue-400 同色相家族——可走 §1 新色值规则入库 `design-system-mapping.md` §1（待 D9 拍板）。
+**色值合规**：`#3B82F6` 已在全局色板（folder icon = `#3B82F6`）；`#60A5FA` 是 Tailwind blue-400 同色相家族——已走 §1 新色值规则入库 `design-system-mapping.md` §1（D9 选项 2 已落地）。
 
 ### 4.4 动效 token 复用
 
