@@ -129,7 +129,7 @@ export function Terminal({ onReady, onInput, connected }: TerminalProps) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 overflow-hidden rounded-lg font-mono text-xs"
+      className="h-full w-full min-h-0 overflow-hidden rounded-lg font-mono text-xs"
       style={{ backgroundColor: "#0F172A", border: "1px solid #334059" }}
       data-testid="terminal-container"
     />

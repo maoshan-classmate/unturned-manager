@@ -107,13 +107,13 @@ export function stateLabel(state: string): string {
   return labels[state] ?? state;
 }
 
-/** 服务端状态 → 中文方括号徽章（铁律① 豁免，见 reference_ui_terms.md） */
+/** 服务端状态 → 中文徽章文本（无装饰符号） */
 export function formatStateBadge(state: string): string {
   const map: Record<string, string> = {
-    STOPPED: "【已停止】",
-    STARTING: "【启动中】",
-    RUNNING: "【运行中】",
-    STOPPING: "【停止中】",
+    STOPPED: "已停止",
+    STARTING: "启动中",
+    RUNNING: "运行中",
+    STOPPING: "停止中",
   };
   return map[state] ?? state;
 }

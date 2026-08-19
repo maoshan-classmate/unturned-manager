@@ -33,6 +33,13 @@ export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
   const [reinstallConfirmOpen, setReinstallConfirmOpen] = useState(false);
   const [reinstalling, setReinstalling] = useState(false);
 
+  // fallback 数据：后端 /steamcmd/status 不存在时，默认占位
+  const data: SteamCmdStatus = status ?? {
+    isInstalled: false,
+    version: "—",
+    installPath: "/opt/steamcmd",
+  };
+
   // 订阅 reinstall 进度（按 installPath 隔离）——完成后弹 toast，不靠 HTTP 响应
   const reinstallProgress = useSteamCmdProgress({
     jobId: status?.installPath
@@ -77,70 +84,62 @@ export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
   return (
     <>
       <Card icon={Download} title="SteamCMD">
-        {!status ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <AlertCircle size={14} /> 加载中...
+        <div className="space-y-2 text-sm text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className="w-20 text-slate-500 shrink-0">版本</span>
+            <span className="text-slate-100">{data.version ?? "—"}</span>
           </div>
-        ) : (
-          <>
-            <div className="space-y-2 text-sm text-slate-400">
-              <div className="flex items-center gap-2">
-                <span className="w-20 text-slate-500 shrink-0">版本</span>
-                <span className="text-slate-100">{status.version ?? "—"}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-20 text-slate-500 shrink-0">状态</span>
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{
-                    backgroundColor: status.isInstalled ? "#22C55E" : "#EF4444",
-                  }}
-                />
-                <span
-                  style={{ color: status.isInstalled ? "#22C55E" : "#EF4444" }}
-                >
-                  {status.isInstalled ? "已安装" : "未安装"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-20 text-slate-500 shrink-0">路径</span>
-                <span className="text-slate-100 font-mono truncate flex-1">
-                  {status.installPath ?? "—"}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => setPathDialogOpen(true)}
-                  className="h-6 w-6 text-slate-500 hover:text-slate-300"
-                  aria-label="编辑安装路径"
-                >
-                  <Pencil size={14} />
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-20 text-slate-500 shrink-0">上次检查</span>
-                <span className="text-slate-100">
-                  {status.lastChecked
-                    ? new Date(status.lastChecked).toLocaleString("zh-CN")
-                    : "—"}
-                </span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="w-20 text-slate-500 shrink-0">状态</span>
+            <span
+              className="inline-block h-2 w-2 rounded-full"
+              style={{
+                backgroundColor: data.isInstalled ? "#22C55E" : "#EF4444",
+              }}
+            />
+            <span
+              style={{ color: data.isInstalled ? "#22C55E" : "#EF4444" }}
+            >
+              {data.isInstalled ? "已安装" : "未安装"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-20 text-slate-500 shrink-0">路径</span>
+            <span className="text-slate-100 font-mono truncate flex-1">
+              {data.installPath ?? "—"}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setPathDialogOpen(true)}
+              className="h-6 w-6 text-slate-500 hover:text-slate-300"
+              aria-label="编辑安装路径"
+            >
+              <Pencil size={14} />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-20 text-slate-500 shrink-0">上次检查</span>
+            <span className="text-slate-100">
+              {data.lastChecked
+                ? new Date(data.lastChecked).toLocaleString("zh-CN")
+                : "—"}
+            </span>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-2 mt-4">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setReinstallConfirmOpen(true)}
-                className="h-8 text-sm gap-1"
-              >
-                <Download size={12} />{" "}
-                {status.isInstalled ? "重装 SteamCMD" : "安装 SteamCMD"}
-              </Button>
-            </div>
-          </>
-        )}
+        <div className="flex items-center gap-2 mt-4">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setReinstallConfirmOpen(true)}
+            className="h-8 text-sm gap-1"
+          >
+            <Download size={12} />{" "}
+            {data.isInstalled ? "重装 SteamCMD" : "安装 SteamCMD"}
+          </Button>
+        </div>
       </Card>
 
       <SteamCmdPathDialog
