@@ -16,9 +16,8 @@ import { resolveServerPath } from "../server/pathResolver.js";
 
 /**
  * content 目录（U3DS 实际加载的 mod 位置）。
- * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 落在
- * `Workshop/Steam/content/304930/<id>/`（**无 steamapps/workshop 子层**）。
- * 旧实现臆造 `Workshop/Steam/steamapps/workshop/content/304930/`，删除删不到 U3DS 实际读取位置。
+ * U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 落在
+ * `Workshop/Steam/content/304930/<id>/`——无 steamapps/workshop 子层。
  */
 const CONTENT_SUBDIR = path.join(
   "Workshop",
@@ -29,8 +28,8 @@ const CONTENT_SUBDIR = path.join(
 
 /**
  * WorkshopDownloadConfig.json 相对 Servers/<ID>/ 的路径。
- * ★ BUG-2 修复：U3-SDK `WorkshopDownloadConfig.cs:99` 读 `Servers/<id>/WorkshopDownloadConfig.json`
- * （无 Server/ 子目录）。旧实现写成 Server/ 下导致 U3DS 读不到，客户端显示「创意工坊：禁用」。
+ * U3-SDK `WorkshopDownloadConfig.cs:99` 读 `Servers/<id>/WorkshopDownloadConfig.json`
+ * （无 Server/ 子目录）。
  */
 const WORKSHOP_CONFIG_REL = (serverId: ServerId) =>
   "WorkshopDownloadConfig.json";
@@ -137,7 +136,7 @@ export class WorkshopDeleteService implements IWorkshopDeleteService {
   // ── 私有 ────────────────────────────────────────────
 
   /**
-   * 拼 content/<id>/ 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
+   * 拼 content/<id>/ 绝对路径（真源 = config.installDir 全局）
    */
   private resolveContentDir(
     serverId: ServerId,

@@ -27,9 +27,7 @@ export function createConfigRouter(configService: IConfigService): Router {
     '/:id/config/commands',
     validate(WriteCommandsDatSchema),
     asyncHandler(async (req, res) => {
-      // ★ 2026-08-14 修复：body 用 schema 推断类型而非手写 cast——手写 cast 漏掉
-      // loadouts 字段导致「保存配置后 Loadout 未写入 Commands.dat」。schema 有该字段，
-      // 透传后才不会静默丢失。
+      // body 用 schema 推断类型：手写 cast 会漏掉 loadouts 字段，导致「保存配置后 Loadout 未写入 Commands.dat」。
       const body = req.body as z.infer<typeof WriteCommandsDatSchema>;
       await configService.writeCommandsDat(
         req.params.id as never,

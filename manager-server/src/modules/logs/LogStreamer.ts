@@ -112,9 +112,8 @@ export class LogStreamer implements ILogStreamer {
 
   /**
    * U3DS 日志文件绝对路径（U3-SDK `Logs.cs:311`：`<installDir>/Logs/Server_<serverId>.log`）。
-   * ★ 2026-08-14 改造：文件 tail 已移除——PTY 模式下 U3DS 一边写终端一边 append 文件，
-   * 两路推同一行造成控制台重复显示；保留 ProcessSupervisor.onStdout 兜底。
-   * 历史回灌如需可基于此路径另起 ring buffer。
+   * PTY 模式下 U3DS 一边写终端一边 append 文件, 两路推同一行造成控制台重复显示；
+   * 保留 ProcessSupervisor.onStdout 兜底。
    */
   private resolveU3dsLogFile(serverId: ServerId): string | null {
     return path.join(resolveInstallDir(), 'Logs', `Server_${serverId}.log`);

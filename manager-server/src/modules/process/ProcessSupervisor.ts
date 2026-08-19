@@ -18,7 +18,7 @@ type CrashCallback = (serverId: ServerId, exitCode: number | null) => void;
 
 const DEFAULT_SHUTDOWN_TIMEOUT = 30_000;
 
-// ─── T6 三段关停时长（抄 GSM TerminalManager.ts:2082-2137 forceKillProcess）───
+// ─── 三段关停时长 ───
 
 /** 关停各阶段等待时长（可注入——测试用短时长避免真实等待） */
 export interface TerminateTimings {
@@ -42,11 +42,11 @@ const DEFAULT_TIMINGS: TerminateTimings = {
 const execAsync = promisify(exec);
 
 /**
- * U3DS 进程生命周期管理器（ADR-0003 B2 T6 对齐 GSM 现状）。
+ * U3DS 进程生命周期管理器。
  *
- * - 通过 child_process.spawn 启动启动脚本（detached 进程组，非 win32）
+ * - 通过 child_process.spawn 启动启动脚本（detached 进程组, 非 win32）
  * - 维护 ServerId → ChildProcess 的映射
- * - 关停走 GSM 三段：SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s
+ * - 关停走三段：SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s
  *   （进程组杀：非 win32 `process.kill(-pid, signal)`）
  * - 子进程环境剥离面板 secret（JWT_SECRET / ENCRYPTION_KEY）
  * - stdout 行事件 + 崩溃回调
@@ -67,9 +67,8 @@ export class ProcessSupervisor implements IProcessSupervisor {
     args: string[],
     cwd?: string,
   ): Promise<number> {
-    // BUG-3/7（第四版）：残留进程导致误判「已有进程在运行」。
-    // 若 entry 存在但进程实际已退出（exitCode/signalCode 已置，或 kill(pid,0) 已 ESRCH），
-    // 视为僵尸 entry 清理后放行——否则失败启动留下的残留会让用户永远无法再次启动。
+    // 残留进程 entry 清理：若 entry 存在但进程实际已退出（exitCode/signalCode 已置
+    // 或 kill(pid,0) ESRCH），视为僵尸清理后放行——失败启动留下的残留会让用户无法再次启动。
     const existing = this.processes.get(serverId);
     if (existing) {
       if (this.hasProcessExited(existing)) {
@@ -90,16 +89,16 @@ export class ProcessSupervisor implements IProcessSupervisor {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       shell: false, // 安全：不经过 Shell 解析
-      // T6: 进程组——非 win32 起进程组，便于 -pid 整组杀（抄 GSM TerminalManager.ts:728）
+      // 进程组——非 win32 起进程组, 便于 -pid 整组杀
       detached: os.platform() !== "win32",
-      // T6: 剥离面板 secret（抄 GSM utils/childProcessEnvironment.ts:1-14）
+      // 剥离面板 secret
       env: buildChildProcessEnvironment(),
     });
 
     const entry: ManagedProcess = { process: child, pid: child.pid!, serverId };
     this.processes.set(serverId, entry);
 
-    // T6: 进程组验证（抄 GSM TerminalManager.ts:761-768）
+    // 进程组验证
     if (os.platform() !== "win32" && child.pid) {
       try {
         process.kill(-child.pid, 0);
@@ -171,7 +170,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
 
   // ── lifecycle ────────────────────────────────────────
 
-  /** 优雅关停——GSM 三段（SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s）。 */
+  /** 优雅关停——SIGINT 2s → SIGTERM 2s → SIGKILL 1s → Win taskkill 1s。 */
   async gracefulShutdown(
     serverId: ServerId,
     _timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT,
@@ -199,8 +198,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
       if (!exited) {
         throw new Error(`等待进程退出超时: ${serverId} (${timeoutMs}ms)`);
       }
-      // BUG-3/7：返回退出码（0=成功），SteamCmd 长任务据此判断成败——
-      // 不再把 steamcmd 下载失败（exitCode≠0）吞成"装完但没启动脚本"的误导性错误
+      // 返回退出码（0=成功）——SteamCmd 长任务据此判断成败
       return entry.process.exitCode ?? null;
     });
   }
@@ -267,10 +265,10 @@ export class ProcessSupervisor implements IProcessSupervisor {
     this.crashCallbacks.length = 0;
   }
 
-  // ── T6 内部：GSM 三段关停 + 进程组杀 ─────────────────
+  // ── 内部：三段关停 + 进程组杀 ─────────────────
 
   /**
-   * 逐级终止进程（抄 GSM TerminalManager.ts:2082-2137 forceKillProcess）。
+   * 逐级终止进程。
    *
    * @param entry - 托管进程
    * @param options.graceful - true=完整三段（SIGINT→SIGTERM→SIGKILL）；false=跳过优雅段直接 SIGKILL
@@ -296,7 +294,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
     this.signalToProcess(entry, "SIGKILL");
     if (await this.waitChildExit(entry, this.timings.sigkill)) return true;
 
-    // Win 兜底：taskkill /F /T /PID（GSM :2124-2133）
+    // Win 兜底：taskkill /F /T /PID
     if (os.platform() === "win32" && pid) {
       try {
         await execAsync(`taskkill /F /T /PID ${pid}`, { timeout: 3000 });
@@ -310,7 +308,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
     return false;
   }
 
-  /** 进程组发信号（抄 GSM sendSignalToPtyProcessGroup :2055-2075）：非 win32 向 -pid，否则 child.kill。 */
+  /** 进程组发信号：非 win32 向 -pid, 否则 child.kill。 */
   private signalToProcess(entry: ManagedProcess, signal: NodeJS.Signals): void {
     const { process: child, pid } = entry;
     if (os.platform() !== "win32" && pid) {
@@ -335,7 +333,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
     }
   }
 
-  /** 进程是否已退出（抄 GSM hasChildProcessExited :2004-2022）：exitCode/signalCode 或 kill(pid,0) ESRCH。 */
+  /** 进程是否已退出：exitCode/signalCode 或 kill(pid,0) ESRCH。 */
   private hasProcessExited(entry: ManagedProcess): boolean {
     const { process: child, pid } = entry;
     if (child.exitCode !== null && child.exitCode !== undefined) return true;
@@ -350,7 +348,7 @@ export class ProcessSupervisor implements IProcessSupervisor {
     }
   }
 
-  /** 等待进程退出（抄 GSM waitForChildProcessExit :2024-2053）——监听 exit+close，超时复查探活。 */
+  /** 等待进程退出——监听 exit+close, 超时复查探活。 */
   private waitChildExit(
     entry: ManagedProcess,
     timeoutMs: number,

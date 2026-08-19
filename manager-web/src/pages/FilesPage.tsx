@@ -98,7 +98,7 @@ function FileCardComp({
 /**
  * Files 页面——Figma 12:16326 🎨 Files v2。
  *
- * 1:1 复刻：TopBar + Toolbar + PathBar + FileGrid + StatusBar
+ * 布局：TopBar + Toolbar + PathBar + FileGrid + StatusBar
  */
 export function FilesPage() {
   // 文件菜单面板级——浏览 installDir 根目录，path 用 URL 查询参数同步
@@ -145,7 +145,7 @@ export function FilesPage() {
     setRefreshing(true);
     setError(null);
     try {
-      // sc:design §7.6 面板级浏览——不依赖具体实例
+      // 面板级浏览——不依赖具体实例
       const res = await apiClient.get('/files', { params: { path: currentPath || '' } });
       setEntries(res.data.data?.entries ?? []);
     } catch (err) {
@@ -235,7 +235,7 @@ export function FilesPage() {
     } catch (err) { setError(err instanceof Error ? err.message : '读取文件失败'); }
   };
 
-  // ── Breadcrumbs（sc:design §7.6：动态面包屑，可回退到更上级）──────────────
+  // ── Breadcrumbs（动态面包屑，可回退到更上级）──────────────
   const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
   // ── Filtered ─────────────────────────────────────────
@@ -277,7 +277,7 @@ export function FilesPage() {
     );
   }
 
-  // 面板级浏览不依赖实例，去掉原「还没有服务器」空态——浏览始终可用；仅写操作需实例。
+  // 仅写操作需要选中实例
 
   return (
     <div className="flex flex-col h-full" onClick={() => { setContextMenu(null); setSelectedEntry(null); }}>

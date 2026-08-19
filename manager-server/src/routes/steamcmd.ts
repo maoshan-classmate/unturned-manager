@@ -15,7 +15,7 @@ const DownloadSchema = z.object({
   itemIds: z.array(z.string()).min(1),
 });
 
-/** B-1 修复：check-update / reinstall 端点 installDir 可选（不传则走 SteamCmdManager 探测） */
+/** check-update / reinstall 端点 installDir 可选（不传则走 SteamCmdManager 探测） */
 const CheckUpdateSchema = z.object({
   installDir: z.string().min(1).optional(),
 });
@@ -24,7 +24,7 @@ const ReinstallSchema = z.object({
   installDir: z.string().min(1).optional(),
 });
 
-/** 前端 SteamCmdPathDialog 路径编辑端点（此前缺失 → 404，本次补上） */
+/** 前端 SteamCmdPathDialog 路径编辑端点 */
 const InstallPathSchema = z.object({
   installPath: z.string().min(1, "安装路径不能为空"),
 });
@@ -59,7 +59,7 @@ export function createSteamCmdRouter(
     }),
   );
 
-  // 卡 C #6：Workshop 内容下载（下载到 staging，可不停服；应用由卡 B 流水线）
+  // Workshop 内容下载（下载到 staging，可不停服；应用由重启流水线触发）
   router.post(
     "/download-workshop",
     validate(DownloadSchema),
@@ -69,7 +69,7 @@ export function createSteamCmdRouter(
         itemIds: string[];
       };
       // 与另外 4 个异步端点一致返回 jobId——
-      // 未来调用方按 jobId 精确订阅 WS 进度/完成/失败
+      // 调用方按 jobId 精确订阅 WS 进度/完成/失败
       const jobId = await steamCmdManager.downloadWorkshopItem(
         installDir,
         itemIds,
@@ -124,7 +124,7 @@ export function createSteamCmdRouter(
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir?: string };
       try {
-        // Phase 0 异步化：reinstall 改为立即返回 jobId，下载/解压/初始化在后台跑
+        // reinstall 立即返回 jobId，下载/解压/初始化在后台跑
         const jobId = await steamCmdManager.reinstall(installDir);
         res.status(202).json({ data: { jobId } });
       } catch (err) {
@@ -134,7 +134,7 @@ export function createSteamCmdRouter(
     }),
   );
 
-  // ★ 前端 SteamCmdPathDialog 路径编辑端点（此前缺失 → 404，本次补上）。
+  // 前端 SteamCmdPathDialog 路径编辑端点。
   // 设置后 SteamCmdManager 用它解析可执行（resolveExecutable），重启回落 STEAMCMD_DIR env。
   router.patch(
     "/install-path",

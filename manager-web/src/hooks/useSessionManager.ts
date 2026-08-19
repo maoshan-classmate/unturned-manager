@@ -3,9 +3,9 @@ import { apiClient } from "../api/client.js";
 import type { ServerId } from "@unturned-manager/shared";
 
 /**
- * 已保存的终端会话记录（1:1 对齐后端 `PersistedTerminalSession`）。
+ * 已保存的终端会话记录——见后端 `PersistedTerminalSession` 类型。
  *
- * @property id - 会话 ID（= serverId，本项目 1 实例 1 PTY）
+ * @property id - 会话 ID（= serverId，单实例单 PTY）
  * @property name - 用户可命名（默认 `终端 - <id>`）
  * @property workingDirectory - PTY cwd
  * @property createdAt - 创建时间 ISO 8601
@@ -24,7 +24,7 @@ export interface PersistedTerminalSession {
 /**
  * 终端会话列表 hook——拉一次 `/api/sessions` → 返回 `{ active, saved }`。
  *
- * ADR-0005 Phase 7.2：面板启动后用户能再次访问已开过的终端（saved 列表）。
+ * 面板启动后用户能再次访问已开过的终端（saved 列表）。
  * active = PTY 当前在跑；saved = PTY 已退出但 JSON 仍有记录。
  *
  * @returns 活跃与已存会话列表 + 重新拉取方法

@@ -88,10 +88,8 @@ const BACKUP_DIR = "backups";
 
 /**
  * WorkshopDownloadConfig.json 相对 Servers/<id>/ 的路径。
- * ★ BUG-2 修复（2026-08-13 实机根因）：U3-SDK `WorkshopDownloadConfig.cs:99` 读的是
- * `ServerSavedata.fileExists("/WorkshopDownloadConfig.json")` = `Servers/<id>/WorkshopDownloadConfig.json`，
- * **没有 Server/ 子目录**。旧实现写成 `Server/WorkshopDownloadConfig.json` 导致 U3DS 永远读不到
- * 面板启用的 mod（客户端显示「创意工坊：禁用」）。
+ * U3-SDK `WorkshopDownloadConfig.cs:99` 用 `ServerSavedata.fileExists("/WorkshopDownloadConfig.json")`
+ * 判定——不带 Server/ 子目录。
  */
 const WORKSHOP_CONFIG_REL = "WorkshopDownloadConfig.json";
 
@@ -207,9 +205,8 @@ export class ConfigService implements IConfigService {
     record: CommandsDatRecord,
     expectedMtime?: number,
   ): Promise<void> {
-    // ★ 255 互斥校验（D4，后端兜底）——SDK `bestowLoadout()` 是 if/else if：
-    // 基础层（255）非空时跳过技能组分支，并存时技能组条目不生效。
-    // 前端禁用是主防线；此处防 API 层绕过，且强制用户先消解磁盘上已存在的冲突配置。
+    // 255 与具体技能组互斥（SDK `bestowLoadout()` 是 if/else if：基础层非空时跳过技能组分支）。
+    // 前端禁用是主防线；此处防 API 层绕过，并强制用户先消解磁盘上已存在的冲突配置。
     const loadouts = record.loadouts ?? [];
     const has255 = loadouts.some((l) => l.skillsetId === 255);
     const hasSkillset = loadouts.some((l) => l.skillsetId !== 255);
@@ -332,10 +329,9 @@ export class ConfigService implements IConfigService {
       if (!hasCurrent) return;
       const raw = currentSection.rawBlocks ?? [];
       if (currentSection.entries.length > 0 || raw.length > 0) {
-        // ★ 2026-08-15 Bug 修复：合并重复 key（U3-SDK DatParser.cs:145 DatDictionary 唯一 key，
-        // 重复时后者覆盖前者）。真实 U3DS 写回的 Config.txt 每 section 有「基础裸 key + override 带值」
-        // 双份；面板若保留双份，读取/保存只碰第一条，而 U3DS 实际读最后一条 → 用户配置被旧值覆盖
-        // （启动后"变默认"）。这里与 U3DS 解析语义对齐：同 section 同 key 只保留最后一条。
+        // 合并重复 key（U3-SDK DatParser.cs:145 DatDictionary 唯一 key, 重复时后者覆盖前者）。
+        // 真实 U3DS 写回的 Config.txt 每 section 有「裸 key + 带值」双份；同 section 同 key 只保留
+        // 最后一条, 与 U3DS 解析语义一致。
         const deduped: ConfigEntry[] = [];
         for (const entry of currentSection.entries) {
           const prevIdx = deduped.findIndex((e) => e.key === entry.key);
@@ -559,14 +555,13 @@ export class ConfigService implements IConfigService {
   async readWorkshopConfig(serverId: ServerId): Promise<WorkshopConfig> {
     const absPath = this.resolvePath(serverId, WORKSHOP_CONFIG_REL);
 
-    // ★ BUG-2：U3-SDK 读 Servers/<id>/WorkshopDownloadConfig.json（无 Server/ 层）。
-    // 旧面板在 Server/ 子目录的残留文件 U3DS 不读——不做迁移，由 U3DS 在根自动生成。
+    // U3-SDK 读 Servers/<id>/WorkshopDownloadConfig.json（无 Server/ 层）——路径固定。
     try {
       const raw = await fs.readFile(absPath, "utf-8");
-      // ★ 2026-08-14 实机根因：U3DS `WorkshopDownloadConfig.cs:30` 用 `List<ulong>` 写 number，
+      // U3DS `WorkshopDownloadConfig.cs:30` 用 `List<ulong>` 写 number,
       // Zod schema 通过 union + transform 归一为 string——避免 /mods/downloaded 的
       // `fileIdsSet.has(stringFileId)` 因类型错位永远 false。
-      // 解析后 cast 为 WorkshopConfig（zod 输出 string，brand 由调用层保证）。
+      // 解析后 cast 为 WorkshopConfig（zod 输出 string, brand 由调用层保证）。
       return WorkshopConfigSchema.parse(JSON.parse(raw)) as WorkshopConfig;
     } catch {
       logger.warn(
@@ -592,11 +587,10 @@ export class ConfigService implements IConfigService {
     fileIds: WorkshopFileId[],
     expectedMtime?: number,
   ): Promise<void> {
-    // 读取现有配置，只替换 File_IDs
+    // 读取现有配置, 只替换 File_IDs
     const current = await this.readWorkshopConfig(serverId);
-    // ★ 2026-08-14 修复：归一为 string 写盘——避免 U3DS 启动时把数字
-    // 改回 number（U3DS `WorkshopDownloadConfig.cs:30` 字段为 `List<ulong>`，JSON 序列化为 number），
-    // 后续面板 re-read 时 Zod transform 仍能正确转回 string，但写盘统一 string 减少歧义。
+    // 归一为 string 写盘——U3DS `WorkshopDownloadConfig.cs:30` 字段为 `List<ulong>`,
+    // JSON 序列化为 number, 写盘统一 string 减少歧义。
     current.File_IDs = fileIds.map(String) as WorkshopFileId[];
 
     await this.atomicWrite(

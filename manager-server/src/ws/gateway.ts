@@ -20,22 +20,17 @@ interface WsSubscription {
 
 const SUBSCRIBE_TIMEOUT_MS = 5_000;
 
-// WS 心跳保活。gateway 原先无 ping/pong——空闲连接在反向代理 idle 超时 / 中间链路
-//   静默下被切断，用户反馈「WS 客户端经常断」→ 进度事件全部丢失。
-//   标准 ws 库保活：服务端每 HEARTBEAT_INTERVAL_MS 发 ping，浏览器自动回 pong；
+// WS 心跳保活：服务端每 HEARTBEAT_INTERVAL_MS 发 ping，浏览器自动回 pong；
 //   间隔内未回 pong（isAlive 仍 false）视为死连接 terminate 清理。
-//   与前端应用层 ping 间隔 10_000 对齐——节奏不一致会导致「服务端发 ping 前
-//   已经判死」的误杀窗口。
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
-/** ★ 2026-08-14 历史回灌：每个 serverId 保留最近 200 条 console_line，
+/** console_line 历史回灌 buffer 上限：每个 serverId 保留最近 200 条。
  *  新订阅者注册时先把这 200 条当作 console_line 事件推给它（按时间序），
- *  解决「切走再切回控制台历史日志消失」问题。
  *  200 行 ≈ 8 屏可见区上下文，调试够用；每行 ~1KB × serverId 数 = 内存可控。
- *  跨面板重启不持久化（内存级）——重启后从零开始。 */
+ *  跨面板重启不持久化（内存级）。 */
 const CONSOLE_BUFFER_MAX = 200;
 
-// 每个 ws 连接订阅的 serverId 集合（Phase 0 升级：含事件类型过滤）
+// 每个 ws 连接订阅的 serverId 集合（含事件类型过滤）
 const wsSubscriptions = new Map<WebSocket, WsSubscription>();
 
 /** console_line 历史回灌 buffer：serverId → 最近 N 条。事件入 broadcast 时 push，超 N 截断头部。 */
@@ -47,12 +42,12 @@ type HeartbeatWebSocket = WebSocket & { isAlive?: boolean };
 class WsBroadcaster implements IBroadcaster {
   private wss: WebSocketServer | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
-  // ★ ws-wrapper-design §2.4：请求-应答处理器注册表（消息 type → 业务处理器）。
+  // 请求-应答处理器注册表（消息 type → 业务处理器）。
   // 组合根启动时一次性注册；运行期收到未注册类型 → 回 unsupported_request ack。
   private requestHandlers = new Map<string, WsRequestHandler>();
 
   /**
-   * 注册请求-应答处理器（ws-wrapper-design §2.4）。
+   * 注册请求-应答处理器。
    * 同一 type 重复注册会覆盖——组合根启动时一次性注册，运行期不改。
    */
   registerRequestHandler(type: string, handler: WsRequestHandler): void {
@@ -90,7 +85,7 @@ class WsBroadcaster implements IBroadcaster {
       },
     });
 
-    // 心跳定时器：每 30s 遍历所有连接 ping；上次 ping 未回 pong（isAlive=false）→ terminate。
+    // 心跳定时器：每 HEARTBEAT_INTERVAL_MS 遍历所有连接 ping；isAlive=false → terminate。
     // 浏览器 WebSocket 协议层自动回 pong，无需前端配合。
     this.heartbeatTimer = setInterval(() => {
       const clients = this.wss?.clients ?? [];
@@ -116,7 +111,7 @@ class WsBroadcaster implements IBroadcaster {
         heartbeatWs.isAlive = true;
       });
 
-      // 初始空订阅，必须 5s 内发 subscribe 消息（修复 C8）
+      // 初始空订阅，必须 5s 内发 subscribe 消息
       wsSubscriptions.set(ws, { serverIds: new Set(), eventTypes: null });
       let subscribed = false;
 
@@ -131,7 +126,7 @@ class WsBroadcaster implements IBroadcaster {
         try {
           const msg = JSON.parse(raw.toString()) as ClientWsMessage;
           if ((msg as { type: string }).type === "ping") {
-            // ★ S2 修复：应用层 ping/pong——前端每 25s 发 ping 防反向代理空闲切断。
+            // 应用层 ping/pong——前端每 25s 发 ping 防反向代理空闲切断。
             // 直接回 pong，不进 broadcast / 不进 request handler。
             // type-narrow 绕过：ping 不在 ClientWsMessage 契约里，gateway 显式路由
             ws.send(JSON.stringify({ type: "pong" }));
@@ -166,8 +161,7 @@ class WsBroadcaster implements IBroadcaster {
                 "WS 客户端已订阅",
               );
 
-              // ★ 2026-08-14 历史回灌：按订阅的 serverIds 推 buffer 中最近的 console_line
-              // 客户端 subscribe 回调收到这批事件时按正常流程塞进 lines 数组——前端无感
+              // 订阅时回灌 buffer 中最近的 console_line：客户端 subscribe 回调按正常流程处理
               if (ws.readyState === WebSocket.OPEN) {
                 for (const id of subs.serverIds) {
                   const buffered = consoleLineBuffer.get(id as ServerId);
@@ -204,8 +198,7 @@ class WsBroadcaster implements IBroadcaster {
               );
               return;
             }
-            // 写入失败时推错误到终端——照搬 MCSManager general_command.ts 失败即通知的
-            // 模式，消除 silent fail。成功时不推（PTY 自回显）。
+            // 写入失败时推错误到终端——失败即通知，避免静默失败。成功时不推（PTY 自回显）。
             try {
               ptyManager.write(serverId, data);
             } catch (err) {
@@ -226,7 +219,7 @@ class WsBroadcaster implements IBroadcaster {
             msg.type === "save" ||
             msg.type === "shutdown"
           ) {
-            // ★ ws-wrapper-design §2.4：请求-应答模式——异步处理后回 ack。
+            // 请求-应答模式——异步处理后回 ack。
             // fire-and-forget 调起（handleRequest 内部全 try/catch，异常只转 ack 不抛回 ws 层）。
             void this.handleRequest(ws, msg);
           } else {
@@ -262,7 +255,7 @@ class WsBroadcaster implements IBroadcaster {
   }
 
   /**
-   * 请求-应答路由（ws-wrapper-design §2.4）。
+   * 请求-应答路由。
    * 校验 → 查注册表 → 调业务处理器 → 回 ack；业务异常兜底成 internal_error ack，
    * 绝不抛回 ws 层拖垮连接。
    */
@@ -320,7 +313,7 @@ class WsBroadcaster implements IBroadcaster {
   }
 
   /**
-   * 回答应 ack（ws-wrapper-design §2.2）——直接回给发起请求的连接，不走 broadcast。
+   * 回答应 ack——直接回给发起请求的连接，不走 broadcast。
    * 连接已关闭时静默丢弃（前端本地超时已兜底，服务端不强制送达）。
    */
   private sendAck(
@@ -341,7 +334,7 @@ class WsBroadcaster implements IBroadcaster {
   }
 
   broadcast(event: ServerEvent): void {
-    // ★ 2026-08-14 历史回灌：console_line 先入 buffer（按 serverId 隔离 + 200 行上限），
+    // console_line 先入 buffer（按 serverId 隔离 + CONSOLE_BUFFER_MAX 行上限），
     // 然后正常广播给订阅者。
     if (event.type === "console_line" || event.type === "console_output") {
       const id = event.serverId;

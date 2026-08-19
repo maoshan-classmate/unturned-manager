@@ -51,7 +51,7 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
   parseRocketConfig(xml: string): { fields: RocketConfigFields; raw: string } {
     const tree = this.parseGeneric(xml);
     // tree 即根元素（wrapRoot 在单根情况下返回根元素本身）
-    // 直接用 tree 作为 root，不再 findElement
+    // 直接用 tree 作为 root
     const root = tree;
 
     const fields: RocketConfigFields = {
@@ -302,7 +302,7 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
     this.setElementText(root, "DefaultGroup", undefined, fields.defaultGroup);
     const groupsContainer = this.findElement(root, "Groups");
     if (groupsContainer) {
-      // ★ Phase 5 §4.1：先按 ID 缓存原 Group 节点的未知 children + 属性——重建时合并回来
+      // 先按 ID 缓存原 Group 节点的未知 children + 属性——重建时合并回来
       // 用户手写的 `<Group><UnknownField>x</UnknownField></Group>` 或 `UnknownAttr="y"` 必须保留
       const extrasById = new Map<
         string,
@@ -395,7 +395,7 @@ export class RocketConfigXmlParser implements IRocketConfigXmlParser {
         if (text.length > 0) nodes.push({ type: "text", value: text });
         break;
       }
-      // text 节点（在 special 标记之前）
+      // text 节点——special 标记前的内容
       if (nextSpecial > pos) {
         const text = xml.slice(pos, nextSpecial);
         nodes.push({ type: "text", value: text });

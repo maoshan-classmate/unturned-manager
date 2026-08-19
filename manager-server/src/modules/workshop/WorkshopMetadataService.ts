@@ -196,7 +196,7 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
 
       // QueryFiles 单次返回全字段（title/creator/description/preview/vote_data），
       // 不二次调 GetDetails——避免两阶段叠加超时。
-      // ★ subscriptions 字段映射（修复 bug：v2.4 之前 ModCard 订阅数永远 undefined）
+      // subscriptions 字段映射——ModCard「X 订阅」展示用。
       const mods: WorkshopModMeta[] = qfDetails.map((d) => {
         const v = d.vote_data;
         return {
@@ -209,7 +209,6 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
           updatedAt: d.time_updated ? new Date(d.time_updated * 1000).toISOString() : undefined,
           // 评分：Steam score 是 0-1，转 0-5
           voteScore: v?.score != null ? v.score * 5 : undefined,
-          // 订阅总数——ModCard「X 订阅」展示用
           subscriptions: d.subscriptions,
         };
       });

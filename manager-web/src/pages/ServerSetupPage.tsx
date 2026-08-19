@@ -33,7 +33,7 @@ interface ServerCommands {
 const TIPS: never[] = [];
 
 /**
- * 服务器设置页面——Figma 🎨 Server Setup 1:1 复刻 + 侧栏丰富化。
+ * 服务器设置页面——Figma 🎨 Server Setup + 实例库侧栏。
  *
  * 布局:
  * ┌─ Header (icon + 标题) ──────────────────────────────────────┐
@@ -49,7 +49,7 @@ const TIPS: never[] = [];
 export function ServerSetupPage() {
   const { servers, loading, error, refresh, addServer, removeServer } =
     useServer();
-  // sc:design 第 4/8 批：实例标识脱离 URL——当前实例从共享层取，无 URL 依赖
+  // 当前实例从共享层取，不依赖 URL
   const { currentServerId, setCurrentServerId, clear } = useCurrentServer();
 
   // 共享层选中实例优先;否则选第一个真实服务器
@@ -87,7 +87,7 @@ export function ServerSetupPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      // 真实删除:DELETE /servers/:id + 内部 refresh(ADR-0003 B2 目录扫描真源)
+      // 真实删除:DELETE /servers/:id + 内部 refresh(目录扫描真源)
       await removeServer(deleteTarget);
       toast.success(`实例「${deleteTarget}」已删除`);
       // 若删除当前选中实例,选中首个剩余实例;无剩余则清除选择并回首页

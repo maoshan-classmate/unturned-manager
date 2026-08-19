@@ -11,11 +11,11 @@ import { parseCommandsDatContent } from '../config/ConfigService.js';
 import { logger } from '../../utils/logger.js';
 
 /**
- * 目录扫描真源（ADR-0003 B2 §3.1）——替代 DB servers 表。
+ * 目录扫描真源——实例从磁盘目录树直接读取。
  *
  * 实例成立条件：<installDir>/Servers/<ServerID>/Server/Commands.dat 存在。
- * 身份字段（Name/Port/Owner）从 Commands.dat 解析；RCON 凭证归 settings K-V，本模块不触碰。
- * 纯同步扫描——ServerManager 构造时一次性加载，不走事件循环。
+ * 身份字段（Name/Port/Owner）从 Commands.dat 解析。
+ * 纯同步扫描——ServerManager 构造时一次性加载, 不走事件循环。
  */
 export class ServerDiscovery implements IServerDiscovery {
   /**

@@ -33,10 +33,8 @@ const STAGING_CONTENT_SUBDIR = path.join(
 
 /**
  * content 目录（U3DS 启动读取 mod 实际加载位置）。
- * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 直接落在
- * `Workshop/Steam/content/304930/<id>/`（**无 steamapps/workshop 子层**）。
- * 旧实现臆造 `Workshop/Steam/steamapps/workshop/content/304930/` 5 段路径，
- * applyStaged mv 把 staging 推到臆造位置 → U3DS 看不到 → 客户端显示「创意工坊：禁用」。
+ * U3-SDK `DedicatedUGC.cs:560` 用 `Workshop/Steam/`，content 直接落在
+ * `Workshop/Steam/content/304930/<id>/`——无 steamapps/workshop 子层。
  * staging 路径仍带 steamapps/workshop（SteamCMD 标准结构，区分勿混）。
  */
 const CONTENT_SUBDIR = path.join(
@@ -46,13 +44,10 @@ const CONTENT_SUBDIR = path.join(
   STEAM_APP_IDS.UNTURNED_GAME,
 );
 
-// v2.6：WORKSHOP_CONFIG_REL 已废弃——本服务不再触碰 WorkshopDownloadConfig.json。
-// 保留注释以便回溯（写入已迁至 PUT /api/servers/:id/config/workshop）。
-
 /**
  * staging → content 移动服务——在 ServerManager.startInternal 顶部、U3DS STOPPED 时调用。
  *
- * v2.6 设计：保存与重启解耦——「写 File_IDs」走 PUT /config/workshop；本服务只负责
+ * 保存与重启解耦——「写 File_IDs」走 PUT /config/workshop；本服务只负责
  * 把已下载到 staging 的 Mod 文件移进 content/304930/，让 U3DS 下次启动读到。任一失败
  * 上抛阻止 spawn 老进程。
  *
@@ -62,14 +57,14 @@ const CONTENT_SUBDIR = path.join(
  *  3. mv staging/content/<id>/ → content/<id>/
  *  4. 失败 → 回滚 acf（addItem 内部），不碰 WorkshopDownloadConfig.json
  *
- * 不再负责：
- *  - 写 File_IDs（改由 ConfigService.writeWorkshopFileIds 在「保存 Mod」调用）
- *  - 备份 WorkshopDownloadConfig.json（本服务不再触碰 config）
+ * 职责范围：
+ *  - 写 File_IDs 由 ConfigService.writeWorkshopFileIds 在「保存 Mod」调用
+ *  - 备份 WorkshopDownloadConfig.json 由 config 路由负责
  */
 export class WorkshopApplyService implements IWorkshopApplyService {
   constructor(
     private acfService: IWorkshopAcfService,
-    // v2.6：构造签名保留 configService 以备未来扩展，但 applyStaged 不再调用其任何方法
+    // 构造签名保留 configService 以备未来扩展，但 applyStaged 不直接调用其任何方法
     _configService: IConfigService,
     private broadcaster: IBroadcaster,
   ) {}
@@ -122,7 +117,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
         "staging → content 移动完成",
       );
     } catch (err) {
-      // ③ 失败：acf 备份由 addItem 内部已处理；本服务不再回滚 WorkshopDownloadConfig.json
+      // ③ 失败：acf 备份由 addItem 内部已处理；回滚 WorkshopDownloadConfig.json 由 config 路由负责
       logger.error({ err, serverId }, "staging → content 移动失败");
       this.broadcaster.broadcast({
         type: "mod_apply_progress",
@@ -216,7 +211,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
    * 跨设备的目录移动：先尝试 rename，失败降级 cp -r + rm
    */
   private async moveDir(src: string, dst: string): Promise<void> {
-    // ★ 2026-08-14 实机根因：U3DS 第一次启动时才建 `Workshop/Steam/content/304930/` 父目录，
+    // U3DS 第一次启动时才建 `Workshop/Steam/content/304930/` 父目录，
     // 首 apply 时父目录不存在 → fs.rename 抛 ENOENT。先 mkdir -p dst 父目录。
     await fs.mkdir(path.dirname(dst), { recursive: true });
     // 如果 dst 已存在，先删（U3DS 内容目录是 mod 的数据目录，不存在冲突）
@@ -245,7 +240,7 @@ export class WorkshopApplyService implements IWorkshopApplyService {
   }
 
   /**
-   * 拼 staging / content 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
+   * 拼 staging / content 绝对路径（真源 = config.installDir 全局）
    */
   private resolvePaths(serverId: ServerId): {
     installDir: string;

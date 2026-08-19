@@ -19,7 +19,7 @@ import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
 /**
- * 模组服务器操作路由（v2.6 — 删除 /apply；写 File_IDs 改走 config.ts）
+ * 模组服务器操作路由。
  *
  * 路径：/api/servers/:id/mods
  * - GET    /downloaded      已下载列表（acf 扫描 + batch 元数据补全 + applied 合并）
@@ -27,12 +27,9 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
  * - DELETE /:fileId         删除 Mod（acf + content + File_IDs）
  * - GET    /acf             读 acf 列表（真源）
  *
- * v2.6 设计：保存 Mod 与重启解耦——PUT /api/servers/:id/config/workshop 单独负责
+ * 保存 Mod 与重启解耦——PUT /api/servers/:id/config/workshop 单独负责
  * 写 File_IDs（可运行时运行中）；staging → content 移动由 ServerManager.startInternal
  * 在 U3DS STOPPED 时自动执行。流程详见 docs/architecture/mod-management-design.md §3。
- *
- * BUG-6 修复：GET /downloaded 增 `applied` 字段（是否在 File_IDs 中）
- * BUG-5 修复：前端可用 `applied` 区分「已下载」vs「已应用」
  *
  * 全局浏览（搜索/详情/批量）：见 mod-browse.ts → /api/mods
  */
@@ -58,9 +55,9 @@ export function createModsRouter(
   };
 
   // ── 1. GET /downloaded ──────────────────────────────
-  // BUG-6 修复：合并 File_IDs（applied 状态）+ acf 元数据（timeupdated/size）
-  // BUG-5 修复：合并主 acf + staging acf——下载到 staging 待 apply 的 mod 也可见
-  //   applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
+  // 合并 File_IDs（applied 状态）+ acf 元数据（timeupdated/size）；
+  // 主 acf 与 staging acf 合并——下载到 staging 待应用 的 mod 也可见。
+  // applied=true 即「已下载且已应用」；applied=false 即「已下载待应用」
   router.get(
     "/mods/downloaded",
     asyncHandler(async (req, res) => {
@@ -128,8 +125,8 @@ export function createModsRouter(
       const config = await configService.readWorkshopConfig(serverId);
       const fileIdsSet = new Set<string>(config.File_IDs as string[]);
 
-      // ★ 容错：Steam WebAPI 不可达时元数据补全失败**不应**拖垮已下载列表
-      //   （acf 数据真实存在，title/previewUrl 只是增强字段，缺失可接受）
+      // 容错：Steam WebAPI 不可达时元数据补全失败不应拖垮已下载列表。
+      //   acf 数据真实存在，title/previewUrl 只是增强字段，缺失可接受。
       let metas: Awaited<
         ReturnType<IWorkshopMetadataService["batchGetDetails"]>
       > = [];
@@ -154,7 +151,7 @@ export function createModsRouter(
         author: metaMap.get(item.fileId)?.author,
         authorName: metaMap.get(item.fileId)?.authorName,
         previewUrl: metaMap.get(item.fileId)?.previewUrl,
-        applied: fileIdsSet.has(item.fileId as string), // ★ BUG-6 修复
+        applied: fileIdsSet.has(item.fileId as string),
       }));
       res.json({ data: merged });
     }),
@@ -165,7 +162,7 @@ export function createModsRouter(
     "/mods/download",
     validate(ModDownloadRequestSchema),
     asyncHandler(async (req, res) => {
-      // ★ 2026-08-14 兼容 fileId（单 mod）和 fileIds（批量）——统一转数组。
+      // 兼容 fileId（单 mod）和 fileIds（批量），统一转数组。
       const body = req.body as {
         fileId?: WorkshopFileId;
         fileIds?: WorkshopFileId[];
@@ -193,8 +190,7 @@ export function createModsRouter(
         // 元数据查不到不影响下载流程
       }
 
-      // BUG-5/6 修复：下载**异步启动**——立刻返回 jobId + 队列感知。
-      // ★ 2026-08-14 队列化：同 staging 连点 N 次全部进队串行跑，不再 409。
+      // 下载异步启动——立刻返回 jobId。同 staging 连点 N 次全部进队串行跑。
       let jobId: string;
       try {
         jobId = await steamCmd.downloadWorkshopItem(

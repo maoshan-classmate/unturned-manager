@@ -1,17 +1,17 @@
 /**
  * AtomicFileWriter——共享原子写工具。
  *
- * 设计目标：ConfigService 与 LdmConfigWriter 都需要原子写 + 备份 + 回滚——抽到共享模块避免重复。
+ * 适用对象：ConfigService 与 LdmConfigWriter 都需要原子写 + 备份 + 回滚, 抽到共享模块复用。
  *
- * 行为契约（用户 2026-08-15 拍板）：
- *   - **每次写都生成新备份**：目标文件写入前，先把原文件复制为 `<path>.bak.<UTC-ISO>`
+ * 行为契约：
+ *   - **每次写都生成新备份**：目标文件写入前, 先把原文件复制为 `<path>.bak.<UTC-ISO>`
  *   - **原子写**：写到 `.<path>.tmp` → rename 到目标（OS 层 atomic）
- *   - **失败自动回滚**：temp rename 失败时，从 .bak 恢复原内容 + 抛 AppError
- *   - **保留最近 10 份备份**：写入完成后，扫同文件名的 .bak.<UTC-ISO>，超出 10 份按 mtime 删最旧的
+ *   - **失败自动回滚**：temp rename 失败时, 从 .bak 恢复原内容 + 抛 AppError
+ *   - **保留最近 10 份备份**：写入完成后, 扫同文件名的 .bak.<UTC-ISO>, 超出 10 份按 mtime 删最旧的
  *
  * 依赖：FileLockProvider（构造注入）—— 保证同名文件并发写互斥
  *
- * 路径解析：调用方传**绝对路径**（LdmConfigWriter 用 pathResolver.resolveServerPath，
+ * 路径解析：调用方传**绝对路径**（LdmConfigWriter 用 pathResolver.resolveServerPath,
  * ConfigService 用 resolveInstallDir）。AtomicFileWriter 不假设任何目录结构。
  */
 import fs from "fs/promises";
@@ -94,7 +94,7 @@ export class AtomicFileWriter {
       const originalExists = await this.fileExists(opts.path);
       if (originalExists) {
         backupPath = `${opts.path}${backupSuffix}`;
-        // 用 readFile + writeFile 替代 copyFile（vitest forks + Windows 下 copyFile 不可靠）
+        // 用 readFile + writeFile 实现文件复制（copyFile 在 Windows 下不够可靠）
         const originalContent = await fs.readFile(opts.path, "utf-8");
         await fs.writeFile(backupPath, originalContent, "utf-8");
       }

@@ -24,11 +24,8 @@ import { resolveServerPath } from "../server/pathResolver.js";
 
 /**
  * acf 文件相对 Servers/<ID>/ 目录的路径。
- * ★ 2026-08-14 实机根因：U3-SDK `DedicatedUGC.cs:560` 把 `Servers/<id>/Workshop/Steam` 注册为
- * Steamworks workshop 安装根（**仅 Steam 一层，无 steamapps/workshop 子层**）。
- * 旧实现臆造 `Workshop/Steam/steamapps/workshop/` 4 段路径，U3DS 实际写到 `Workshop/Steam/`，
- * 面板 listItems 永远 ENOENT → mainItems=[] → /mods/downloaded 走 staging item
- * → File_IDs 字符串/数字类型错位 → applied 永远 false → UI「未应用」。
+ * U3-SDK `DedicatedUGC.cs:560` 把 `Servers/<id>/Workshop/Steam` 注册为 Steamworks workshop 安装根
+ * ——仅 Steam 一层，无 steamapps/workshop 子层。
  */
 const WORKSHOP_ACF_REL_PATH = path.join(
   "Workshop",
@@ -67,7 +64,7 @@ const ACF_ROOT_KEY = "AppWorkshop";
  * - 原子写 + 自动备份
  * - 失败回滚
  *
- * 路径：`Servers/<ID>/Workshop/Steam/steamapps/workshop/appworkshop_304930.acf`
+ * 路径：`Servers/<ID>/Workshop/Steam/appworkshop_304930.acf`
  */
 export class WorkshopAcfService implements IWorkshopAcfService {
   constructor(private configService: IConfigService) {}
@@ -127,7 +124,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
   }
 
   /**
-   * 列出 staging 目录的已下载 mod（BUG-5/6 修复：下载到 staging 的内容主 acf 扫不到）。
+   * 列出 staging 目录的已下载 mod。
    * SteamCMD `workshop_download_item` 下载到 `Workshop/staging/` 后，
    * 其 acf 生成在 `Workshop/staging/steamapps/workshop/`——主 acf（content 目录）
    * 要等 apply 流水线（applyStaged）才会合并。此方法让「已下载待应用」的 mod 可见。
@@ -302,7 +299,7 @@ export class WorkshopAcfService implements IWorkshopAcfService {
   // ─── 私有 ────────────────────────────────────────────
 
   /**
-   * acf 绝对路径（ADR-0003 / T2：真源 = config.installDir 全局）
+   * acf 绝对路径（真源 = config.installDir 全局）
    */
   private resolveAcfPath(serverId: ServerId): string {
     return resolveServerPath(serverId, WORKSHOP_ACF_REL_PATH);

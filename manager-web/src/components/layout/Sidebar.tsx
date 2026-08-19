@@ -36,10 +36,10 @@ interface SidebarProps {
 }
 
 /**
- * Figma 5:29 Sidebar — 1:1 复刻。
+ * Figma 5:29 Sidebar。
  *
- * 动效：active 项指示器用 motion 共享布局动画在两项之间滑动（layoutId = sidebar-active-bar）。
- * 选中切换时 motion 在新旧位置之间插值；全局已包 MotionConfig reducedMotion="user"，系统减弱动效偏好开启时退化为无动画。
+ * active 项指示器用 motion 共享布局动画在两项之间滑动（layoutId = sidebar-active-bar）；
+ * indicatorStyle 控制指示器形态，系统减弱动效偏好开启时退化为无动画。
  */
 export function Sidebar({ indicatorStyle = "left-bar" }: SidebarProps = {}) {
   return (

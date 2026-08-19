@@ -3,19 +3,19 @@ import { config } from "../../config.js";
 import type { ServerId } from "@unturned-manager/shared";
 
 /**
- * 路径解析器（ADR-0003 / T2）——替代 8 处散落的 `SELECT install_dir FROM servers` 查询。
+ * 路径解析器（见 0003 记录 / T2）。
  *
- * 设计原则：
- * - 纯函数，零 IO
+ * 行为契约：
+ * - 纯函数, 零 IO
  * - 单一真源 = `config.installDir`（`config.ts`）
  * - 路径分隔符由 `path.join` 跨平台处理
  *
- * 路径布局对齐 `.claude/rules/unturned-sop.md`：
+ * 路径布局（见 .claude/rules/unturned-sop.md）：
  *   <installDir>/Servers/<ServerID>/Server/Commands.dat
  *   <installDir>/Servers/<ServerID>/Config.txt
  *   <installDir>/Servers/<ServerID>/WorkshopDownloadConfig.json
  *   <installDir>/Servers/<ServerID>/Logs/
- *   <installDir>/Servers/<ServerID>/Workshop/Steam/steamapps/workshop/content/304930/（U3DS 实际读取，DedicatedUGC.cs:560）
+ *   <installDir>/Servers/<ServerID>/Workshop/Steam/steamapps/workshop/content/304930/（U3DS 实际读取, DedicatedUGC.cs:560）
  *   <installDir>/Servers/<ServerID>/Workshop/staging/...
  */
 

@@ -206,9 +206,9 @@ export function buildContainer(db: Database.Database): AppContainer {
     }
     ptyManager.write(msg.serverId, "Save\n");
     try {
-      // ★ 2026-08-14 对齐官方真源：U3-SDK `CommandSave.cs:15` 存档完成后打本地化 SaveText
+      // U3-SDK `CommandSave.cs:15` 存档完成后打本地化 SaveText
       // `SaveText` = "Successfully saved the game."（实机 `Localization/English/Server/ServerCommandSave.dat`
-      // xxd 提取确认）。旧正则 /world saved/i 与官方文本不匹配 → 存档永远超时。
+      // xxd 提取确认）。
       // 负向信号：`SaveManager.cs:51` 地图未加载完时 warn `Ignoring request to save before level finished loading`
       // → 直接判「地图未就绪」而非等满 30s 超时。
       const success = /successfully saved the game/i;
