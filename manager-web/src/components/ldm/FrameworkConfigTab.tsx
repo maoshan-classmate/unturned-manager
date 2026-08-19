@@ -5,6 +5,8 @@ import { LdmAboutCard } from "./LdmAboutCard.js";
 interface FrameworkConfigTabProps {
   /** 实例标识 */
   serverId: string;
+  /** 配置变更标记回调（编辑器骨架完成时由 input onChange 触发） */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /**

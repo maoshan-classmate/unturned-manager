@@ -8,6 +8,7 @@ import { ConfirmDialog } from "../shared/ConfirmDialog.js";
 import { apiClient } from "@/api/client";
 import { useServer, useServerActions } from "@/hooks/useServer";
 import { stateColor, formatStateBadge } from "@/lib/utils";
+import { StatusBadge } from "../shared/StatusBadge.js";
 import { LaunchCommandsDialog } from "./LaunchCommandsDialog.js";
 
 interface ServerControlCardProps {
@@ -142,12 +143,7 @@ export function ServerControlCard({
             <span>
               实例:<span className="text-slate-100 ml-1">{serverName}</span>
             </span>
-            <span
-              className="text-xs font-medium tracking-wider"
-              style={{ color: stateColor(serverState) }}
-            >
-              {formatStateBadge(serverState)}
-            </span>
+            <StatusBadge state={serverState} />
           </div>
           <div className="flex items-center gap-2">
             <span className="w-16 text-slate-500 shrink-0">端口</span>

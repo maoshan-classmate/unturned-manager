@@ -12,6 +12,7 @@ import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { apiClient } from "../api/client.js";
 import { useServer } from "../hooks/useServer.js";
 import { stateColor, formatStateBadge } from "../lib/utils.js";
+import { StatusBadge } from "../components/shared/StatusBadge.js";
 import { SteamCmdCard } from "../components/server-setup/SteamCmdCard.js";
 import { U3dsCard } from "../components/server-setup/U3dsCard.js";
 import { ServerControlCard } from "../components/server-setup/ServerControlCard.js";
@@ -196,12 +197,13 @@ export function ServerSetupPage() {
                       onClick={() => setCurrentServerId(s.id)}
                       className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     >
-                      <span
-                        className="inline-block h-2 w-2 rounded-full shrink-0"
-                        style={{
-                          backgroundColor: stateColor(s.state ?? "STOPPED"),
-                        }}
-                      />
+                      <span className="shrink-0">
+                        <StatusBadge
+                          state={s.state ?? "STOPPED"}
+                          size="sm"
+                          showLabel={false}
+                        />
+                      </span>
                       <div className="flex-1 min-w-0">
                         <div className="text-slate-100 truncate font-medium">
                           {s.name || s.id}

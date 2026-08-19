@@ -15,6 +15,7 @@ import {
   XCircle,
   AlertTriangle,
   Upload,
+  Save,
 } from "lucide-react";
 import { apiClient } from "../api/client.js";
 import { Button } from "../components/ui/button.js";
@@ -60,10 +61,7 @@ interface InstalledPluginsResponse {
 export function LdmPage() {
   const guard = useRequireServer();
 
-  if (guard.status === "loading") {
-    return <PageState loading error={null} empty={false} loadingText="加载中...">{null}</PageState>;
-  }
-
+  // Provider 化后实例列表已在 AppLayout 顶层加载完成——守卫壳只处理 empty/missing/ready 三态
   if (guard.status !== "ready") {
     return (
       <NoInstanceGuide
@@ -81,12 +79,26 @@ function LdmContent({ serverId }: { serverId: string }) {
     "installed" | "framework" | "permissions"
   >("installed");
 
+  // 各 Tab 报告 dirty 状态（D2 拍板：任一 Tab 脏即触发）
+  const [frameworkDirty, setFrameworkDirty] = useState(false);
+  const [permissionsDirty, setPermissionsDirty] = useState(false);
+  const isDirty = frameworkDirty || permissionsDirty;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold" style={{ color: "#F1F5FB" }}>
           Mod 框架
         </h1>
+        <Button
+          variant={isDirty ? "glow" : "secondary"}
+          animation={isDirty ? "glow-pulse" : "normal"}
+          disabled={!isDirty}
+          data-testid="ldm-apply-button"
+        >
+          <Save size={14} />
+          应用变更
+        </Button>
       </div>
       <OnboardingSopCard />
       <TabBar
@@ -103,8 +115,15 @@ function LdmContent({ serverId }: { serverId: string }) {
         ]}
       />
       {activeTab === "installed" && <InstalledTab serverId={serverId} />}
-      {activeTab === "framework" && <FrameworkConfigTab serverId={serverId} />}
-      {activeTab === "permissions" && <PermissionsTab />}
+      {activeTab === "framework" && (
+        <FrameworkConfigTab
+          serverId={serverId}
+          onDirtyChange={setFrameworkDirty}
+        />
+      )}
+      {activeTab === "permissions" && (
+        <PermissionsTab onDirtyChange={setPermissionsDirty} />
+      )}
     </div>
   );
 }

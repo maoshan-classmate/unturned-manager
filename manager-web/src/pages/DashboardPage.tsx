@@ -14,6 +14,7 @@ import { StatCard } from "../components/stats/StatCard.js";
 import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { SystemMonitorCard } from "../components/dashboard/SystemMonitorCard.js";
 import { StatusBlock } from "../components/dashboard/StatusBlock.js";
+import { StatusBadge } from "../components/shared/StatusBadge.js";
 import { HudDecoration } from "../components/shared/HudDecoration.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
 import { cn, formatStateBadge } from "../lib/utils.js";
@@ -112,12 +113,6 @@ export function DashboardPage() {
   const state = server.state ?? "STOPPED";
   const isRunning = state === "RUNNING";
   const isTransitioning = state === "STARTING" || state === "STOPPING";
-  const stateColor: Record<string, string> = {
-    STOPPED: "#64748B",
-    STARTING: "#F59E0B",
-    RUNNING: "#22C55E",
-    STOPPING: "#F59E0B",
-  };
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -131,13 +126,7 @@ export function DashboardPage() {
             {server.name || "仪表盘"}
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: stateColor[state] }}
-            />
-            <span className="text-xs font-medium tracking-wider" style={{ color: stateColor[state] }}>
-              {formatStateBadge(state)}
-            </span>
+            <StatusBadge state={state} size="sm" />
             <span className="text-xs" style={{ color: "#64748B" }}>
               {server.id} · 端口 <span className="font-mono tabular-nums">{server.gamePort}</span>
             </span>
