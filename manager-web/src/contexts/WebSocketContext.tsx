@@ -124,16 +124,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const retryTimer = useRef<ReturnType<typeof setTimeout>>();
   const retryDelay = useRef(MIN_RETRY_DELAY_MS);
   const intentionalClose = useRef(false);
-  // ★ S5 修复：accessToken 主动 refresh 定时器——过期前 3min 调 ensureAccessToken
-  // 让 accessToken 永远新鲜，WS 重连不串行等 refresh（之前重连慢的根因之一）
+  // accessToken 主动 refresh 定时器——过期前 3min 调 ensureAccessToken
+  // 让 accessToken 永远新鲜，WS 重连不串行等 refresh
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>();
-  // ★ S2 修复：应用层 ping 定时器——25s 间隔保活防反向代理空闲切断
+  // 应用层 ping 定时器——25s 间隔保活防反向代理空闲切断
   const pingTimer = useRef<ReturnType<typeof setInterval>>();
   // 事件订阅表：eventType → handler 集合（ref 模式：永远 latest，避免重渲注册）
   const listenersRef = useRef<
     Map<string, Set<(msg: ServerEventMessage) => void>>
   >(new Map());
-  // 在飞请求表：requestId → pending（重连时整体 reject——不持久化在飞请求，与 GSM3 一致）
+  // 在飞请求表：requestId → pending（重连时整体 reject——不持久化在飞请求）
   const pendingRef = useRef<Map<string, PendingRequest>>(new Map());
 
   // 三个 API 都用 ref 稳定引用——消费方 useEffect 依赖它们不会反复重订
@@ -169,7 +169,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           reject(new Error("连接未就绪，请稍后重试"));
           return;
         }
-        // ★ HTTP 非安全上下文下 crypto.randomUUID 不可用（TypeError）——
+        // HTTP 非安全上下文下 crypto.randomUUID 不可用（TypeError）——
         // 用 generateUUID fallback（getRandomValues 在 HTTP/HTTPS 均可用）
         const requestId = generateUUID();
         const timeoutMs = opts?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -193,13 +193,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   ).current;
 
   /**
-   * 主动 refresh 调度器（S5）：根据当前 accessToken 的 exp 计算到「过期前 3min」
+   * 主动 refresh 调度器：根据当前 accessToken 的 exp 计算到「过期前 3min」
    * 的毫秒数，setTimeout 到点调 ensureAccessToken；refresh 完递归排下一次。
    *
    * 好处：
    * - accessToken 永远新鲜，WS 重连拿到永远有效的 token → 0 抖动
    * - 不依赖 HTTP 401 拦截器被动刷新（拦截器只在请求时才触发）
-   * - 不依赖 WS 重连时串行 refresh（之前 WS 重连慢的根因之一）
+   * - 不依赖 WS 重连时串行 refresh
    *
    * 边界：解码失败 → 立即 refresh 兜底；token 缺失 → no-op；间隔 < 30s 强制拉长
    * 防 setTimeout drift 触发紧循环。

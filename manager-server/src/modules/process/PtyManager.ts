@@ -30,7 +30,7 @@ const OUTPUT_FLUSH_INTERVAL_MS = 50;
  *
  * 封装 node-pty，把 TTY-only 的 U3DS 进程拉到面板可观测的 PTY 通道——
  * U3DS 用 isatty() 检测 stdout 决定 ANSI 进度条 / 颜色，普通 pipe spawn 会
- * 让 U3DS 关闭色彩显示，GSM3 同款依赖（ADR §2.5）。
+ * 让 U3DS 关闭色彩显示。
  *
  * 与 ProcessSupervisor 并列存在：
  * - ProcessSupervisor 管「非 PTY」spawn（SteamCMD execFile、steamcmd 进程）
@@ -99,7 +99,6 @@ export class PtyManager implements IPtyManager {
         cwd,
         env,
         // node-pty 跨平台：Linux/macOS 用 forkpty(2)；Windows 用 ConPTY (Win10+)
-        // GSM3 同款依赖
         useConpty: os.platform() === "win32",
       });
     } catch (err) {
@@ -211,8 +210,7 @@ export class PtyManager implements IPtyManager {
    * 批量 flush 输出 buffer（节流机制核心）。
    *
    * 50ms 内累积的所有 PTY 行逐条 emit——避免每次 onData 都同步触发 ws.send
-   * 导致反向阻塞 PTY read（MCSManager daemon/src/entity/instance/instance.ts
-   * startOutputLoop 同款范式）。逐行回调保持 console_line 单行语义：若合并成单条
+   * 导致反向阻塞 PTY read。逐行回调保持 console_line 单行语义：若合并成单条
    * （join "\n"）会让前端把多行当一行渲染，xterm 里裸 LF 只下移不归列首，产生
    * 逐行递增的缩进错乱。
    *

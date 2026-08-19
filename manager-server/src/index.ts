@@ -51,13 +51,13 @@ setAuthService(
   container.authService as import("./modules/auth/AuthService.js").AuthService,
 );
 
-// ★ ADR-0005 ：终端会话管理器初始化（1:1 GSM3 TerminalSessionManager）
+// 终端会话管理器初始化（恢复历史会话列表）
 await container.sessionManager.initialize();
 
 // 启动系统指标采集器（Dashboard 资源图后端支撑）——5s 间隔采样 CPU + 内存
 container.metricsService.start();
 
-// ─── LogStreamer 接线（ 修复——日志流此前从未启动）──
+// ─── LogStreamer 接线 ───────────────────────────────
 for (const serverId of container.serverManager.listServersSync()) {
   container.logStreamer.startStreaming(serverId as never);
 }
@@ -66,7 +66,7 @@ logger.info(
   "LogStreamer 已启动所有已加载服务器",
 );
 
-// ─── 终端会话过期清理（ADR-0005 ：启用 GSM3 注释掉的 cleanupExpiredSessions）──
+// ─── 终端会话过期清理（ADR-0005）────────────────────────────
 const SESSION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 小时
 const sessionCleanupTimer = setInterval(() => {
   container.sessionManager
@@ -142,7 +142,7 @@ app.use("/api/servers/:id/ldm", createLdmServerRouter({
 app.use("/api/steamcmd", createSteamCmdRouter(container.steamCmdManager));
 app.use("/api/workshop", createWorkshopRouter(container.workshopMeta));
 app.use("/api/settings", createSettingsRouter(db));
-// ★ ADR-0005 ：终端会话列表端点（1:1 GSM3 routes/terminal.ts:44 形态）
+// 终端会话列表端点（ADR-0005）
 app.use(
   "/api/sessions",
   createSessionsRouter(container.sessionManager, container.ptyManager),
@@ -163,7 +163,7 @@ app.use(
 wsBroadcaster.init(
   server,
   container.authService as import("./modules/auth/AuthService.js").AuthService,
-  // ★ ADR-0004 ：terminal_input 事件需要 ptyManager 写 PTY stdin
+  // terminal_input 事件需要 ptyManager 写 PTY stdin（ADR-0004）
   container.ptyManager,
 );
 
@@ -210,7 +210,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, 30000);
 
   try {
-    // ★ ADR-0005 ：清理会话清理 cron + 标记所有活跃会话为 inactive（面板重启后用户能看到「PTY 已断开」）
+    // 清理会话清理 cron + 标记所有活跃会话为 inactive（ADR-0005）
     clearInterval(sessionCleanupTimer);
     for (const session of container.sessionManager.getSavedSessions()) {
       if (session.isActive) {

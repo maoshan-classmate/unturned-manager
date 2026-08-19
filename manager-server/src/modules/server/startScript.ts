@@ -1,7 +1,6 @@
 /**
  * U3DS 启动脚本探测 + 可执行权限。
  *
- * T6 抄 GSM `InstanceManager.ts:202-225`（detectStartScript）+ `:878-907`（chmod +x）。
  * 脚本名按 U3DS 实际定义：多实例模式优先 `ServerHelper.sh`（CLAUDE.md SOP），
  * 单服模式回落 `ExampleServer.sh`；win32 无启动脚本（U3DS 是 Linux 专用服务端）。
  */
@@ -16,7 +15,7 @@ const execAsync = promisify(exec);
 const U3DS_START_SCRIPTS: Record<string, string[]> = {
   linux: ["ServerHelper.sh", "ExampleServer.sh"],
   darwin: ["ServerHelper.sh", "ExampleServer.sh"],
-  win32: [], // U3DS 是 Linux 专用——win32 无启动脚本
+  win32: [], // U3DS 是 Linux 专用服务端
 };
 
 /**
@@ -64,8 +63,8 @@ export async function detectStartScript(
 }
 
 /**
- * 给启动脚本添加可执行权限（抄 GSM chmod 兜底模式）。
- * 非 win32 才需要；chmod 失败仅 warn 不阻塞启动（GSM InstanceManager.ts:895-905 同款）。
+ * 给启动脚本添加可执行权限。
+ * 非 win32 才需要；chmod 失败仅 warn 不阻塞启动。
  *
  * @param installDir - U3DS 安装根目录
  * @param script - 已探测到的脚本名
@@ -82,7 +81,7 @@ export async function ensureStartScriptExecutable(
   platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
   if (platform === "win32") return;
-  // U3DS 是 Linux 专用——chmod 路径永远 POSIX（用 / 拼接，避免 win32 开发机上 path.join 产反斜杠）
+  // chmod 路径永远 POSIX（用 / 拼接，避免 win32 开发机上 path.join 产反斜杠）
   const fullPath = `${installDir}/${script}`;
   try {
     await execAsync(`chmod +x "${fullPath}"`);

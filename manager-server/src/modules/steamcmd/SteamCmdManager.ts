@@ -89,8 +89,8 @@ export class SteamCmdManager implements ISteamCmdManager {
   /** 当前正在跑的 steamcmd 子进程写目录集合（防同一目录并发写入竞态） */
   private activeJobs = new Set<string>();
   /**
-   * ★ 2026-08-14 mod 下载队列化：per-staging FIFO 串行队列。
-   * 同 staging 连点 N 个 mod → 不再抛 409，全部进队等前一个跑完后接力（DST mod.go:72-75 同款语义）。
+   * mod 下载按 staging 串行排队（per-staging FIFO）。
+   * 同 staging 连点 N 个 mod 全部进队，等前一个跑完再接力。
    * 锁释放走 Promise.finally（identity 比对避免被下一个 entry 误删）。
    * key 与 activeJobs 共享 resolveLockKey(stagingDir)——同一个 set 兼 Set/Map 语义，
    * 简化：Set 互斥（install/update/reinstallU3DS/reinstallAll）+ Map 队列（downloadWorkshopItem）。
@@ -142,7 +142,6 @@ export class SteamCmdManager implements ISteamCmdManager {
     const exePath = candidate ? this.resolveExecutable(candidate) : null;
     const isInstalled = exePath !== null;
 
-    // 抄 GSM3 SteamCMDManager.ts:115-133 —— 补充 version 字段（spawn steamcmd +version 解析）
     let version: string | undefined;
     if (isInstalled && exePath) {
       try {
@@ -170,7 +169,7 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     return {
       isInstalled,
-      // installPath 返回用户配置/探测的**目录**（对齐 GSM3 config.installPath 语义），
+      // installPath 返回用户配置/探测的**目录**，
       // 而非解析后的可执行文件——前端路径编辑 dialog 用它做初值，避免保存后显示跳动
       installPath: candidate ?? undefined,
       version,
@@ -196,8 +195,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 安装 U3DS 二进制（BUG-3/7 修复入口，BUG-2 异步化）。
-   * 抄 GSM3 `installOnline` 模式：runscript 模板 + spawn + 解析 stdout + progress 广播。
+   * 安装 U3DS 二进制。
    * 与 updateU3DS 区别：首次安装**不加** validate（没东西可校验），且事后验证启动脚本存在。
    *
    * **异步启动**：spawn 后立即返回 jobId，不等待 SteamCMD 下载/安装完成——下载 10GB 是长任务，
@@ -363,7 +361,7 @@ export class SteamCmdManager implements ISteamCmdManager {
    * 读本地 U3DS 安装清单的 buildid（BUG-1 闭环：checkUpdate 本地 vs 远端对比）。
    *
    * 路径：`<installDir>/steamapps/appmanifest_<U3DS_APP_ID>.acf`（SDG 官方 SteamCMD
-   * +app_update 1110390 后生成的标准格式，U3dsStatusProvider 同款路径）。
+   * +app_update 1110390 后生成的标准格式，U3dsStatusProvider 路径）。
    *
    * @param installDir - U3DS 安装根目录
    * @returns 本地 buildid 字符串；缺失/解析失败统一返回 null，**绝不抛错**
@@ -591,8 +589,8 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
 
     const jobId = `steamcmd-download-${installDir}`;
-    // ★ 2026-08-14 队列化：不再抛 409——同 staging 连点 N 个 mod 全部进队串行跑。
-    // 链上当前 promise：前一个跑完才接力（DST mod.go:72-75 同款 mutex 队列语义）。
+    // 同 staging 连点 N 个 mod 全部进队串行跑。
+    // 链上当前 promise：前一个跑完才接力。
     // race 兜底：finally 里 identity 比对，只删自己的 entry，不误删下一个覆盖进来的。
     const prev = this.downloadQueue.get(lockKey) ?? Promise.resolve();
     const myJob = prev
@@ -885,10 +883,9 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 检查 U3DS（AppID 1110390）当前 buildid/name（Phase 0 异步化——ADR-0004 §4 Phase 0）。
-   * 抄 GSM3 `fetchAppBranches:444-511`：runscript 文件驱动 + 多套命令序列 fallback。
-   * 冷启动 steamcmd 首次 app_info_request 常拿不到 appinfo（实测输出为空），GSM3 试 3 套序列；
-   * 本实现同样 3 套——buildid 解析为空或进程报错则换下一套，全部失败才广播 failed。
+   * 检查 U3DS（AppID 1110390）当前 buildid/name。
+   * 冷启动 steamcmd 首次 app_info_request 常拿不到 appinfo（实测输出为空）；
+   * 因此准备 3 套命令序列——buildid 解析为空或进程报错则换下一套，全部失败才广播 failed。
    *
    * **异步启动**：HTTP 立即返回 jobId，结果通过 WS `steamcmd_progress`（带 jobId）广播。
    * stage='completed' 携带 latestVersion 字段，前端订阅后弹 toast「U3DS 最新版本: xxx」。
@@ -1042,8 +1039,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 重装 SteamCMD（Phase 0 异步化——ADR-0004 §4 Phase 0）。
-   * 抄 GSM3 `installOnline` 模式：删旧 + 拉新 + +quit 初始化。
+   * 重装 SteamCMD。
    * **异步启动**：HTTP 立即返回 jobId，下载/解压/初始化在后台串行跑，进度/完成/失败经 WS 广播。
    *
    * 注意：前 3 步（清理/下载/解压）必须顺序在 `+quit` 初始化前完成——所以**后台串行执行**，
@@ -1119,9 +1115,9 @@ export class SteamCmdManager implements ISteamCmdManager {
           }
         }
 
-        // 2. 拉新——Node https 下载（对齐 GSM3 installOnline:163-235 / downloadFile:262-298）。
-        //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下（BUG-1 重装 curl:77 根因）。
-        //    multi-URL fallback 保留（GSM3 Dockerfile:250-251 同款：akamai 主源 + media.steampowered.com 备源）。
+        // 2. 拉新——Node https 下载。
+        //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下。
+        //    multi-URL fallback 保留：akamai 主源 + media.steampowered.com 备源。
         await fs.promises.mkdir(targetDir, { recursive: true });
         const tarPath = path.join(targetDir, "steamcmd_linux.tar.gz");
         this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 开始下载");
@@ -1205,7 +1201,6 @@ export class SteamCmdManager implements ISteamCmdManager {
   /**
    * 解析候选路径（可能是 SteamCMD 安装目录或可执行文件）为真正可执行的入口。
    * Linux 标准布局：/opt/steamcmd/ 内是 steamcmd.sh 脚本 + linux32/steamcmd 二进制；Windows 是 steamcmd.exe。
-   * 抄 GSM3 `checkSteamCMDExists`/`getSteamCMDExecutablePath` 的「目录内找可执行」思路（whitelist §steamcmd）。
    *
    * @param candidate - 构造器注入的路径（STEAMCMD_DIR 通常是目录）或 DEFAULT_PATHS 探测到的路径
    * @returns 可执行文件绝对路径；不可解析返回 null

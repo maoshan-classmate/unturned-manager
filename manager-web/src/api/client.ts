@@ -2,8 +2,7 @@ import axios from "axios";
 
 export const apiClient = axios.create({
   baseURL: "/api",
-  // BUG-3/7 修复（第五版）：U3DS 启动 + PTY 就绪后端要 30s+，老 10s 上限把 HTTP 提前掐断
-  // → 前端报 "timeout of 10000ms exceeded"。按路由分组，长任务（启动/install/update）单独拉长。
+  // 长任务（启动/install/update）后端要 30s+，10s 太短会提前掐断。
   timeout: 60000,
   headers: { "Content-Type": "application/json" },
 });
@@ -64,10 +63,7 @@ export function getAccessTokenExpMs(token: string): number | null {
 
 /**
  * 确保拿到一个可用的 accessToken——内存里没有 **或已过期** 都主动用 refreshToken 刷新一次。
- *
- * ★ BUG-FIX（WS 断线重连）：原实现 `if (accessToken) return accessToken` 不检查 15 分钟过期——
- * WS 断线重连时拿过期 token 建连，被 gateway verifyClient 拒绝，退避重连反复失败 → 永久断。
- * 现在过期即刷新，保证 WS 重连永远用有效 token。
+ * 过期即刷新，保证 WS 重连永远用有效 token。
  *
  * 复用 401 拦截器里的 refresh 逻辑,避免在 WS / HTTP 两处重复实现。
  *
@@ -101,8 +97,7 @@ apiClient.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
-  // 界面语言透传给后端（用于 Steam WebAPI QueryFiles/GetDetails 的 `language` 参数；
-  // 默认 zh 与 DST 项目对齐，详见 .research/dst-management-platform-api/app/mod/utils.go:90-96）。
+  // 界面语言透传给后端（用于 Steam WebAPI QueryFiles/GetDetails 的 `language` 参数；默认 zh）。
   // 二期做 Settings 语言下拉时改为读用户偏好。
   config.headers['X-I18n-Lang'] = 'zh';
   return config;

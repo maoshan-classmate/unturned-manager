@@ -93,8 +93,7 @@ export function buildContainer(db: Database.Database): AppContainer {
   // ── 基础设施层 ──────────────────────────────────────
   const fileLock = new FileLockProvider();
   const processSupervisor = new ProcessSupervisor();
-  // ★ ADR-0004 ：U3DS 是 TTY-only 进程——PTY 模拟让 U3DS 走 ANSI 色彩进度条
-  // （GSM3 同款依赖）。ProcessSupervisor 保留作非 PTY spawn（SteamCMD execFile/进程）
+  // U3DS 是 TTY-only 进程——PTY 模拟让 U3DS 走 ANSI 色彩进度条（ADR-0004）
   const ptyManager = new PtyManager();
 
   // ── API 层 ────────────────────────────────────────────

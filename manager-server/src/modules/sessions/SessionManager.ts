@@ -29,11 +29,11 @@ export class SessionManager implements ISessionManager {
   private config: TerminalSessionsConfig;
   private mutationQueue: Promise<void> = Promise.resolve();
 
-  /** touchActivity 节流：5 秒内不重复刷新（GSM3 没这层） */
+  /** touchActivity 节流：5 秒内不重复刷新 */
   private readonly lastTouch = new Map<ServerId, number>();
   private static readonly TOUCH_INTERVAL_MS = 5_000;
 
-  /** 7 天过期硬编码（GSM3 同款，TerminalSessionManager.ts:232） */
+  /** 7 天过期硬编码 */
   private static readonly EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 
   /**
@@ -262,8 +262,7 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * 原子写：临时文件 + rename（GSM3 同款）。
-   * GSM3 TerminalSessionManager.ts:107-125 1:1 抄录。
+   * 原子写：临时文件 + rename。
    */
   private async saveConfig(): Promise<void> {
     this.config.lastUpdated = new Date().toISOString();

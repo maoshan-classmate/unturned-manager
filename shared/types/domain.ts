@@ -23,8 +23,7 @@ export interface ServerConfig {
 }
 
 // Commands.dat 解析结果
-// CLAUDE.md §4.3 硬约束：保留未知键，面板不能删除不认识的指令
-// Phase 0 修复：Map → Record，JSON.stringify 兼容（C4 根因）
+// 保留未知键——面板不能删除不认识的指令
 // Loadout 是 Commands.dat 唯一允许重复出现的已知键（每 SkillsetID 一行），
 // 故独立成 loadouts 字段而不是塞进 known，避免与"已知键只能出现一次"的契约打架。
 export interface CommandsDatRecord {

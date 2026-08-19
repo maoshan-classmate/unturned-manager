@@ -38,7 +38,6 @@ function AppLoadingScreen({ text }: { text: string }) {
 function AppLayout() {
   const { isAuthenticated, restoring } = useAuth();
 
-  // Session 恢复中——显示加载
   if (restoring) {
     return <AppLoadingScreen text="恢复会话中..." />;
   }
@@ -47,7 +46,6 @@ function AppLayout() {
     return <LoginPage />;
   }
 
-  // 已登录 + 已恢复 → 进入 Provider 树（先 Server + Current；实例列表加载完成后再挂 WS + 路由）
   return (
     <CurrentServerProvider>
       <ServersProvider>
@@ -75,26 +73,21 @@ function AppLayoutContent() {
         <main className="flex-1 overflow-auto">
           <div className="h-full px-6 py-6">
             <Routes>
-              {/* 首页 + 登录重定向 */}
               <Route path="/" element={<DashboardPage />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
 
-              {/* 全局类路由——不依赖具体实例；从之前误嵌的 :serverId 段拆出 */}
+              {/* 全局类路由——不依赖具体实例 */}
               <Route path="/server-setup" element={<ServerSetupPage />} />
               <Route path="/settings" element={<SettingsPage />} />
 
-              {/* 实例类路由——纯路径；实例标识由共享层（CurrentServerProvider）承载 */}
+              {/* 实例类路由——纯路径；实例标识由 CurrentServerProvider 承载 */}
               <Route path="/console" element={<ConsolePage />} />
               <Route path="/mods" element={<ModsPage />} />
               <Route path="/config/commands" element={<ConfigPage />} />
               <Route path="/ldm" element={<LdmPage />} />
               <Route path="/files" element={<FilesPage />} />
 
-              {/*
-                兼容迁移期——老路径重定向到纯路径。React Router v6 按 specificity 匹配：
-                字面量优先于动态段，所以 /console 命中纯路径；/S1/console 命中此处重定向。
-                用户已收藏的旧实例链接自动迁移到新形态。
-              */}
+              {/* 老路径重定向到纯路径——用户已收藏的旧实例链接自动迁移到新形态 */}
               <Route
                 path="/:serverId/console"
                 element={<Navigate to="/console" replace />}

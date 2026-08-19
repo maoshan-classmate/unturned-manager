@@ -30,7 +30,7 @@ export interface PtySpawnOptions {
   rows?: number;
   /** 环境变量；不传则走 buildChildProcessEnvironment（剥离面板 secret） */
   env?: NodeJS.ProcessEnv;
-  /** 终端类型（TERM），默认 xterm-256color（GSM3 同款） */
+  /** 终端类型（TERM），默认 xterm-256color */
   term?: string;
   /** cwd；不传则用 process.cwd() */
   cwd?: string;
@@ -41,7 +41,7 @@ export interface PtySpawnOptions {
  *
  * U3DS 是 TTY-only 进程——它通过 isatty() 检测 stdout 是否为 TTY 决定走「带 ANSI 控制
  * 序列的进度条」还是「无色彩纯文本」。普通 child_process.spawn 的 stdio 管道不是 TTY，
- * U3DS 检测后会关闭色彩/进度条显示。node-pty 模拟真实 TTY，让 U3DS 输出与 GSM3 完全一致。
+ * U3DS 检测后会关闭色彩/进度条显示。node-pty 模拟真实 TTY，让 U3DS 输出保持一致。
  *
  * 关键设计：
  * - spawn 返回 PID（PTY 进程 ID），与 ProcessSupervisor.spawn 签名对齐
@@ -160,7 +160,7 @@ export interface IPtyManager {
    * @param errorMessage - 超时场景下用户可见的错误文案（避免把正则源码暴露给前端 toast）
    *   不传则用通用文案「等待控制台输出超时」
    * @throws {AppError} code=pty-not-running, status=409 进程不存在时
-   * @throws {AppError} code=pty-exited, status=409 等到之前进程退出时
+   * @throws {AppError} code=pty-exited, status=409 进程已退出时
    * @throws {AppError} code=pty-marker-timeout, status=504 超时未命中时
    */
   waitForMarker(

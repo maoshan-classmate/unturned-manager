@@ -78,9 +78,8 @@ export function createSteamCmdRouter(
     }),
   );
 
-  // ── B-1 修复：检查更新 + 重装 ─────────────────────────
-  // 抄 GSM3 routes/steamcmd.ts:34-130 端点形态（响应结构对齐本项目 { data } 包装）
-  // Phase 0 异步化：checkUpdate spawn 后立即返回 jobId，结果通过 WS `steamcmd_progress`
+  // ── B-1 检查更新 + 重装 ─────────────────────────
+  // checkUpdate spawn 后立即返回 jobId，结果通过 WS `steamcmd_progress`
   // 携带 latestVersion 字段广播（前端订阅后弹 toast「U3DS 最新版本: xxx」）
   router.post(
     "/check-update",

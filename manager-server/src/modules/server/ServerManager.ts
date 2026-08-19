@@ -37,17 +37,16 @@ import {
 // ─── 常量 ────────────────────────────────────────────
 
 const SHUTDOWN_TIMEOUT = 30_000; // 等待进程退出
-const CRASH_RESTART_DELAY = 5_000; // T6: 崩溃 5s 硬重启（抄 GSM GameManager.ts:331-335）
+const CRASH_RESTART_DELAY = 5_000; // 崩溃 5s 硬重启
 /**
  * spawn bash 后塞 startCommand + 兜底 transition(RUNNING) 的延迟。
- * 抄 GSM GameManager.ts:356：3 秒固定定时器 + 进程存活检查。
  * 提前于 3s 的 transition 由 stdout 命中 ready 正则触发（pipePtyOutput 内）。
  */
 const START_COMMAND_DELAY = 3_000;
 
 /**
- * U3DS 启动成功标志——抄 unturned-sop.md:147。
- * 命中任一正则即提前 transition(RUNNING)，避免用户等满 3s 兜底。
+ * U3DS 启动成功标志——命中任一正则即提前 transition(RUNNING)，
+ * 避免用户等满 3s 兜底。
  */
 const U3DS_READY_PATTERNS: RegExp[] = [
   /Server is ready/i,
@@ -84,7 +83,7 @@ interface RuntimeServerState {
  * 状态机（ADR-0004 Phase 6：去 DEGRADED）：
  *   STOPPED → STARTING → RUNNING → STOPPING → STOPPED
  *   决定性状态由 PTY 进程存活驱动——bash 活 = RUNNING/STARTING/STOPPING，bash 死 = STOPPED，
- *   中间无 DEGRADED 模糊态（GSM3 同款 owner-trust 模型）。
+ *   中间无 DEGRADED 模糊态（owner-trust 模型）。
  *
  * Phase 6：RCON 通道删除，所有命令通过 PTY 终端 owner-trust 模型执行（§6.4）。
  */
@@ -616,7 +615,7 @@ export class ServerManager implements IServerManager {
   /**
    * ADR-0004 Phase 2 核心：spawn 永驻 PTY bash → 立即返回 → 1s 后塞 startCommand。
    *
-   * - bash 永驻（GSM3 同款 §6.2/6.3）：U3DS 是 bash 子进程，退出后 bash 回提示符、终端仍可交互
+   * - bash 永驻（§6.2/6.3）：U3DS 是 bash 子进程，退出后 bash 回提示符、终端仍可交互
    * - startCommand 由 detectStartScript 生成并缓存到 config（Phase 4 用户可编辑覆盖）
    * - PTY exit（bash 退出）→ STOPPED + 崩溃重启判定（onExit 注册；stopRequested 置位时跳过）
    * - 若 bash 已存在（崩溃残留）→ 只重塞命令，不重 spawn（isRunning 分支）
@@ -826,8 +825,7 @@ export class ServerManager implements IServerManager {
       );
     }
     await ensureStartScriptExecutable(installDir, script);
-    // 对齐 GSM3 docs 启动方式：统一带 -ThreadedConsole + +InternetServer/<id>。
-    // -ThreadedConsole 前置（在 server 参数之前），确保 +InternetServer/<id> 是命令行最后一个参数。
+    // -ThreadedConsole 置于 server 参数前，确保 +InternetServer/<id> 是命令行最后一个参数。
     return `./${script} -ThreadedConsole +InternetServer/${id}`;
   }
 

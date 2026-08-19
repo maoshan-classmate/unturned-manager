@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.js';
 import './index.css';
 
-// React Query 客户端——前端防抖层（v2.2：后端 0 缓存，前端 staleTime 是唯一防抖）
+// React Query 客户端——前端防抖层。后端 0 缓存，前端 staleTime 是唯一防抖
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
