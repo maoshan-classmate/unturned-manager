@@ -26,7 +26,6 @@ import {
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { InfoCard } from "../components/shared/InfoCard.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
-import { PageState } from "../components/shared/PageState.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useServer } from "../hooks/useServer.js";
 import { apiClient } from "../api/client.js";
@@ -225,11 +224,7 @@ const PAGE_SIZE = 10;
 export function ConfigPage() {
   const guard = useRequireServer();
 
-  // useServer 还在拉实例列表时统一返回 loading 占位——与 empty/missing 区分
-  if (guard.status === "loading") {
-    return <PageState loading error={null} empty={false} loadingText="加载中...">{null}</PageState>;
-  }
-
+  // Provider 化后实例列表已在 AppLayout 顶层加载完成——守卫壳只处理 empty/missing/ready 三态
   if (guard.status !== "ready") {
     return (
       <NoInstanceGuide

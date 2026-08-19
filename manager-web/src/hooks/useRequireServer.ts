@@ -1,12 +1,11 @@
 import { useCurrentServer } from "../contexts/CurrentServerContext.js";
-import { useServer } from "./useServer.js";
+import { useServers } from "../contexts/ServersContext.js";
 
 /**
- * 实例守卫钩子（sc:design 第 2 阶段）的返回状态。
+ * 实例守卫钩子的返回状态。
  *
- * 四态语义说明：
+ * 三态语义说明（ServersProvider 化后 loading 已由 AppLayout 顶层处理）：
  *
- * - **加载中**：useServer 还在拉服务端实例列表——无法判断存不存在，统一返回 loading
  * - **未选过**：当前选中实例标识为 null——用户从未选过实例，或主动清除了选择
  * - **已选但不存在**：当前选中实例有值，但服务端实例列表里没有（实例已被删除）
  * - **就绪**：当前选中实例在服务端实例列表里，可以正常使用
@@ -16,7 +15,6 @@ import { useServer } from "./useServer.js";
  * - 但 toast 文案按状态区分（前者"请先选择一个实例"；后者"该服务器实例不存在"）
  */
 export type RequireServerStatus =
-  | { status: "loading" }
   | { status: "empty" }
   | { status: "missing"; storedId: string }
   | { status: "ready"; serverId: string };
@@ -24,10 +22,14 @@ export type RequireServerStatus =
 /**
  * 实例类四个页面（控制台 / 配置 / 模组 / Mod 框架）的统一守卫钩子。
  *
+ * 数据来源是全局 ServersProvider：AppLayout 顶层在 servers 加载完成前显示全屏
+ * 加载态，加载完成后才挂载 WebSocketProvider + 渲染 Routes——所以本钩子只处理
+ * empty/missing/ready 三态，无需 loading 分支。
+ *
  * **关键约束**：
  * - 钩子本身**只读**——返回状态而不主动跳转或弹提示
  * - 副作用（导航 + toast）由消费方在自己的 useEffect 内完成——React 钩子规则禁止可观察的副作用
- * - 钩子依赖两个上游钩子：`useCurrentServer`（当前选中实例）和 `useServer`（服务端实例列表）
+ * - 钩子依赖两个上游共享层：`useServers`（当前实例列表）和 `useCurrentServer`（当前选中实例）
  *
  * @returns 守卫状态——参见 {@link RequireServerStatus}
  *
@@ -53,11 +55,8 @@ export type RequireServerStatus =
  * ```
  */
 export function useRequireServer(): RequireServerStatus {
-  const { servers, loading } = useServer();
+  const { servers } = useServers();
   const { currentServerId } = useCurrentServer();
-
-  // 数据未稳定——任何判断都不能下结论，统一返回 loading
-  if (loading) return { status: "loading" };
 
   // 上下文为空——用户从未选过实例
   if (currentServerId === null) return { status: "empty" };

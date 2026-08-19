@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -12,6 +12,19 @@ const motionFactory = vi.hoisted(() => {
 });
 
 vi.mock("motion/react", () => motionFactory);
+
+// mock useServers（ServerSelector 经 useServer alias 调用）—— 测试不需要真起 ServersProvider
+vi.mock("../../hooks/useServer.js", () => ({
+  useServer: vi.fn(() => ({
+    servers: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    addServer: vi.fn(),
+    removeServer: vi.fn(),
+    updateServer: vi.fn(),
+  })),
+}));
 
 import { Sidebar } from "./Sidebar.js";
 import { CurrentServerProvider } from "../../contexts/CurrentServerContext.js";
