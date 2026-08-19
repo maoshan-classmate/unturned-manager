@@ -15,7 +15,6 @@ import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { SystemMonitorCard } from "../components/dashboard/SystemMonitorCard.js";
 import { StatusBlock } from "../components/dashboard/StatusBlock.js";
 import { StatusBadge } from "../components/shared/StatusBadge.js";
-import { HudDecoration } from "../components/shared/HudDecoration.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
 import { cn, formatStateBadge } from "../lib/utils.js";
 
@@ -155,18 +154,14 @@ export function DashboardPage() {
 
       {/* ── StatCards (Figma 5:34) ── */}
       <StaggerContainer className="grid grid-cols-4 gap-4">
-        <div className="relative">
-          <HudDecoration intensity="normal" />
-          <StatCard
-            icon={Server}
-            label="服务器状态"
-            value={formatStateBadge(state)}
-            status={
-              isRunning ? "online" : isTransitioning ? "transitioning" : "neutral"
-            }
-            enableStatusIndicator
-          />
-        </div>
+        <StatCard
+          icon={Server}
+          label="服务器状态"
+          value={formatStateBadge(state)}
+          status={
+            isRunning ? "online" : isTransitioning ? "transitioning" : "neutral"
+          }
+        />
         <StatCard
           icon={Users}
           label="在线玩家"
