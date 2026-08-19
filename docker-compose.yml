@@ -1,24 +1,11 @@
 # unturned-manager Docker Compose
 # 单服务：panel（后端 + 前端静态托管 + SteamCMD + U3DS 运行环境一体镜像）
 #
-# 环境变量映射：compose 自动读取【同目录】的 .env 宿主文件，用 ${VAR:-默认值} 语法映射进容器。
 # 用法：
 #   1. cp .env.example .env      # 填 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD
 #   2. docker compose up -d --build
 #
-# ★ BUG-4 修复（2026-08-10）：
-#   挂载目录用**宿主 bind mount 相对路径**（./data ./opt/unturned ./steamcmd），`docker compose up` 时
-#   Docker 自动创建宿主目录——无需手动 mkdir。数据直接落在项目目录下，宿主可访问/备份
-#   （ServerID、Workshop、Logs 都在 ./opt/unturned/Servers/ 下）。
-#   SteamCMD 也挂载到 ./steamcmd：首次启动 entrypoint 从镜像内置 /opt/steamcmd-bootstrap
-#   cp -an 初始化，避免空宿主目录遮蔽镜像 SteamCMD（BUG-1 EACCES 复发）。
-#   首次 up 后 ./opt/unturned 为空是**预期**——需在面板 Server Setup 页点击「安装 U3DS」
-#   （引导式，不会自动装），装完文件直接落在宿主的 ./opt/unturned/ 下。
-#
-# 三个密钥/密码带默认值（快速启动）——生产必须用宿主 .env 覆盖，见下方 ⚠️ 警告。
-#   JWT_SECRET      JWT 签名密钥（config.ts requireEnv，缺失即崩溃）
-#   ENCRYPTION_KEY  RCON 凭证 AES-GCM 加密密钥（requireEnv）
-#   ADMIN_PASSWORD  首启种子管理员密码（db/seed.ts 读取，用户名固定 'admin'）
+# 三个密钥/密码带默认值仅供快速启动——生产必须用宿主 .env 覆盖。
 services:
   panel:
     build: .
@@ -30,40 +17,24 @@ services:
       HOST: ${HOST:-0.0.0.0}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      # ⚠️ 安全警告：以下默认值仅供快速启动/开发。生产必须用宿主 .env 覆盖，
-      # 否则所有未覆盖的部署共享同一 JWT_SECRET / ENCRYPTION_KEY / ADMIN_PASSWORD——
-      # JWT 可被伪造、落库的 RCON 凭证（AES-GCM 加密）可被解密。默认值沿用 manager-server/.env 开发值。
+      # ⚠️ 默认值仅供快速启动/开发。生产必须用宿主 .env 覆盖。
       JWT_SECRET: ${JWT_SECRET:-7f3a9b2e4d1c8f6a0e5b3d9c2a7f4e1b8d6c0a3f5e9b2d7c4a1f8e6b0d3c9a5f}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-c2VjdXJlLXJhbmRvbS1rZXktZm9yLWVuYw==}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
-      # 容器内固定路径（对应下方 volumes 挂载点），勿改
       DB_PATH: /data/unturned-manager.db
       DATA_DIR: /data
       INSTALL_DIR: /opt/unturned
-      # SteamCMD 安装路径（挂载到宿主 ./steamcmd，首次启动 entrypoint 从镜像初始化）
       STEAMCMD_DIR: ${STEAMCMD_DIR:-/opt/steamcmd}
-       # 出站代理（Docker 标准变量）：Steam WebAPI / GitHub API 走代理连接（如国内网络直连超时）。
-      # 取消下面两行注释并填入实际代理地址即生效；留空 = 直连（默认）。
-      # 格式 http://[user:pass@]host:port；⚠️ 容器内 127.0.0.1 是容器自身，代理在宿主机需用局域网 IP。
-      # NO_PROXY 无需配置——本地/内部调用由代码默认兜底（见 outboundProxy.ts），健康检查 curl 自带 --noproxy。
+      # 出站代理——填入即生效，留空直连；容器内 127.0.0.1 是容器自身，宿主机代理用局域网 IP
       # HTTP_PROXY: http://192.168.2.9:7890
       # HTTPS_PROXY: http://192.168.2.9:7890
     ports:
-      # 面板 HTTP
       - "3020:3001"
-      # U3DS 默认端口（实际以各实例 Commands.dat 的 Port 为准；多实例再追加端口映射）
+      # U3DS 默认端口（多实例需追加映射）
       - "28015:27015/udp"
       - "28016:27016/udp"
-      # OpenMod Valve Source RCON
       - "25545:25545"
     volumes:
-      # 面板数据（SQLite + 日志）——宿主项目目录 ./data，compose up 自动创建
       - ./data:/data
-      # U3DS 安装根目录（多 ServerID 共装，省 10GB×N）——宿主项目目录 ./opt/unturned，
-      # compose up 自动创建；面板安装 U3DS 后文件直接落宿主目录，便于备份/放 Mod/看日志
       - ./opt/unturned:/opt/unturned
-      # SteamCMD 安装目录——宿主项目目录 ./steamcmd，compose up 自动创建。
-      # 首次启动 entrypoint（docker-entrypoint.sh）从镜像内置 /opt/steamcmd-bootstrap
-      # cp -an 初始化，空宿主目录不会遮蔽镜像 SteamCMD（BUG-1 EACCES 不复发）；
-      # 之后 steamcmd 自更新持久化到宿主目录，容器重建不重下。
       - ./steamcmd:/opt/steamcmd
