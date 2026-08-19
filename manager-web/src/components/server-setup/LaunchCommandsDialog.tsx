@@ -49,7 +49,7 @@ export function LaunchCommandsDialog({ open, serverId, currentCommands, onClose,
 
   return (
     <Dialog open={open} onClose={onClose} width={500}>
-      <form onSubmit={handleSubmit(onSubmit)} className="p-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="p-4">
         <Dialog.Title>编辑启动命令</Dialog.Title>
 
         <div className="space-y-2">

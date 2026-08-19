@@ -52,7 +52,7 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
           加载详情中...
         </div>
       ) : (
-        <div className="p-5">
+        <div className="p-4">
           {/* 大封面——与列表页 ModCard 对齐（问题 2）：object-contain 完整显示 + 暗底 + 底部渐变；
               aspect-[16/9] 随弹窗宽度等比缩放（问题 3：自适应，不钉死 px 高） */}
           {mod.previewUrl ? (

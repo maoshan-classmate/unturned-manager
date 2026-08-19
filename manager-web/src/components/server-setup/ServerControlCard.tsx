@@ -148,7 +148,15 @@ export function ServerControlCard({
           <div className="flex items-center gap-2">
             <span className="w-16 text-slate-500 shrink-0">端口</span>
             <span className="text-slate-100">
-              {gamePort}(游戏){queryPort ? ` / ${queryPort}(查询)` : ""}
+              <span className="font-mono tabular-nums">{gamePort}</span>
+              <span className="text-slate-500 text-xs ml-1">(游戏)</span>
+              {queryPort ? (
+                <>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <span className="font-mono tabular-nums">{queryPort}</span>
+                  <span className="text-slate-500 text-xs ml-1">(查询)</span>
+                </>
+              ) : null}
             </span>
           </div>
           {/* ADR-0004 Phase 4：startCommand 可编辑输入框（替代硬编码 span） */}

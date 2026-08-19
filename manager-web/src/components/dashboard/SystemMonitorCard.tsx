@@ -41,7 +41,7 @@ export function SystemMonitorCard({ serverId }: SystemMonitorCardProps) {
   return (
     <div
       data-testid="system-monitor-card"
-      className="flex flex-col h-full gap-4 rounded-lg p-5 bg-slate-800 border border-slate-700"
+      className="flex flex-col h-full gap-4 rounded-lg p-4 bg-slate-800 border border-slate-700"
     >
       {/* ── 标题 + 时间窗切换 ── */}
       <div className="flex items-center justify-between">

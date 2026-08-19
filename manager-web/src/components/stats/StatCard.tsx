@@ -53,7 +53,7 @@ export function StatCard({
   return (
     <div
       data-testid={`stat-card-${status}`}
-      className="flex flex-col h-full gap-2 rounded-lg p-5 bg-slate-800 border border-slate-700"
+      className="flex flex-col h-full gap-2 rounded-lg p-4 bg-slate-800 border border-slate-700"
     >
       <div className="flex items-center gap-2">
         {enableStatusIndicator && (

@@ -88,7 +88,7 @@ export function ScheduledTaskDialog({ open, serverId, task, onClose, onSaved }: 
 
   return (
     <Dialog open={open} onClose={onClose} width={450}>
-      <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-3">
+      <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-3">
         <Dialog.Title>{isEdit ? '编辑计划任务' : '添加计划任务'}</Dialog.Title>
 
         <div>

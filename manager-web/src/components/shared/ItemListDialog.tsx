@@ -101,7 +101,7 @@ function ItemFormDialog({
 
   return (
     <Dialog open={open} onClose={onClose} width={420}>
-      <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-3">
+      <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-3">
         <Dialog.Title>{isEdit ? "编辑物品" : "新增物品"}</Dialog.Title>
 
         <div>

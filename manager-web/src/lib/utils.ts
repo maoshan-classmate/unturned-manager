@@ -33,6 +33,60 @@ export function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/**
+ * 保留 2 位小数格式化——输入框提交前钳制；nullish 兜底空字符串。
+ *
+ * @param n - 数字
+ * @returns 格式化字符串（如 1.234 → "1.23" / 1.5 → "1.50"）
+ */
+export function formatDecimal(n: number): string {
+  if (n === undefined || n === null || Number.isNaN(n)) return "";
+  return n.toFixed(2);
+}
+
+/**
+ * SteamID64 展示——D4 拍板:全展示（17 位全部）。
+ *
+ * @param steamId - 17 位 SteamID64 字符串
+ * @returns 原样返回（仅做 rstrip 校验）
+ */
+export function formatSteamId64(steamId: string): string {
+  return steamId.trim();
+}
+
+/**
+ * 持续时长（秒）→ "Xh Ym" 或 "Xm Ys" 格式。
+ *
+ * @param seconds - 秒数
+ * @returns 格式化字符串（< 60s → "Ns" / < 1h → "Xm Ys" / ≥1h → "Xh Ym"）
+ */
+export function formatUptime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 60) return `${Math.floor(seconds)} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    const s = Math.floor(seconds % 60);
+    return `${minutes}分${s}秒`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const m = Math.floor(minutes % 60);
+  return `${hours}时${m}分`;
+}
+
+/**
+ * 持续时长（ms）→ "X.Xs" / "X.Xm" 格式。
+ *
+ * @param ms - 毫秒数
+ * @returns 格式化字符串（< 1s → "Xms" / < 1m → "X.Xs" / < 1h → "X.Xm" / ≥1h → "X.Xh"）
+ */
+export function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (ms < 1000) return `${Math.floor(ms)} 毫秒`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} 秒`;
+  if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)} 分`;
+  return `${(ms / 3_600_000).toFixed(1)} 时`;
+}
+
 /** ISO 日期 → YYYY-MM-DD */
 export function formatDate(iso: string): string {
   try {

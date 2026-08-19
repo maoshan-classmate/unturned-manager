@@ -94,7 +94,7 @@ export function CreateServerDialog({
 
   return (
     <Dialog open={open} onClose={onClose} width={520}>
-      <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-3">
+      <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-3">
         <Dialog.Title>创建新实例</Dialog.Title>
 
         <div className="grid grid-cols-2 gap-3">

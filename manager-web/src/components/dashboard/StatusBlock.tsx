@@ -73,7 +73,7 @@ export function StatusBlock({ serverId, maxItems = 5 }: StatusBlockProps) {
   return (
     <div
       data-testid="status-block"
-      className="flex flex-col gap-3 rounded-lg p-5 bg-slate-800 border border-slate-700"
+      className="flex flex-col gap-3 rounded-lg p-4 bg-slate-800 border border-slate-700"
     >
       {/* ── 标题 ── */}
       <div className="flex items-center gap-2">

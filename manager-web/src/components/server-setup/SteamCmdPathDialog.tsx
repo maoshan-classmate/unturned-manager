@@ -50,7 +50,7 @@ export function SteamCmdPathDialog({ open, currentPath, onClose, onSaved }: Stea
 
   return (
     <Dialog open={open} onClose={onClose} width={450}>
-      <form onSubmit={handleSubmit(onSubmit)} className="p-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="p-4">
         <Dialog.Title>SteamCMD 安装路径</Dialog.Title>
 
         <div className="space-y-2">
