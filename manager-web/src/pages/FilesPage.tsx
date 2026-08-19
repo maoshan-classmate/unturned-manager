@@ -364,7 +364,7 @@ export function FilesPage() {
       {/* ── New Dialog (Figma-style: choose folder/file + name) ── */}
       {showNewDialog && (
         <DO onClose={() => setShowNewDialog(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-5" style={{ width: 380, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
+          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-4" style={{ width: 380, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
             <h3 className="text-sm font-medium text-slate-100 mb-4">新建</h3>
             {/* Type selector */}
             <div className="flex items-center gap-2 mb-3">
@@ -393,7 +393,7 @@ export function FilesPage() {
       {/* ── Upload Dialog ── */}
       {showUploadDialog && (
         <DO onClose={() => setShowUploadDialog(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-5" style={{ width: 400, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
+          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-4" style={{ width: 400, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
             <h3 className="text-sm font-medium text-slate-100 mb-4">上传文件</h3>
             {/* 拖拽/点击选文件区域 */}
             <div
@@ -505,7 +505,7 @@ export function FilesPage() {
       {/* ── Delete Confirm Dialog ── */}
       {showDeleteConfirm && (
         <DO onClose={() => setShowDeleteConfirm(null)}>
-          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-5 text-center" style={{ width: 340, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
+          <div onClick={(e) => e.stopPropagation()} className="rounded-lg p-4 text-center" style={{ width: 340, backgroundColor: '#1E293B', border: '1px solid #334059' }}>
             <Trash2 size={28} style={{ color: '#EF4444', margin: '0 auto 12px' }} />
             <h3 className="text-sm font-medium text-slate-100 mb-1">确认删除</h3>
             <p className="text-xs text-slate-400 mb-4">
