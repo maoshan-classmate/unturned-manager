@@ -8,8 +8,6 @@ Unturned Linux 服务端的 Web 管理面板。在一台机器上同时跑多个
 
 面向场景：在家里或小机房开多个 Unturned 私服，长期运维。
 
-不适合：你只是偶尔想和朋友开一局——直接用游戏内建的多人功能。
-
 ## 快速开始
 
 需要：一台 Linux 机器（Ubuntu 22.04+ / Debian 11+ 已验证），Docker + Docker Compose，2 GB 以上空余磁盘。
@@ -33,24 +31,32 @@ http://<服务器IP>:3020
 
 进入面板后，建议按顺序走一遍：
 
-1. **「服务器设置」页面** → 点「安装服务端」按钮，面板会通过 SteamCMD 下载 Unturned 服务端二进制到 `/opt/unturned`。这是引导式的——不会自动跑。
-2. **「仪表盘」页面** → 点「创建实例」，填实例名（如 `MyServer`）、端口（默认 27015）、你的 SteamID64（用作 Owner）。面板会自动建立实例目录、生成默认 `Commands.dat`。
-3. **「控制台」页面** → 选刚才创建的实例，点「启动」。你能看到 Unturned 服务端的实时输出。在终端里输入 `Players` 看在线玩家，输入 `Shutdown` 关服。
+1. **「服务器设置」页面** → 点「安装 Unturned 服务端」按钮，面板会通过 SteamCMD 下载 Unturned 服务端二进制到 `/opt/unturned`。这是引导式的——不会自动跑。
+2. **「仪表盘」页面** → 点「创建实例」，填实例名（如 `MyServer`）、端口（默认 27015，合法范围 1024-65535）、你的 SteamID64（17 位以 `7656119` 开头，用作 Owner）。面板会自动建立实例目录、生成默认 `Commands.dat`。
+3. **「控制台」页面** → 选刚才创建的实例，点「启动」。你能看到 Unturned 服务端的实时输出。顶部有「存档」「关服」（默认倒计时 10 秒）「重启」按钮；面板还提供了常用命令快捷按钮（玩家列表、广播、白天/黑夜、踢出），也可以直接在终端输入 Unturned 控制台命令。
 4. **「系统设置」页面** → 改 admin 密码、配置 Mod 浏览用的 Steam WebAPI Key。
 
 ## 常用操作
 
 ### 安装 Steam Workshop Mod
 
-进入「模组」页面搜索你想装的 Mod（按名称或 Steam 创意工坊 ID），勾选后点「下载」。面板会把 Mod 下载到实例目录的 staging 子目录。
+进入「模组」页面搜索你想装的 Mod（按名称或 Steam 创意工坊 ID），勾选后点「下载」。面板会把 Mod 下载到实例目录 `Servers/<实例名>/Workshop/staging/` 下。
 
 下载完成 ≠ 生效。去「配置 > Mod 列表」标签里**勾选启用**这个 Mod，然后点实例卡片上的「重启」按钮，Unturned 会重新加载 Mod 列表——这一刻 Mod 才真正可用。面板在保存 Mod 列表后会提示你重启。
 
 ### 上传 Mod / 配置文件
 
-进入「文件」页面，选中实例目录的某个子目录（如 `Server/`、`Bundles/Workshop/`），右键「上传」把本地文件拖到面板。`Commands.dat`、`Config.txt`、Mod 框架插件的 `.dll` 都从这里传。
+进入「文件」页面，可浏览实例目录的多个子目录，常用的有：
 
-注意：`Commands.dat` 和 `Config.txt` 上传后会在下次服务端重启时生效。Mod 框架插件的 `.dll` 上传后是**即时生效**的——面板会自动通知服务端加载。
+- `Server/`——存 `Commands.dat`、`Adminlist.dat`、`Blacklist.dat`、`Whitelist.dat`
+- `Bundles/Workshop/`——手动放的 `.unity3d` 包
+- `Workshop/`——SteamCMD 下载的 Workshop 内容
+- `Rocket/Plugins/`——LDM 插件 `.dll` 上传到这里
+- `Logs/`——服务端日志
+
+选中目录后右键「上传」把本地文件拖到面板。
+
+注意：`Commands.dat` 和 `Config.txt` 上传后会在下次服务端重启时生效。LDM 插件的 `.dll` 上传后是**即时生效**的——面板会自动通知服务端加载。
 
 ### 编辑服务端配置
 
@@ -70,7 +76,14 @@ Unturned 没有热重载。任何对 Mod 列表、基本设置/高级设置、Mo
 
 ### 备份
 
-实例的所有数据都在宿主机的 `./opt/unturned/Servers/<实例名>/` 下。要备份直接复制整个实例目录即可。面板数据（用户、设置、Mod 列表状态）在 `./data/` 下。
+实例的所有游戏数据都在宿主机的 `./opt/unturned/Servers/<实例名>/` 下（命令、配置、Mod、日志、玩家数据）。要备份直接复制整个实例目录即可。
+
+面板自身的状态分两部分：
+
+- `./data/unturned-manager.db`——SQLite 数据库，存 admin 密码、所有实例的「启动命令」设置等。删掉会**丢失所有实例的启动命令**。
+- 实例列表本身**不存数据库**，由目录扫描自动发现（`./opt/unturned/Servers/` 下每个子目录就是一个实例）。
+
+所以备份要同时备份 `./opt/unturned/` 和 `./data/` 两处。
 
 ## 环境变量
 
@@ -99,14 +112,14 @@ Unturned 没有热重载。任何对 Mod 列表、基本设置/高级设置、Mo
 
 ```bash
 docker compose down
-# 删掉数据库文件
+# 删掉数据库文件（会丢失所有实例的启动命令设置）
 rm -f ./data/unturned-manager.db
 docker compose up -d
 ```
 
-面板会重新初始化数据库，并从 `.env` 读取 `ADMIN_PASSWORD` 创建新密码。**注意：实例数据、Mod 列表、设置都会保留，因为这些不在 SQLite 里。**
+面板会重新初始化数据库，并从 `.env` 读取 `ADMIN_PASSWORD` 创建新密码。**注意：实例目录、`Commands.dat`、`Config.txt`、Mod 内容都在 `./opt/unturned/` 下，删 SQLite 不影响。但每个实例的「启动命令」是存 SQLite 的，删了要逐个重新设置。**
 
-### 「安装服务端」按钮点了但一直卡在下载中
+### 「安装 Unturned 服务端」按钮点了但一直卡在下载中
 
 打开实例的「控制台」页面查看进度。如果一直 0%，通常是网络问题——Steam 下载 CDN 在某些地区不通。编辑 `.env` 填 `HTTP_PROXY` 和 `HTTPS_PROXY` 指向你的代理服务，重启容器后重试。
 
@@ -116,7 +129,7 @@ docker compose up -d
 
 ### 端口冲突
 
-每个实例在 `Commands.dat` 的 `Port` 字段占一个 UDP 端口（默认 27015）。多实例每个要不同端口。要让面板外的玩家能连到你的实例，还需要在 `docker-compose.yml` 的 `ports` 段追加端口映射：
+每个实例在 `Commands.dat` 的 `Port` 字段占一个 UDP 端口（默认 27015）。实例实际占用连续 2 个端口（游戏端口 + Port+1 查询端口）。多实例每个要不同端口。要让面板外的玩家能连到你的实例，还需要在 `docker-compose.yml` 的 `ports` 段追加端口映射：
 
 ```yaml
 ports:
@@ -151,15 +164,15 @@ docker compose up -d
 | 3020 | 面板 Web（浏览器访问） |
 | 3001 | 面板内部 HTTP（容器内，对应 3020） |
 | 27015 | Unturned 实例默认游戏端口（UDP） |
-| 27016 | Unturned 实例默认查询端口（UDP） |
-| 25545 | Mod 框架（LDM）远程控制端口（可选） |
+| 27016 | Unturned 实例默认查询端口（= Port+1） |
+
+每加一个实例，在 `Commands.dat` 的 `Port` 字段填一个新端口（范围 1024-65535），实例实际占用连续 2 个端口（游戏端口 + Port+1 查询端口）。在 `docker-compose.yml` 的 `ports` 段也要追加对应映射。
 
 ## 系统要求
 
 - 操作系统：Linux（Ubuntu 22.04+ / Debian 11+ 已验证）。Windows / macOS 可运行但未充分测试。
 - Docker 20.10+ 与 Docker Compose v2
-- 磁盘：基础镜像约 4 GB；每个服务端实例 1-3 GB；每个 Mod 10 MB - 1 GB
-- 内存：单个实例约 500 MB - 2 GB；多实例按需扩展
+- 磁盘与内存：取决于实例数量、地图大小、玩家数。最低建议 2 GB 空闲磁盘 + 2 GB 内存；多人多 Mod 场景按需扩展。
 
 ## 许可证
 
