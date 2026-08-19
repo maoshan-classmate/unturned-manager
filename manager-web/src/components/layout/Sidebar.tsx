@@ -13,27 +13,6 @@ import {
 } from "lucide-react";
 import { ServerSelector } from "./ServerSelector.js";
 
-/**
- * Figma 5:29 Sidebar — 1:1 复刻。
- *
- * Layout (260×900, bg #020617):
- *   [24,20]  UNTURNED MANAGER          12px Regular emerald-500 UPPERCASE
- *   [24,48]  ▽ MyServer  ● 在线        12px Regular text-secondary
- *   [0,80]   ┃ [24,80] 田 仪表盘       active: 3px emerald-500 left bar
- *   [24,120] >_ 控制台                   inactive: #94A3B8
- *   ...40px vertical rhythm...
- *   [24,460] ─── divider 212×1 #1E293B ───
- *   [24,480] 👤 管理员                  13px Regular text-secondary
- *
- * 行为要点：
- *   - 八个菜单标签永远渲染、永远能点
- *   - 路由表为纯路径，侧栏不拼接前缀
- *   - 未选实例时不显示引导按钮——点击实例类菜单后由内容区占位卡引导（NoInstanceGuide）
- *   - 文件菜单归全局级（不依赖具体实例）
- *
- * 动效：active 项左侧 3px 竖条用 motion 共享布局动画在两项之间滑动（layoutId = sidebar-active-bar）。
- * 选中切换时 motion 在新旧位置之间插值；全局已包 MotionConfig reducedMotion="user"，系统减弱动效偏好开启时退化为无动画。
- */
 interface NavItem {
   to: string;
   icon: typeof LayoutDashboard;
@@ -51,9 +30,22 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/settings", icon: Zap, label: "系统设置" },
 ] as const;
 
-export function Sidebar() {
+interface SidebarProps {
+  /** active 项指示器样式—— left-bar 左侧 3px 竖条（默认）/ background 背景色块 / pill 圆角胶囊 */
+  indicatorStyle?: "left-bar" | "background" | "pill";
+}
+
+/**
+ * Figma 5:29 Sidebar — 1:1 复刻。
+ *
+ * 动效：active 项指示器用 motion 共享布局动画在两项之间滑动（layoutId = sidebar-active-bar）。
+ * 选中切换时 motion 在新旧位置之间插值；全局已包 MotionConfig reducedMotion="user"，系统减弱动效偏好开启时退化为无动画。
+ */
+export function Sidebar({ indicatorStyle = "left-bar" }: SidebarProps = {}) {
   return (
     <aside
+      data-testid="sidebar"
+      data-indicator-style={indicatorStyle}
       className="flex h-screen w-[260px] shrink-0 flex-col select-none"
       style={{ backgroundColor: "#020617" }}
     >
@@ -81,15 +73,35 @@ export function Sidebar() {
             }
             style={({ isActive }) => ({
               color: isActive ? "#22C55E" : "#94A3B8",
+              backgroundColor:
+                isActive && indicatorStyle === "background"
+                  ? "rgba(34,197,94,0.12)"
+                  : isActive && indicatorStyle === "pill"
+                    ? "rgba(34,197,94,0.18)"
+                    : "transparent",
+              borderRadius:
+                isActive && indicatorStyle === "pill" ? "9999px" : undefined,
+              margin:
+                isActive && indicatorStyle === "pill" ? "0 12px" : undefined,
             })}
           >
             {({ isActive }) => (
               <>
-                {isActive && (
+                {isActive && indicatorStyle === "left-bar" && (
                   <motion.span
                     layoutId="sidebar-active-bar"
                     data-testid="sidebar-active-bar"
                     className="absolute left-0 top-1/2 -translate-y-1/2 h-[22px] w-[3px] bg-emerald-500"
+                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                    aria-hidden="true"
+                  />
+                )}
+                {isActive && indicatorStyle === "pill" && (
+                  <motion.span
+                    layoutId="sidebar-active-pill"
+                    data-testid="sidebar-active-pill"
+                    className="absolute inset-0 rounded-full"
+                    style={{ backgroundColor: "rgba(34,197,94,0.18)" }}
                     transition={{ type: "spring", stiffness: 400, damping: 35 }}
                     aria-hidden="true"
                   />

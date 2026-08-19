@@ -10,8 +10,8 @@ interface ConfirmDialogProps {
   variant?: "danger" | "default";
   icon?: LucideIcon;
   loading?: boolean;
-  /** 出入场动画：淡入加缩放（默认）| 仅淡入 */
-  animation?: "fade-scale" | "fade-only";
+  /** 出入场动画—— fade-scale 淡入+缩放（默认）/ fade-only 仅淡入 / slide-up 底部滑入 */
+  animation?: "fade-scale" | "fade-only" | "slide-up";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -25,14 +25,14 @@ export function ConfirmDialog({
   variant = "default",
   icon: Icon,
   loading,
-  animation: _animation = "fade-scale",
+  animation = "fade-scale",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const confirmColor = variant === "danger" ? "#EF4444" : "#22C55E";
 
   return (
-    <DialogShell open={open} onClose={onCancel}>
+    <DialogShell open={open} onClose={onCancel} animation={animation}>
       <div
         className="rounded-lg p-6 text-center"
         style={{

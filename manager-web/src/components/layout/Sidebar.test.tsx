@@ -80,3 +80,51 @@ describe("Sidebar — 选中条与路由高亮", () => {
     expect(consoleLink.style.color).toBe("rgb(148, 163, 184)");
   });
 });
+describe("Sidebar — indicatorStyle 参数化", () => {
+  it("默认 left-bar 渲染 sidebar-active-bar", () => {
+    renderSidebar("/");
+    expect(screen.getByTestId("sidebar-active-bar")).toBeTruthy();
+  });
+
+  it("background 模式不渲染 sidebar-active-bar", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <CurrentServerProvider>
+          <Sidebar indicatorStyle="background" />
+        </CurrentServerProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId("sidebar-active-bar")).toBeNull();
+  });
+
+  it("pill 模式渲染 sidebar-active-pill", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <CurrentServerProvider>
+          <Sidebar indicatorStyle="pill" />
+        </CurrentServerProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("sidebar-active-pill")).toBeTruthy();
+  });
+
+  it("data-indicator-style 属性透传", () => {
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/"]}>
+        <CurrentServerProvider>
+          <Sidebar indicatorStyle="background" />
+        </CurrentServerProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("sidebar").getAttribute("data-indicator-style")).toBe("background");
+
+    rerender(
+      <MemoryRouter initialEntries={["/"]}>
+        <CurrentServerProvider>
+          <Sidebar indicatorStyle="pill" />
+        </CurrentServerProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("sidebar").getAttribute("data-indicator-style")).toBe("pill");
+  });
+});

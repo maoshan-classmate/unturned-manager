@@ -4,20 +4,20 @@ interface DialogProps {
   open: boolean;
   onClose: () => void;
   width?: number;
-  /** 出入场动画：淡入加缩放（默认）| 仅淡入 */
-  animation?: "fade-scale" | "fade-only";
+  /** 出入场动画—— fade-scale 淡入+缩放（默认）/ fade-only 仅淡入 / slide-up 底部滑入 */
+  animation?: "fade-scale" | "fade-only" | "slide-up";
   children: React.ReactNode;
 }
 
 /**
  * 通用对话框——统一的暗色 overlay + 卡片容器。
- * 替代各页面内联的 fixed inset-0 bg-black/50 弹窗。
  * 出入场动画由 DialogShell 处理；本组件只管面板自身样式与宽度。
  */
-export function Dialog({ open, onClose, width = 480, animation: _animation = "fade-scale", children }: DialogProps) {
+export function Dialog({ open, onClose, width = 480, animation = "fade-scale", children }: DialogProps) {
   return (
-    <DialogShell open={open} onClose={onClose}>
+    <DialogShell open={open} onClose={onClose} animation={animation}>
       <div
+        data-testid="dialog-content"
         className="rounded-lg overflow-y-auto"
         style={{
           // 自适应：宽 = min(期望宽, 视口宽 - 2rem)，小屏自动缩窄；高 = 85vh 封顶，超高内部滚动
