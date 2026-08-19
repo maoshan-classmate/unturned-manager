@@ -33,37 +33,40 @@ http://<服务器IP>:3020
 
 进入面板后，建议按顺序走一遍：
 
-1. **「Server Setup」页面** → 点「安装服务端」按钮，面板会通过 SteamCMD 下载 Unturned 服务端二进制到 `/opt/unturned`。这是引导式的——不会自动跑。
-2. **「Dashboard」页面** → 点「创建实例」，填实例名（如 `MyServer`）、端口（默认 27015）、你的 SteamID64（用作 Owner）。面板会自动建立实例目录、生成默认 `Commands.dat`。
-3. **「Console」页面** → 选刚才创建的实例，点「启动」。你能看到 Unturned 服务端的实时输出。在终端里输入 `Players` 看在线玩家，输入 `Shutdown` 关服。
+1. **「服务器设置」页面** → 点「安装服务端」按钮，面板会通过 SteamCMD 下载 Unturned 服务端二进制到 `/opt/unturned`。这是引导式的——不会自动跑。
+2. **「仪表盘」页面** → 点「创建实例」，填实例名（如 `MyServer`）、端口（默认 27015）、你的 SteamID64（用作 Owner）。面板会自动建立实例目录、生成默认 `Commands.dat`。
+3. **「控制台」页面** → 选刚才创建的实例，点「启动」。你能看到 Unturned 服务端的实时输出。在终端里输入 `Players` 看在线玩家，输入 `Shutdown` 关服。
 4. **「系统设置」页面** → 改 admin 密码、配置 Mod 浏览用的 Steam WebAPI Key。
 
 ## 常用操作
 
 ### 安装 Steam Workshop Mod
 
-进入「Mods」页面，「浏览」标签搜索你想装的 Mod（按名称或 Steam 创意工坊 ID），勾选后点「下载」。面板会把 Mod 下载到实例目录的 staging 子目录。
+进入「模组」页面搜索你想装的 Mod（按名称或 Steam 创意工坊 ID），勾选后点「下载」。面板会把 Mod 下载到实例目录的 staging 子目录。
 
-下载完成 ≠ 生效。点实例卡片上的「重启」按钮，Unturned 会重新加载 Mod 列表——这一刻 Mod 才真正可用。面板在重启前会提示你确认。
+下载完成 ≠ 生效。去「配置 > Mod 列表」标签里**勾选启用**这个 Mod，然后点实例卡片上的「重启」按钮，Unturned 会重新加载 Mod 列表——这一刻 Mod 才真正可用。面板在保存 Mod 列表后会提示你重启。
 
 ### 上传 Mod / 配置文件
 
-进入「Files」页面，选中实例目录的某个子目录（如 `Server/`、`Bundles/Workshop/`），右键「上传」把本地文件拖到面板。`Commands.dat`、`Config.txt`、LDM 插件的 `.dll` 都从这里传。
+进入「文件」页面，选中实例目录的某个子目录（如 `Server/`、`Bundles/Workshop/`），右键「上传」把本地文件拖到面板。`Commands.dat`、`Config.txt`、Mod 框架插件的 `.dll` 都从这里传。
 
-注意：`Commands.dat` 和 `Config.txt` 上传后会在下次服务端重启时生效。LDM 插件的 `.dll` 上传后是**即时生效**的——面板会自动通知服务端加载。
+注意：`Commands.dat` 和 `Config.txt` 上传后会在下次服务端重启时生效。Mod 框架插件的 `.dll` 上传后是**即时生效**的——面板会自动通知服务端加载。
 
 ### 编辑服务端配置
 
-「Config」页面分多个子页：
+「配置」页面分 3 个标签：
 
-- **Commands.dat**——实例基础配置（名称、端口、玩家上限、地图、模式）。改动后保存，写到磁盘；下次重启生效。
-- **Config.txt**——玩法/浏览器配置（视角、PvP、加载距离、过夜加速等）。
-- **Mod 列表**——勾选启用哪些 Mod，等同于编辑 `WorkshopDownloadConfig.json`。保存后下次重启生效。
-- **Mod 框架**——LDM（Legally-Distinct-Missile）插件管理：上传 .dll、加载/卸载插件、编辑框架配置。
+- **基本设置**——实例基础配置（名称、端口、玩家上限、地图、模式）。对应 `Commands.dat`。改动后保存，写到磁盘；下次重启生效。
+- **高级设置**——玩法/浏览器配置（视角、PvP、加载距离、过夜加速等）。对应 `Config.txt`。
+- **Mod 列表**——勾选启用哪些 Mod（等价于编辑 `WorkshopDownloadConfig.json`）。保存后下次重启生效。
+
+### 管理 Mod 框架插件
+
+「Mod 框架」页面管 LDM（Legally-Distinct-Missile）插件：上传 `.dll`、加载/卸载插件、编辑框架配置。
 
 ### 改完 Mod / 配置后必须重启
 
-Unturned 没有热重载。任何对 Mod 列表、`Commands.dat`、`Config.txt`、LDM 插件配置的改动，必须在「Dashboard」点实例的「重启」按钮才会真正生效。面板在改动后会提示你。
+Unturned 没有热重载。任何对 Mod 列表、基本设置/高级设置、Mod 框架插件配置的改动，必须在「仪表盘」点实例的「重启」按钮才会真正生效。面板在改动后会提示你。
 
 ### 备份
 
@@ -105,11 +108,11 @@ docker compose up -d
 
 ### 「安装服务端」按钮点了但一直卡在下载中
 
-打开实例的「Console」页面查看进度。如果一直 0%，通常是网络问题——Steam 下载 CDN 在某些地区不通。编辑 `.env` 填 `HTTP_PROXY` 和 `HTTPS_PROXY` 指向你的代理服务，重启容器后重试。
+打开实例的「控制台」页面查看进度。如果一直 0%，通常是网络问题——Steam 下载 CDN 在某些地区不通。编辑 `.env` 填 `HTTP_PROXY` 和 `HTTPS_PROXY` 指向你的代理服务，重启容器后重试。
 
 ### 启动实例时控制台没输出
 
-等 30 秒——Unturned 服务端首次启动会生成世界、加载 Mod，耗时较久。如果 1 分钟后仍无输出，检查「Dashboard」上的实例状态是不是「STARTING」——如果是「STOPPED」，去「Console」页面看最后几行日志的报错。
+等 30 秒——Unturned 服务端首次启动会生成世界、加载 Mod，耗时较久。如果 1 分钟后仍无输出，检查「仪表盘」上的实例状态是不是「STARTING」——如果是「STOPPED」，去「控制台」页面看最后几行日志的报错。
 
 ### 端口冲突
 
@@ -126,7 +129,7 @@ ports:
 
 ### 服务端崩溃后没自动重启
 
-面板默认在 5 秒后硬重启实例。如果实例状态卡在「STOPPED」超过 10 秒，去「Console」看 `Server is ready` 或 `World saved` 这类标志有没有出现；如果没有就是启动失败，需要人工排查。
+面板默认在 5 秒后硬重启实例。如果实例状态卡在「STOPPED」超过 10 秒，去「控制台」看 `Server is ready` 或 `World saved` 这类标志有没有出现；如果没有就是启动失败，需要人工排查。
 
 ### 数据备份还原
 
