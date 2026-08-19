@@ -2,11 +2,11 @@
 
 Unturned Linux 服务端的 Web 管理面板。在一台机器上同时跑多个服务端实例，浏览器点点鼠标就能装服务端、下 Mod、装插件、看日志、改配置。
 
+> ⚠️ 本项目目前只支持 Linux。
+
 ## 这是什么
 
 `unturned-manager` 是一个自托管的 Web 面板，用来管理 Unturned 专用服务端二进制（Steam AppID 1110390）。所有实例共用同一个服务端安装目录，省磁盘；面板通过持久控制台会话与各实例通信，所有命令都从浏览器发出，不需要 SSH。
-
-面向场景：在家里或小机房开多个 Unturned 私服，长期运维。
 
 ## 快速开始
 
@@ -38,7 +38,7 @@ http://<服务器IP>:3020
 
 ## 常用操作
 
-### 安装 Steam Workshop Mod
+### 安装 Steam 创意工坊 Mod
 
 进入「模组」页面搜索你想装的 Mod（按名称或 Steam 创意工坊 ID），勾选后点「下载」。面板会把 Mod 下载到实例目录 `Servers/<实例名>/Workshop/staging/` 下。
 
@@ -167,13 +167,3 @@ docker compose up -d
 | 27016 | Unturned 实例默认查询端口（= Port+1） |
 
 每加一个实例，在 `Commands.dat` 的 `Port` 字段填一个新端口（范围 1024-65535），实例实际占用连续 2 个端口（游戏端口 + Port+1 查询端口）。在 `docker-compose.yml` 的 `ports` 段也要追加对应映射。
-
-## 系统要求
-
-- 操作系统：Linux（Ubuntu 22.04+ / Debian 11+ 已验证）。Windows / macOS 可运行但未充分测试。
-- Docker 20.10+ 与 Docker Compose v2
-- 磁盘与内存：取决于实例数量、地图大小、玩家数。最低建议 2 GB 空闲磁盘 + 2 GB 内存；多人多 Mod 场景按需扩展。
-
-## 许可证
-
-MIT。
