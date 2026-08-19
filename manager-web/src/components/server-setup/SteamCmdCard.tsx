@@ -25,7 +25,7 @@ interface SteamCmdCardProps {
  * 路径旁 pencil icon 触发路径编辑 Dialog。
  * 「检查 U3DS 更新」按钮在 U3dsCard（Unturned 专用服务器）那边——它查的是 U3DS 版本，不是 SteamCMD。
  *
- * Phase 0：reinstall 改异步——HTTP 立即返回 jobId，完成/失败经 WS steamcmd_progress
+ * reinstall 走异步——HTTP 立即返回 jobId，完成/失败经 WS steamcmd_progress
  * 广播，前端订阅后弹 toast「SteamCMD 重装完成」。
  */
 export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {

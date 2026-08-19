@@ -71,7 +71,7 @@ export const ModSearchQuerySchema = z.object({
 /**
  * 下载请求 body——兼容单 mod (`fileId`) 和批量 (`fileIds`)。
  * 路由层统一转数组（modDownloadRoute.ts）——单 mod 时也走 fileIds: [<id>]。
- * ★ 2026-08-14 队列化：批量下载走单 SteamCMD 进程的 `workshop_download_item <id1> <id2>...`
+ * 批量下载走单 SteamCMD 进程的 `workshop_download_item <id1> <id2>...`
  * （SteamCMD 内部串行处理），前端 UI 仍是「单按钮连点 N 次」——N 次进队，串行跑。
  */
 export const ModDownloadRequestSchema = z
@@ -87,9 +87,6 @@ export const ModDownloadRequestSchema = z
 export const ModBatchDetailsRequestSchema = z.object({
   fileIds: z.array(z.string().regex(/^\d{1,19}$/)).min(1).max(100),
 });
-
-// v2.6：ModApplyRequestSchema 已删除——写 File_IDs 走 WriteWorkshopFileIdsSchema
-// （config.ts），见 schema/config.schema.ts。
 
 // ─── API 响应 schema ──────────────────────────────────────
 
@@ -143,10 +140,8 @@ export const ModDownloadCompletedEventSchema = z.object({
   error: z.string().optional(),
 });
 
-// v2.6：ModApplyProgressEventSchema 保留但语义收敛——现在仅表示
-// 「staging → content 移动进度」，stage 由枚举重新精化为：'ready' / 'failed'。
-// 旧的 6 个 stage（broadcasting/saving/stopping/moving/starting 等）已随 applyModChanges
-// 删除。详见 docs/architecture/mod-management-design.md §3。
+// ModApplyProgressEventSchema 表示「staging → content 移动进度」，
+// stage 枚举为 'ready' / 'failed'。
 export const ModApplyProgressEventSchema = z.object({
   type: z.literal('mod_apply_progress'),
   serverId: z.string(),

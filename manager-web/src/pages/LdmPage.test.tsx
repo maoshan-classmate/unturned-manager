@@ -145,7 +145,7 @@ describe("LdmPage 子组件 — B1 上传入口闭环", () => {
     });
   });
 
-  // ─── Phase 4b：InstalledTab 搜索筛选 ────────────────────────────
+  // ─── InstalledTab 搜索筛选 ────────────────────────────────────
 
   describe("InstalledTab — 搜索筛选（Phase 4b）", () => {
     it("渲染搜索框 + 状态 chip（全部/已加载/未加载/加载失败）", async () => {

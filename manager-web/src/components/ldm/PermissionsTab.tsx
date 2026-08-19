@@ -8,7 +8,7 @@ import { InfoCard } from "../shared/InfoCard.js";
  * 当前实现：单张占位卡。Permissions.config.xml 的结构化树形编辑器（Groups / Members /
  * Permissions / Color / ParentGroup / Priority / Cooldown）编辑器骨架完成时启用。
  *
- * 后端依赖（已就绪）：
+ * 后端依赖：
  * - `GET /api/servers/:id/ldm/permissions-config`
  * - `PUT /api/servers/:id/ldm/permissions-config`
  * - `serializePermissionsConfig` 未知键保留

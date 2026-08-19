@@ -1,5 +1,5 @@
 /**
- * configTxtAdapter 单测（BUG-2 闭环 owner 网，2026-08-13；Bug B-1 英文 key 同步 2026-08-13）。
+ * configTxtAdapter 单测。
  *
  * 颗粒度最小：只测 helper 4 个函数的纯逻辑，不引入 React/jsdom。
  * 边界覆盖：
@@ -8,7 +8,7 @@
  *   - 全 false → 4 个 section 全 entries 全 known
  *   - 全填值 → entries 值正确回填
  *
- * Bug B-1：所有 key 改用 SDK 英文（PlayConfigData.cs C# 字段名）——U3DS 反射 FieldInfo.Name 精确匹配。
+ * 所有 key 用 SDK 英文（PlayConfigData.cs C# 字段名）——U3DS 反射 FieldInfo.Name 精确匹配。
  * section 名改用 SDK 英文（Browser / Server / Items / Gameplay）。
  */
 import { describe, it, expect } from "vitest";
@@ -194,9 +194,9 @@ describe("buildTxtSections — UI 字段 → schema", () => {
   });
 
   it("EMPTY_TXT_FIELDS → bool 字段按 SDK 默认值走（true→value=null / false→value='false'）", () => {
-    // ★ 2026-08-14：EMPTY_TXT_FIELDS 对齐 SDK 默认值后，bool 字段不再是全 false——
-    //   VAC_Secure/BattlEye_Secure/Has_Durability/Allow_Shoulder/Allow_Freeform/Can_Suicide 默认 true，
-    //   Enable_Scheduled/Enable_Update/Friendly_Fire 默认 false。
+    // EMPTY_TXT_FIELDS 按 SDK 默认值映射 bool 字段：
+    // VAC_Secure/BattlEye_Secure/Has_Durability/Allow_Shoulder/Allow_Freeform/Can_Suicide 默认 true，
+    // Enable_Scheduled/Enable_Update/Friendly_Fire 默认 false。
     const sections = buildTxtSections(EMPTY_TXT_FIELDS);
     const bools = sections.flatMap((s) =>
       s.entries.filter((e) => e.type === "bool"),
@@ -228,7 +228,7 @@ describe("buildTxtSections — UI 字段 → schema", () => {
   });
 
   it("getModeDefaults → per-mode 默认值（Easy/Normal/Hard/未知）", () => {
-    // ★ 2026-08-14：per-mode 字段默认值（PlayConfigData.cs ItemsConfigData 构造函数）
+    // per-mode 字段默认值（PlayConfigData.cs ItemsConfigData 构造函数）
     expect(getModeDefaults("Easy")).toEqual({
       Spawn_Chance: "0.35",
       Respawn_Time: "50",
@@ -408,7 +408,7 @@ describe("mergeTxtSections — 18 个 UI 字段合并进原始 sections", () => 
   it("重复 key（U3DS 双份结构）：merge 更新所有同 key entry，不留旧值", () => {
     // 真实 U3DS 写回形态：同一 section 内同 key 出现两次（基础裸 key + override 带值）。
     // U3-SDK DatParser.cs:145 解析重复 key 时最后一个生效——merge 若只更新第一条，
-    // 第二份残留旧值会在启动后覆盖用户配置（Bug 1）。
+    // 第二份残留旧值会在启动后覆盖用户配置。
     const raw: Record<string, ConfigSection> = {
       Server: {
         name: "Server",

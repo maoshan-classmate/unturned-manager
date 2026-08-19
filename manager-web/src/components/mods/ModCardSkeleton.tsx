@@ -1,5 +1,5 @@
 /**
- * ModCard 骨架屏——loading 时替代 ModCard 展示（问题 8：只 loading 列表不 loading 整页）。
+ * ModCard 骨架屏——loading 时展示（只 loading 列表不 loading 整页）。
  * 与 ModCard 等高，animate-pulse 脉冲动画。
  *
  * @example

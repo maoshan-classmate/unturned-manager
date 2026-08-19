@@ -47,11 +47,11 @@ const DEFAULT_SHUTDOWN_DELAY_S = 10;
 /**
  * Console 页面——Figma 2:3 🎨 Console。
  *
- * ADR-0004 Phase 3：输出区从 <pre> 换 xterm.js <Terminal />——U3DS 的 ANSI 彩色
- * 日志天然渲染；终端里可直接键盘交互（onData → WS terminal_input → PTY stdin）。
- * 上方保留「预设命令 + 清空 + 服务器切换」，底部保留「输入框 + 发送」——所有命令
- * 经 WS terminal_input 写入 PTY 终端（ADR-0004 Phase 6：RCON 通道已删，owner-trust
- * 模型），危险指令由前端 ConfirmDialog 拦截（owner-trust 下无服务端 428 门控）。
+ * 输出区用 xterm.js <Terminal /> 渲染——U3DS 的 ANSI 彩色日志天然着色；
+ * 终端里可直接键盘交互（onData → WS terminal_input → PTY stdin）。
+ * 上方是「预设命令 + 清空 + 服务器切换」，底部是「输入框 + 发送」——所有命令
+ * 经 WS terminal_input 写入 PTY 终端（owner-trust 模型），危险指令由前端
+ * ConfirmDialog 拦截。
  */
 /**
  * 守卫壳组件——只做实例守卫，业务 hooks 全在 ConsoleContent 内。
@@ -104,7 +104,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [showConfirm, setShowConfirm] = useState("");
-  // ★ ws-wrapper-design §6 阶段 4：ACK 操作的确认弹窗 + 进行中状态
+  // ACK 操作的确认弹窗 + 进行中状态
   const [confirmAction, setConfirmAction] = useState<"shutdown" | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -157,12 +157,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
     [runAck, shutdown],
   );
 
-  /** 关闭控制台进程（ACK）——核选项：服务端进程被终止且不自动存档 */
-  // ★ 2026-08-14 移除：「关闭控制台」按钮已删除。理由：U3DS 服务进程就是 PTY 终端
-  // owner——终止它等于停服，与「关服」功能重复且更危险（不存档不倒计时）。
-  // 若 PTY 真卡死，运维应去宿主机排查而非面板提供更激进的终止路径。
-
-  // 发送命令（ADR-0004 Phase 6：RCON 通道已删——sendCommand 经 WS terminal_input 写入 PTY）
+  // 发送命令——sendCommand 经 WS terminal_input 写入 PTY
   const handleSend = useCallback(
     async (cmd?: string) => {
       const command = (cmd ?? input).trim();
@@ -190,8 +185,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
       setInput("");
       setHistoryIdx(-1);
 
-      // ★ ws-wrapper-design §6 阶段 4：手敲 Shutdown 命令确认后走 ACK——
-      // 用户能拿到「服务端已停止 / 关服超时」的明确反馈，不再是发了就干等。
+      // 手敲 Shutdown 命令确认后走 ACK——用户能拿到「服务端已停止 / 关服超时」的明确反馈。
       if (cmdName === "shutdown") {
         const parts = command.split(/\s+/).slice(1);
         let delaySeconds = DEFAULT_SHUTDOWN_DELAY_S;
@@ -271,7 +265,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
             <span className="text-xs" style={{ color: "#64748B" }}>
               {connected ? "控制台已连接" : "控制台未连接"}
             </span>
-            {/* ★ S4 修复：服务器未运行时明确提示——PTY 没跑时敲命令静默丢失 */}
+            {/* 服务器未运行时明确提示——PTY 没跑时敲命令静默丢失 */}
             {currentServer && !isServerRunning && (
               <span className="text-xs" style={{ color: "#EF4444" }}>
                 · 当前服务器未运行（状态：{currentServer.state ?? "未知"}），请先启动
@@ -355,7 +349,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
           </button>
         ))}
         <div className="flex-1" />
-        {/* ★ ws-wrapper-design §6 阶段 4：ACK 操作按钮——有明确成功/失败反馈 */}
+        {/* ACK 操作按钮——有明确成功/失败反馈 */}
         <button
           onClick={handleSave}
           disabled={pendingAction !== null}
@@ -400,7 +394,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         </button>
       </div>
 
-      {/* ── Output：xterm.js 终端（Phase 3） ── */}
+      {/* ── Output：xterm.js 终端 ── */}
       <div className="relative flex-1 min-h-0">
         <HudDecoration intensity="normal" />
         <Terminal
@@ -454,7 +448,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         onCancel={() => setShowConfirm("")}
       />
 
-      {/* ★ ws-wrapper-design §6 阶段 4：ACK 操作的确认弹窗——有明确成功/失败反馈 */}
+      {/* ACK 操作的确认弹窗——有明确成功/失败反馈 */}
       <ConfirmDialog
         open={confirmAction === "shutdown"}
         title="关服确认"

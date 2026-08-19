@@ -7,7 +7,7 @@ import "@xterm/xterm/css/xterm.css";
  * xterm.js 终端包装组件。
  *
  * 输出由 useConsole 通过 onReady 暴露的 xterm 实例直接写入（PTY raw chunks），
- * 不再走 lines 数组增量渲染——后者会把 ESC 转义序列切碎、xterm 状态机无法自愈。
+ * 不走 lines 数组增量渲染——后者会把 ESC 转义序列切碎、xterm 状态机无法恢复。
  * 容器 resize 时 FitAddon 自动 fit。
  *
  * 是 ConsolePage 的专属组件（组件存放规范：只被一个页面用 → components/<feature>/）。

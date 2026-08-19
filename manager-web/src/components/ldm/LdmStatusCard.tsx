@@ -17,7 +17,7 @@ interface LdmStatus {
  * LDM 状态卡片——展示主框架是否安装 + Rocket/ 目录存在性 + 插件总数 + 检测时间。
  * 安装在「已装插件」Tab 顶部，作为页面进入后的第一眼状态总览。
  *
- * 数据源：`GET /api/servers/:id/ldm/status`（Phase 3 后端已落档）。
+ * 数据源：`GET /api/servers/:id/ldm/status`。
  *
  * @param props - 组件属性
  * @param props.serverId - 实例标识

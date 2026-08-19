@@ -49,7 +49,7 @@ export function createSteamCmdRouter(
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir: string };
       try {
-        // Phase 0 异步化：updateU3DS spawn 后立即返回 jobId，HTTP 202 不再等 30min
+        // updateU3DS spawn 后立即返回 jobId，HTTP 202 不等待 30min
         const jobId = await steamCmdManager.updateU3DS(installDir);
         res.status(202).json({ data: { jobId } });
       } catch (err) {
@@ -68,8 +68,8 @@ export function createSteamCmdRouter(
         installDir: string;
         itemIds: string[];
       };
-      // review 修复（P2-4）：与另外 4 个异步端点一致返回 jobId——原实现丢弃返回值，
-      // 未来调用方无法按 jobId 精确订阅 WS 进度/完成/失败
+      // 与另外 4 个异步端点一致返回 jobId——
+      // 未来调用方按 jobId 精确订阅 WS 进度/完成/失败
       const jobId = await steamCmdManager.downloadWorkshopItem(
         installDir,
         itemIds,
@@ -96,15 +96,15 @@ export function createSteamCmdRouter(
     }),
   );
 
-  // ── B-3 修复：安装 U3DS（前端引导按钮）── 抄 GSM3 installOnline 模式
-  // 用户点击前端「安装 U3DS」按钮触发，**不**自动触发（SteamCMD + U3DS 由用户决定）
+  // ── 安装 U3DS（前端引导按钮）───────────────────────────
+  // 用户点击前端「安装 U3DS」按钮触发，不自动触发（SteamCMD + U3DS 由用户决定）
   router.post(
     "/install-u3ds",
     validate(UpdateSchema),
     asyncHandler(async (req, res) => {
       const { installDir } = req.body as { installDir: string };
       try {
-        // BUG-2 异步化：installU3DS spawn 后立即返回 jobId，进度/完成/失败走 WS
+        // installU3DS spawn 后立即返回 jobId，进度/完成/失败走 WS
         const jobId = await steamCmdManager.installU3DS(installDir);
         res.status(202).json({ data: { jobId } });
       } catch (err) {

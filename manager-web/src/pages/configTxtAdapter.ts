@@ -1,14 +1,14 @@
 /**
- * Config.txt schema adapter（BUG-2 闭环，2026-08-13；Bug B-1 英文 key 重构 2026-08-13）。
+ * Config.txt schema adapter。
  *
  * 后端 shared/schemas/config.schema.ts ConfigSectionSchema = { name, entries: ConfigEntry[] }
  * UI 用扁平 ConfigTxtFields；本文件负责 UI ↔ schema 互转。
  *
- * Bug B-1 修复：字段名 + entry key + section name 全部对齐 SDK 英文真源（PlayConfigData.cs 各 ConfigData 类的 C# 字段名）。
+ * 字段名 + entry key + section name 全部对齐 SDK 英文真源（PlayConfigData.cs 各 ConfigData 类的 C# 字段名）。
  * 写入文件后 U3DS `PlayConfigUtils.ParseCategory`（PlayConfigData.cs:2613-2678）按 C# 反射 FieldInfo.Name 匹配，
  * 中文 key 会被 TryGetNode 返回 false 静默丢弃——本文件确保所有写入 key 都用 SDK 英文。
  *
- * 颗粒度最小：只 ConfigPage 一处消费，但 helper 必须可独立单测（owner 网），
+ * 颗粒度最小：只 ConfigPage 一处消费，但 helper 必须可独立单测，
  * 故放在页面同级独立文件而不是内联。CLAUDE.md §lib/utils 触发条件 = ≥2 模块共用，
  * 本文件当前不满足，**不**入 lib/utils。
  */
@@ -23,7 +23,7 @@ import type {
  * value=null 含义：string 字段未设置（视作空串）。
  *
  * 颗粒度说明：与 readBoolEntry 分开为独立函数——避免 TS 重载在运行时被忽略、
- * isBool 参数歧义导致返回类型错配的坑（BUG-2 修复时单测抓住过）。
+ * isBool 参数歧义导致返回类型错配的坑。
  *
  * @param section - 后端返回的 ConfigSection（可能 undefined=section 不存在）
  * @param key - 字段 key（SDK 英文名，与 `PlayConfigData.cs` 对应 C# 字段名一致）
@@ -45,7 +45,7 @@ export function readStringEntry(
  * value=null 含义：bool 字段勾选为 true（U3DS 配置文件中 bool 开关 = 裸 key 行）。
  * value 非 null（"true"/"false"/其他）：按字面字符串真值判断——保守走 Boolean()。
  *
- * ★ 2026-08-14：加 defaultVal 参数——文件缺失（section 无此字段）时返回 SDK 官方默认值，
+ * 加 defaultVal 参数——文件缺失（section 无此字段）时返回 SDK 官方默认值，
  * 而不是恒 false。Config.txt 空值语义 = 使用官方默认（server-configuration.rst:10），
  * 前端 UI 必须把「未配置」显示为 SDK 默认，否则 toggle 全 false 误导用户。
  *
@@ -76,7 +76,7 @@ export function readBoolEntry(
 /**
  * 构造一条 bool 字段 entry。
  *
- * ★ 2026-08-14 原生格式语义修正：U3-SDK `DatValueEx.cs:134-160` 裸 key（value null）
+ * 原生格式语义：U3-SDK `DatValueEx.cs:134-160` 裸 key（value null）
  * = 该字段默认值（parse 失败回落 defaultValue），**不是强制 true**。
  * 面板 bool 是二态 switch——为「所见即所得」：
  *   勾选 → `key true`（强制 true，不依赖默认）
@@ -102,7 +102,7 @@ export function stringEntry(key: string, value: string): ConfigEntry {
 /**
  * UI 字段全集 → 4 个 section 的 ConfigSection[]。
  *
- * Bug B-1 修复后：section 名 + entry key 都用 SDK 英文真源——
+ * section 名 + entry key 都用 SDK 英文真源——
  * Browser / Server / Items / Gameplay 对应 PlayConfigData.cs 的 BrowserConfigData / ServerConfigData / ItemsConfigData / GameplayConfigData。
  *
  * UI 字段清单（与 ConfigTxtFields 同步）——新增 UI 字段必须同步加到这里。
@@ -157,7 +157,7 @@ export function buildTxtSections(fields: ConfigTxtFields): ApiConfigSection[] {
 }
 
 /**
- * ★ 2026-08-14 方案 1：合并保存——只覆盖 UI 托管字段，保留未托管 section/键/注释/rawBlocks。
+ * 方案 1：合并保存——只覆盖 UI 托管字段，保留未托管 section/键/注释/rawBlocks。
  *
  * 真实 U3DS Config.txt 有 13 个 section、约 295 个字段，面板 UI 只展示/编辑 18 个托管字段。
  * 若保存时只用 buildTxtSections 的 4 个 section 覆盖整个文件，会删掉 9 个 section + 约 277 个
@@ -261,7 +261,7 @@ export function mergeTxtSections(
     }
     const exists = section.entries.some((e) => e.key === key);
     if (exists) {
-      // ★ 2026-08-15 Bug 修复：更新所有同 key entry（不只第一个）——U3DS 解析重复 key 时
+      // 更新所有同 key entry（不只第一个）——U3DS 解析重复 key 时
       // 最后一个生效（DatParser.cs:145），只更新第一个会让用户值被第二份旧值覆盖。
       // 保留原 comment（U3DS 自动生成的 // > 默认值说明不能丢），只更新 value/type。
       section.entries = section.entries.map((e) =>
@@ -277,7 +277,7 @@ export function mergeTxtSections(
 }
 
 /**
- * ConfigTxtFields 形态——Bug B-1 修复后所有字段名与 SDK C# 字段名一致。
+ * ConfigTxtFields 形态——所有字段名与 SDK C# 字段名一致。
  *
  * 中文 label 仅在前端 ConfigPage.tsx 的 TxtSection field 数组里出现（display-only），
  * 本 interface 与 buildTxtSections 全部用英文 key——保证写入 Config.txt 的字段名
@@ -324,7 +324,7 @@ export interface ConfigTxtFields {
   Can_Suicide: boolean;
 }
 
-/** 空 ConfigTxtFields——helper 单测起点（Bug B-1 修复后全部英文 key） */
+/** 空 ConfigTxtFields——helper 单测起点（全部英文 key） */
 export const EMPTY_TXT_FIELDS: ConfigTxtFields = {
   Login_Token: "",
   Desc_Full: "",
@@ -347,7 +347,7 @@ export const EMPTY_TXT_FIELDS: ConfigTxtFields = {
 };
 
 /**
- * 各 UI 字段的 SDK 官方默认值——placeholder 预览用（★ 2026-08-14 新增）。
+ * 各 UI 字段的 SDK 官方默认值——placeholder 预览用。
  *
  * 真源（U3DS 实机 Config.txt 注释「// > Default: ...」+ PlayConfigData.cs 构造函数）：
  *   - 固定 bool/数值：直接写死

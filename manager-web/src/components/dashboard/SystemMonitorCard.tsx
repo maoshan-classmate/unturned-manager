@@ -20,12 +20,12 @@ const CPU_HIGH_THRESHOLD = 80;
 /**
  * 系统资源监控卡片（Dashboard 资源图后端支撑）。
  *
- * 边界（metrics.contract.ts + P3 设计稿 §2.2）：
+ * 边界（metrics.contract.ts）：
  * - **多实例共装下不分 ServerID**：标题明示「系统资源（多实例）」
  * - **网络指标暂不暴露**：后端未实现，前端不画饼
  *
  * sparkline 手写 SVG `<polyline>`——不引入新库；
- * 数字滚动用 @number-flow/react（P1 已引入）。
+ * 数字滚动用 @number-flow/react。
  */
 export function SystemMonitorCard({ serverId }: SystemMonitorCardProps) {
   const { data, loading, error, window, setWindow } = useMetrics(serverId);

@@ -102,12 +102,9 @@ export class SteamCmdManager implements ISteamCmdManager {
   /**
    * 计算 activeJobs 锁 key——语义「SteamCMD 进程会写入的目录」。
    *
-   * review 修复（P2-2 锁 key 统一）：之前 5 个方法各自取「最自然的字符串」做 key，
-   * 缺乏统一语义边界，导致 downloadWorkshopItem 同 installDir 不同 serverId 误互斥
-   * （实写 stagingDir 不同——`/opt/unturned/Servers/A/Workshop/staging` vs
-   * `/opt/unturned/Servers/B/Workshop/staging`，本可并发）。
-   *
-   * 锁的**真实边界**是「SteamCMD 进程写入的目录」——并发写同一目录才互斥。
+   * 锁边界统一为 SteamCMD 进程写入的目录——并发写同一目录才互斥。
+   * 不同 stagingDir 各自独立（`/opt/unturned/Servers/A/Workshop/staging` 与
+   * `/opt/unturned/Servers/B/Workshop/staging`），可并发。
    *
    * @param writeDir - 该方法内部 SteamCMD 进程将写入的目录
    * @returns 锁 key 字符串（用 fs.realpathSync 归一解析软链接等，同一物理目录拿到同一 key）
@@ -126,7 +123,7 @@ export class SteamCmdManager implements ISteamCmdManager {
    * @param processSupervisor - 进程编排
    * @param broadcaster - WS 广播
    * @param steamCmdPath - SteamCMD 安装目录或可执行文件路径（STEAMCMD_DIR 注入通常是目录；测试注入可以是文件）
-   * @param activeProbe - 活跃实例探活器（ADR-0003 B2 §3.4：DB state 列已删，改依赖 ServerManager 内存态）
+   * @param activeProbe - 活跃实例探活器（依赖 ServerManager 内存态）
    */
   constructor(
     private processSupervisor: IProcessSupervisor,
@@ -150,11 +147,10 @@ export class SteamCmdManager implements ISteamCmdManager {
           ["+version", "+quit"],
           { timeout: 10_000 },
         );
-        // SteamCMD v2 输出实测（BUG-9 第五版）：
+        // SteamCMD v2 输出实测：
         //   "Steam Console Client (Linux) Version 1785799152 - type 'quit' to exit --"
         // 末尾 " - type 'quit' to exit --" 是交互提示。
-        // 此前截断逻辑只剥 type 'quit'，残留 " - --"；改为：从 " - " 开始一刀切，
-        // 取 group 1（版本号）作为主值；group 2 仅在看起来像日期（YYYY-...）时拼接。
+        // 从 " - " 开始一刀切，取 group 1（版本号）作为主值；group 2 仅在看起来像日期（YYYY-...）时拼接。
         const match = stdout.match(/Version\s+(\d+)(?:\s*-\s*([^\n]+))?/i);
         if (match) {
           const raw = (match[2] ?? "").split(" - ")[0]?.trim() ?? "";
@@ -199,10 +195,10 @@ export class SteamCmdManager implements ISteamCmdManager {
    * 与 updateU3DS 区别：首次安装**不加** validate（没东西可校验），且事后验证启动脚本存在。
    *
    * **异步启动**：spawn 后立即返回 jobId，不等待 SteamCMD 下载/安装完成——下载 10GB 是长任务，
-   * HTTP 同步等会挂起导致前端 axios 超时（同 BUG-5/6）。后台完成/失败经 WS `steamcmd_progress` 广播。
+   * HTTP 同步等会挂起导致前端 axios 超时。后台完成/失败经 WS `steamcmd_progress` 广播。
    *
    * @param installDir - U3DS 安装根目录（典型 /opt/unturned）
-   * @param callbacks - 进度回调（抄 GSM3 onProgress/onStatusChange 形态；route 不传，靠 WS）
+   * @param callbacks - 进度回调（route 不传，靠 WS）
    * @returns jobId（`steamcmd-install-<installDir>`）
    * @throws {AppError} code=servers-active/steamcmd-busy/steamcmd-not-found（spawn 前同步抛）
    * @throws {Error} spawn 失败（同步抛，route 转 500）
@@ -223,7 +219,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         409,
       );
     }
-    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录
+    // 锁边界 = SteamCMD 写入目录
     const lockKey = this.resolveLockKey(installDir);
     if (this.activeJobs.has(lockKey)) {
       throw new AppError(
@@ -247,7 +243,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       "@NoPromptForPassword 1",
       `force_install_dir "${installDir}"`,
       "login anonymous",
-      `app_update ${STEAM_APP_IDS.U3DS_SERVER}`, // ★ 首次安装：去掉 validate
+      `app_update ${STEAM_APP_IDS.U3DS_SERVER}`, // 首次安装：去掉 validate
       "quit",
     ].join("\n");
     const scriptPath = path.join(installDir, ".steamcmd-install.scf");
@@ -286,7 +282,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       throw err;
     }
 
-    // 4. 解析 stdout + 进度回调（抄 GSM3: 两条通道：callback + WS 广播）
+    // 4. 解析 stdout + 进度回调（两条通道：callback + WS 广播）
     this.processSupervisor.onStdout(jobId, (line: string) => {
       const { stage, percent } = this.parseProgressLine(line);
       callbacks?.onProgress?.(percent ?? 0);
@@ -299,15 +295,15 @@ export class SteamCmdManager implements ISteamCmdManager {
       });
     });
 
-    // 5. 后台收尾（BUG-2 异步化）：等待退出 → 清临时脚本 → 验证启动脚本 → 广播 completed/failed → 释放锁
+    // 5. 后台收尾：等待退出 → 清临时脚本 → 验证启动脚本 → 广播 completed/failed → 释放锁
     void (async () => {
       try {
         const installExitCode = await this.processSupervisor.waitForExit(
           jobId,
           UPDATE_TIMEOUT_MS,
         );
-        // BUG-3/7：steamcmd 下载失败（exitCode≠0）报真实错误，
-        // 不再误报"安装完成但未检测到启动脚本"（否则用户误以为装好，点启动才炸）
+        // steamcmd 下载失败（exitCode≠0）报真实错误，
+        // 避免误报"安装完成但未检测到启动脚本"（否则用户误以为装好，点启动才炸）
         if (installExitCode !== 0 && installExitCode != null) {
           throw new Error(
             `SteamCMD 安装进程异常退出 (code ${installExitCode})`,
@@ -358,7 +354,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 读本地 U3DS 安装清单的 buildid（BUG-1 闭环：checkUpdate 本地 vs 远端对比）。
+   * 读本地 U3DS 安装清单的 buildid（checkUpdate 本地 vs 远端对比）。
    *
    * 路径：`<installDir>/steamapps/appmanifest_<U3DS_APP_ID>.acf`（SDG 官方 SteamCMD
    * +app_update 1110390 后生成的标准格式，U3dsStatusProvider 路径）。
@@ -400,10 +396,8 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
   }
 
-  /** BUG-2 修复：广播带 jobId 的进度事件（多任务并发隔离）。
-   *  review 修复（P2-1）：删死参数 stage——方法体只广播 label，原第一个 stage 参数完全被忽略，
-   *  调用者易误把 "completed"/"failed" 传进 stage 位导致广播错 stage。签名收敛为 (jobId, percent, label)。
-   *  errorMessage 仅 failed 时携带——前端 toast 显示真实根因（如 Mono 兼容性问题），替代硬编码通用文案。 */
+  /** 广播带 jobId 的进度事件（多任务并发隔离）。
+   *  签名 (jobId, percent, label)；errorMessage 仅 failed 时携带——前端 toast 显示真实根因。 */
   private broadcastProgressWithJobId(
     jobId: string,
     percent: number | undefined,
@@ -426,7 +420,7 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 更新 U3DS 二进制（Phase 0 异步化——ADR-0004 §4 Phase 0）。
+   * 更新 U3DS 二进制。
    *
    * 异步启动：spawn 后立即返回 jobId，不等待 SteamCMD 退出。进度/完成/失败经 WS
    * `steamcmd_progress`（带 jobId）广播。前端订阅完成后弹 toast「U3DS 更新完成」。
@@ -445,7 +439,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         409,
       );
     }
-    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录
+    // 锁边界 = SteamCMD 写入目录
     const lockKey = this.resolveLockKey(installDir);
     if (this.activeJobs.has(lockKey)) {
       throw new AppError(
@@ -560,12 +554,11 @@ export class SteamCmdManager implements ISteamCmdManager {
   /**
    * 卡 C #6：下载 Workshop Mod 到 staging 目录（不停服）。
    * 命令：steamcmd +force_install_dir <staging> +login anonymous +workshop_download_item 304930 <id> +quit
-   * 应用由 ServerManager.startInternal 顶部自动 applyStaged 完成（v2.6）。
+   * 应用由 ServerManager.startInternal 顶部自动 applyStaged 完成。
    *
-   * BUG-5/6 修复：**异步启动**——spawn 后立即返回 jobId，不等待 SteamCMD 退出。
+   * **异步启动**：spawn 后立即返回 jobId，不等待 SteamCMD 退出。
    * 下载进程在后台跑，进度/完成/失败经 WS `steamcmd_progress`（带 jobId）广播，
-   * 前端不再等 HTTP（原来同步等导致 axios 10s 超时）。互斥锁借鉴 DST
-   * `ModDownloadExecuting`（dst/mod.go:72-75）：同 installDir 一次一个下载任务防并发写 staging。
+   * 前端不等待 HTTP（同步等会导致 axios 10s 超时）。同 installDir 一次一个下载任务防并发写 staging。
    */
   async downloadWorkshopItem(
     installDir: string,
@@ -573,7 +566,7 @@ export class SteamCmdManager implements ISteamCmdManager {
     serverId?: string,
   ): Promise<string> {
     if (!itemIds.length) return "";
-    // ★ BUG-5/6（第四版根因）：staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
+    // staging 必须落在 <installDir>/Servers/<serverId>/Workshop/staging——
     //   U3DS 只加载 Servers/<id>/Workshop/ 下的内容，acf 扫描（workshopAcfService.ts:24）与
     //   apply 流水线（WorkshopApplyService.ts:141）都读这个路径。传 serverId 拼对目录；
     //   不传则回落旧顶层路径（兼容 /steamcmd/download-workshop 老端点）。
@@ -581,7 +574,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       ? path.join(installDir, "Servers", serverId, "Workshop", "staging")
       : path.join(installDir, "Workshop", "staging");
 
-    // P2-2 锁 key 统一：锁边界 = SteamCMD 写入目录 = stagingDir
+    // 锁边界 = SteamCMD 写入目录 = stagingDir
     const lockKey = this.resolveLockKey(stagingDir);
     const exePath = this.getExePath();
     if (!exePath) {
@@ -597,8 +590,8 @@ export class SteamCmdManager implements ISteamCmdManager {
       .catch(() => undefined) // 前一个失败不阻塞下一个接力
       .then(async () => {
         // 重新检查前一个状态——如果前一个以 steamcmd-busy / not-found 失败，
-        // 继续接力（DSG 模型：队列不因个别失败中断）
-        // ★ TOCTOU 修复：加锁提前到任何 await 之前。
+        // 继续接力（队列不因个别失败中断）
+        // 加锁提前到任何 await 前。
         // 当前任务开始前再判 activeJobs（同 staging 还有其他 SteamCMD 进程在跑？）——
         // 理论上不会（前面 promise 已 finally 清锁），但 race 兜底：
         if (this.activeJobs.has(lockKey)) {
@@ -665,7 +658,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         let lastSteamCmdError: string | undefined;
         this.processSupervisor.onStdout(jobId, (line: string) => {
           const { stage, percent } = this.parseProgressLine(line);
-          // ★ 2026-08-14 per-fileId 进度：SteamCMD 输出「Downloading item <id>...
+          // per-fileId 进度：SteamCMD 输出「Downloading item <id>...
           // 1024/5678」时携带当前 fileId，前端按 fileId 各自渲染进度条。
           const currentFileId = this.parseCurrentFileId(line, itemIds);
           const errorMatch = STEAMCMD_ERROR_RE.exec(line);
@@ -757,7 +750,7 @@ export class SteamCmdManager implements ISteamCmdManager {
               502,
             );
           }
-          // ★ BUG-5/6（第四版）：steamcmd 下载失败时**也可能 exit 0**——item 只进
+          // steamcmd 下载失败时也可能 exit 0——item 只进
           //   WorkshopItemDetails 元数据缓存，WorkshopItemsInstalled 空、SizeOnDisk 0，
           //   前端却收到 completed 误报「下载成功」。
           //   只查 exitCode 不可靠：必须验证 content/<appid>/<id>/ 目录落盘且非空。
@@ -780,7 +773,7 @@ export class SteamCmdManager implements ISteamCmdManager {
           }
           if (missing.length > 0) {
             await cleanupFailedMods(missing);
-            // 把 SteamCMD 的 ERROR! 行翻译成人话——原「仅元数据缓存」措辞对用户不可读，根因被吞
+            // 把 SteamCMD 的 ERROR! 行翻译成可读文案——根因透传给用户
             const rootCause = lastSteamCmdError
               ? translateSteamCmdError(lastSteamCmdError)
               : "下载失败（未找到文件内容）";
@@ -795,7 +788,7 @@ export class SteamCmdManager implements ISteamCmdManager {
           } catch {
             /* noop */
           }
-          // ★ 2026-08-14 修复：completed/failed 必须带 currentFileId——
+          // completed/failed 必须带 currentFileId——
           //   N 个 mod 共享同一个 jobId（steamcmd-download-<installDir>），
           //   前端靠 jobId 反查永远命中第一个 fileId，导致接力时删错进度条。
           //   itemIds 单 mod = [fileId]，恒取 itemIds[0]。
@@ -842,7 +835,7 @@ export class SteamCmdManager implements ISteamCmdManager {
       stage: "queued",
       queuePos,
       queueTotal,
-      // ★ 2026-08-14 修复：queued 也带 currentFileId（= itemIds[0]），
+      // queued 也带 currentFileId（= itemIds[0]），
       //   前端按 fileId 精确锁定，不靠 jobId 反查（jobId 共享导致串台）。
       currentFileId: itemIds[0],
     });
@@ -912,9 +905,8 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     const jobId = `steamcmd-check-${installDir ?? "default"}`;
 
-    // ★ review 修复（P1-2）：mkdir 移到广播/后台启动之前 + try/catch 释放锁——
-    //   原来 add 锁后 mkdir 在 try/finally 之外，/tmp 满或权限异常时函数 reject 但
-    //   lockKey 永久残留 → 后续所有 check-update 都 409 steamcmd-busy，且无 failed 广播。
+    // mkdir 在广播/后台启动前执行 + try/catch 释放锁——
+    //   若 /tmp 满或权限异常，失败时释放 lockKey，避免后续所有 check-update 都 409 steamcmd-busy。
     try {
       await fs.promises.mkdir(jobDir, { recursive: true });
     } catch (err) {
@@ -980,13 +972,13 @@ export class SteamCmdManager implements ISteamCmdManager {
               lastError = new Error("app_info_print 未返回有效 buildid");
               continue;
             }
-            // BUG-1 闭环（2026-08-13）：本地 vs 远端 buildid 对比再 broadcast latestVersion。
+            // 本地 vs 远端 buildid 对比再 broadcast latestVersion。
             // 语义契约（U3dsCard.tsx:170-172）：
             //   - 本地 == 远端 → latestVersion = ""（falsy → 前端"已是最新"）
             //   - 本地 ≠ 远端 → latestVersion = 远端 buildid（truthy → 前端"有新版本"）
             //   - 本地缺失（未安装/读不到 acf）→ 维持"远端有值即有新版本可装"语义
-            //   - nameMatch 兜底删除——name 是服务名（"Unturned Dedicated Server"），
-            //     注释早已明确"显示它没有意义"，保留是死分支且会污染诊断
+            //   - nameMatch 兜底——name 是服务名（"Unturned Dedicated Server"），
+            //     显示它没有意义，保留是死分支且会污染诊断
             const localBuildId = installDir
               ? await this.readLocalBuildId(installDir)
               : null;
@@ -1066,16 +1058,16 @@ export class SteamCmdManager implements ISteamCmdManager {
       /* 目录尚不存在（重装会 mkdir），保持原值 */
     }
 
-    // review 修复：reinstall 与其他 SteamCMD 方法一致加 activeJobs 锁（key=targetDir），
+    // reinstall 与其他 SteamCMD 方法一致加 activeJobs 锁（key=targetDir），
     // 防并发重装同一目录 → 删/下/解压互相踩踏
-    // P2-2：锁 key 通过 resolveLockKey 统一计算（realpath 解析软链接/相对路径）
+    // 锁 key 通过 resolveLockKey 统一计算（realpath 解析软链接/相对路径）
     const lockKey = this.resolveLockKey(targetDir);
     if (this.activeJobs.has(lockKey)) {
       throw new AppError("steamcmd-busy", "该目录已有 SteamCMD 任务在跑", 409);
     }
     this.activeJobs.add(lockKey);
 
-    // ★ review 修复（P1-1）：jobId 必须用 **rawTarget**（getStatus().installPath 的原值），
+    // jobId 必须用 **rawTarget**（getStatus().installPath 的原值），
     //   不能用归一后的 targetDir——前端 SteamCmdCard 按 `steamcmd-reinstall-${status.installPath}`
     //   订阅。Debian 布局 /usr/games/steamcmd 是脚本（isFile=true）→ targetDir=/usr/games，
     //   若 jobId 用 targetDir 则广播 `steamcmd-reinstall-/usr/games`，前端监听
@@ -1153,7 +1145,7 @@ export class SteamCmdManager implements ISteamCmdManager {
           );
         }
 
-        // 3. 解压——tar npm 库（对齐 GSM3 extractTarGz:312-330），不依赖系统 tar。
+        // 3. 解压——tar npm 库，不依赖系统 tar。
         await tar.extract({ file: tarPath, cwd: targetDir });
         await fs.promises.unlink(tarPath).catch(() => undefined);
 
@@ -1260,9 +1252,9 @@ export class SteamCmdManager implements ISteamCmdManager {
 
   /**
    * 从 SteamCMD 进度行提取百分比。
-   * 优先 % 直出；无 % 时退化为行尾 "已下载字节 / 总字节" 字节比（BUG-2 第四版修复——
+   * 优先 % 直出；无 % 时退化为行尾 "已下载字节 / 总字节" 字节比——
    * steamcmd 下载/校验行是 "downloading, 78.36 MB, 3597137 / 4589923"，无百分号，
-   * 不改的话前端永远只显示 stage 看不到进度）。
+   * 否则前端永远只显示 stage 看不到进度。
    *
    * @param line - steamcmd stdout 单行
    * @returns 0-100 的整数百分比；无法解析返回 undefined
@@ -1279,9 +1271,8 @@ export class SteamCmdManager implements ISteamCmdManager {
   }
 
   /**
-   * 用 Node 内置 https 下载文件（对齐 GSM3 downloadFile:262-298）。
-   * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载
-   * （BUG-1 重装 curl:77 的根因在 runtime 缺 ca-certificates，走 Node https 从根上规避）。
+   * 用 Node 内置 https 下载文件。
+   * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载。
    *
    * @param url - 下载 URL
    * @param filePath - 落盘路径

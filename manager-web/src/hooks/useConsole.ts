@@ -32,7 +32,7 @@ interface UseConsoleReturn {
   sendTerminalInput: (data: string) => void;
   /** 存档（ACK 语义）——写 Save 到 PTY，等服务端确认看到保存完成信号。 */
   save: () => Promise<WsRequestResult>;
-  /** 优雅关服（ACK 语义）——等服务端确认进程退出。 */
+  /** 正常关服（ACK 语义）——等服务端确认进程退出。 */
   shutdown: (delaySeconds: number, reason?: string) => Promise<WsRequestResult>;
   /** 关闭控制台进程（ACK 语义）——服务端进程被终止且不自动存档。 */
   closeTerminal: () => Promise<WsRequestResult>;

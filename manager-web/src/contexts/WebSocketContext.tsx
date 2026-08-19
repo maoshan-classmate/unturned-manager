@@ -253,7 +253,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         setConnected(true);
         retryDelay.current = MIN_RETRY_DELAY_MS;
-        // 卡 B：建连后发 subscribe（修复 C8）。Phase 0 默认订阅所有 serverId + 所有事件；
+        // 建连后发 subscribe。默认订阅所有 serverId + 所有事件；
         // 事件过滤由前端订阅表按 type 分发承担（ws-wrapper-design §3.4）。
         ws.send(
           JSON.stringify({
@@ -262,7 +262,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             eventTypes: null,
           }),
         );
-        // ★ S2 修复：建连后启动应用层 ping——25s 间隔远小于任何反向代理 idle 超时，
+        // 建连后启动应用层 ping——25s 间隔远小于任何反向代理 idle 超时，
         // 防止 nginx/caddy 把 WS 误判为空闲切断。
         pingTimer.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -310,7 +310,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onclose = () => {
         setConnected(false);
         rejectAllPending(new Error("连接已断开，请求未完成"));
-        // ★ S2 修复：连接关闭时清掉 ping 定时器，避免泄漏；下次 connect 时 onopen 重建
+        // 连接关闭时清掉 ping 定时器，避免泄漏；下次 connect 时 onopen 重建
         if (pingTimer.current) {
           clearInterval(pingTimer.current);
           pingTimer.current = undefined;
@@ -336,7 +336,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     intentionalClose.current = false;
     connect();
-    // ★ S5 修复：挂载即排好 refresh 调度——accessToken 过期前 3min 自动刷新
+    // 挂载即排好 refresh 调度——accessToken 过期前 3min 自动刷新
     scheduleRefresh.current?.();
 
     return () => {

@@ -19,9 +19,9 @@ interface ModCardProps {
   voteScore?: number;
   /** 是否正在操作中 */
   loading?: boolean;
-  /** ★ BUG-5 修复：是否已下载（来自 /mods/downloaded） */
+  /** 是否已下载（来自 /mods/downloaded） */
   downloaded?: boolean;
-  /** ★ 2026-08-14 进度条 stage：downloading/queued/verifying/completed/failed */
+  /** 进度条 stage：downloading/queued/verifying/completed/failed */
   progressStage?: string;
   /** 进度百分比（0-100）；undefined → indeterminate */
   progressPercent?: number;
@@ -39,8 +39,8 @@ interface ModCardProps {
 
 /**
  * 创意工坊 Mod 卡片——对齐 Figma 14:16695 ModCard。
- * v2.4：走 shadcn Button variant + 订阅数展示 + 精确评分星；
- * 不展示作者/ID；stripBbcode 兜底；"订阅"→"下载"。
+ * 走 shadcn Button variant + 订阅数展示 + 精确评分星；
+ * 不展示作者/ID；stripBbcode 兜底；下载按钮。
  *
  * @param props - 组件属性
  * @returns ModCard React 元素
@@ -91,10 +91,10 @@ export function ModCard({
       )}
 
       <div className="p-4 pt-3">
-        {/* Name + star rating（问题 5：按 voteScore 填充星级） */}
+        {/* Name + star rating（按 voteScore 填充星级） */}
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-medium text-slate-100 truncate flex-1">{title}</h3>
-          {/* 评分星星 + 数字（v2.4 增量：补详情页已有的 toFixed(1) 评分数字） */}
+          {/* 评分星星 + 数字（补详情页已有的 toFixed(1) 评分数字） */}
           {voteScore != null && (
             <div className="flex items-center gap-0.5 shrink-0">
               {Array.from({ length: 5 }).map((_, i) => {
@@ -123,12 +123,12 @@ export function ModCard({
           </div>
         )}
 
-        {/* Description — BBCode 已 strip（问题 3） */}
+        {/* Description — BBCode 已 strip */}
         <p className="text-xs text-slate-500 mt-0.5 truncate">
           {cleanDescription || '暂无描述'}
         </p>
 
-        {/* ★ 2026-08-14 进度条槽位：downloading/queued/verifying/completed/failed 时渲染 */}
+        {/* 进度条槽位：downloading/queued/verifying/completed/failed 时渲染 */}
         {progressStage && (
           <ProgressBar
             stage={progressStage}

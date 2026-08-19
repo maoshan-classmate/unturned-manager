@@ -15,10 +15,10 @@ import {
 export const CURRENT_SERVER_KEY = "unturned-manager.currentServerId";
 
 /**
- * 当前选中实例共享层（sc:design 第 1 阶段）的对外接口。
+ * 当前选中实例共享层的对外接口。
  *
  * 接口语义说明：
- *   - **实例标识从此不再放在 URL 上**，而是由这个共享层承载
+ *   - **实例标识由这个共享层承载，不放在 URL 上**
  *   - 持久化到 localStorage，重启面板后自动恢复
  *   - 跨标签页同步：监听原生的 `storage` 事件做最终一致
  *   - localStorage 不可用时（隐私模式等）降级到内存态：不持久化、不跨标签同步
@@ -107,7 +107,7 @@ function detectStorage(): boolean {
  * ```
  */
 export function CurrentServerProvider({ children }: { children: ReactNode }) {
-  // mount 时探测一次持久化能力，写入 ref 后续不再变更
+  // mount 时探测一次持久化能力，写入 ref 后续不变
   const storageOk = useRef(detectStorage());
   // 初始值同步从持久化读——不用 Suspense，因为 localStorage 同步 IO
   const [currentServerId, setCurrentServerIdState] = useState<string | null>(

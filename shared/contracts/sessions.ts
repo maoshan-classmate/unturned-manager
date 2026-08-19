@@ -1,13 +1,10 @@
 import type { ServerId } from "../types/branded.js";
 
 /**
- * 终端会话持久化记录（1:1 对齐 GSM3 `PersistedTerminalSession`）。
+ * 终端会话持久化记录。
  *
- * 本项目 1 实例 1 PTY（`terminalSessionId = serverId`），所以会话 id 直接复用
- * serverId——不复用 GSM3 1 实例多 tab 的 `randomUUID()` 形态。
- *
- * 字段全部对齐 GSM3，便于直接迁移 .research/GameServerManager 的同名 JSON 文件
- * 形态（虽然本项目用 `config.dataDir` 而非 `process.cwd()/data`）。
+ * 本项目 1 实例 1 PTY（`terminalSessionId = serverId`），会话 id 直接复用 serverId。
+ * 存储路径由 `config.dataDir` 决定。
  */
 export interface PersistedTerminalSession {
   /** = serverId（1 实例 1 PTY 形态） */
@@ -25,7 +22,7 @@ export interface PersistedTerminalSession {
 }
 
 /**
- * 终端会话持久化管理器接口（1:1 抄 GSM3 `TerminalSessionManager` 公共方法）。
+ * 终端会话持久化管理器接口。
  *
  * 存储路径：`<config.dataDir>/terminal-sessions.json`
  * 写时机：PTY spawn 成功后 saveSession；PTY 退出时 setSessionActive(false)；
@@ -34,15 +31,13 @@ export interface PersistedTerminalSession {
 export interface ISessionManager {
   /** 初始化：从 JSON 读现有配置；ENOENT 建空；其他错误向上抛 */
   initialize(): Promise<void>;
-  /** 保存/更新会话（GSM3 同款：mutationQueue 串行 + 临时文件 rename 原子写） */
+  /** 保存/更新会话（串行写队列 + 临时文件 rename 原子写） */
   saveSession(data: PersistedTerminalSession): Promise<void>;
   /** 切换 isActive 标记（PTY spawn 时 true、退出时 false） */
   setSessionActive(id: ServerId, isActive: boolean): Promise<void>;
   /**
    * 刷新 lastActivity（PTY 每收到 stdout/input 触发，5 秒节流）。
-   *
-   * 本地化新增：GSM3 没这层细化——GSM3 多 tab 各自管理 lastActivity 不需要外部刷新。
-   * 本项目 1 实例 1 PTY，让 PtyManager onData 钩子刷 lastActivity，用于 7 天过期清理。
+   * 本项目 1 实例 1 PTY，由 PtyManager 的 onData 钩子刷 lastActivity，用于 7 天过期清理。
    */
   touchActivity(id: ServerId): Promise<void>;
   /** 移除单条记录（实例删除时调） */
@@ -56,7 +51,7 @@ export interface ISessionManager {
 }
 
 /**
- * 终端会话配置 JSON 文件结构（1:1 对齐 GSM3 `TerminalSessionsConfig`）。
+ * 终端会话配置 JSON 文件结构。
  * 内部结构——不导出，仅 SessionManager 内部使用。
  */
 export interface TerminalSessionsConfig {

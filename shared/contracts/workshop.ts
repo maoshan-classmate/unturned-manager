@@ -25,7 +25,7 @@ export type ModTimeRange =
 /** 搜索类型 */
 export type ModSearchType = 'text' | 'id';
 
-// ─── v1 向后兼容别名（routes/workshop.ts 旧版仍引用） ────
+// ─── 向后兼容别名 ────────────────────────────────────────
 
 /** @deprecated use ModSort */
 export type BrowseSort = ModSort;
@@ -63,8 +63,7 @@ export interface ModDeleteResult {
 // ─── 核心域服务接口 ─────────────────────────────────────
 
 /**
- * Mod 元数据服务——对齐 Steam WebAPI（IPublishedFileService）
- * v2.2 决策：0 缓存（单用户系统 + 真源唯一）
+ * Mod 元数据服务——对齐 Steam WebAPI（IPublishedFileService），实时读取、0 缓存（单用户系统 + 真源唯一）。
  */
 export interface IWorkshopMetadataService {
   /** 单个 Mod 详情——实时调 GetDetails/v1，0 缓存 */
@@ -86,8 +85,7 @@ export interface IWorkshopMetadataService {
 }
 
 /**
- * acf 真源维护服务
- * v2.2 决策：每次实时读盘解析，0 缓存
+ * acf 真源维护服务——每次实时读盘解析，0 缓存
  */
 export interface IWorkshopAcfService {
   /** 读盘 + 解析 acf 文件——每次都重新读，0 缓存 */
@@ -99,7 +97,7 @@ export interface IWorkshopAcfService {
   /** 列出全部已下载 mod（read → parse） */
   listItems(serverId: ServerId): Promise<WorkshopAcfItem[]>;
 
-  /** 列出 staging 目录已下载 mod（BUG-5/6：下载到 staging 待 apply 的内容） */
+  /** 列出 staging 目录已下载 mod（下载到 staging 待 apply 的内容） */
   listStagingItems(serverId: ServerId): Promise<WorkshopAcfItem[]>;
 
   /** 读 staging 目录的 acf，提取单个 mod 的元数据（下载完成后调） */
@@ -128,10 +126,8 @@ export interface IWorkshopAcfService {
 }
 
 /**
- * apply 流水线服务——staging → content 移动 + acf 合并
- * v2.6 决策：挪到 ServerManager.startInternal 顶部，U3DS STOPPED 时调用。
- * 保存与重启解耦后，本服务不再写 File_IDs（由 ConfigService.writeWorkshopFileIds 在
- *  「保存 Mod」单独负责）。
+ * apply 流水线服务——staging → content 移动 + acf 合并。
+ * 在 U3DS STOPPED 时调用；不写 File_IDs（由 ConfigService.writeWorkshopFileIds 在「保存 Mod」单独负责）。
  */
 export interface IWorkshopApplyService {
   /** 移动 staging 内容 + acf 合并 + File_IDs 同步；任一失败全回滚 */

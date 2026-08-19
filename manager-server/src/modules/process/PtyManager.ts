@@ -18,10 +18,9 @@ interface ManagedPty {
 }
 
 const DEFAULT_GRACEFUL_TIMEOUT_MS = 5_000;
-// ★ PTY 输出节流：onData 同步推 WS.send 在 U3DS 高频输出时阻塞链反向传导（master read
+// PTY 输出节流：onData 同步推 WS.send 在 U3DS 高频输出时阻塞链反向传导（master read
 // 不消费 → PTY buffer 满 → U3DS Console.WriteLine 阻塞 → consoleMain 死锁 → 后续命令
-// 卡死）。改成 onData 只 push 进环形 buffer + 定时器 50ms 批量 flush，断开阻塞链。
-// 范式对齐 MCSManager daemon/src/entity/instance/instance.ts:startOutputLoop。
+// 卡死）。onData 只 push 进环形 buffer + 定时器 50ms 批量 flush，断开阻塞链。
 const OUTPUT_BUFFER_CAPACITY = 256;
 const OUTPUT_FLUSH_INTERVAL_MS = 50;
 
@@ -47,7 +46,7 @@ export class PtyManager implements IPtyManager {
   private processes = new Map<PtyKey, ManagedPty>();
   private dataCallbacks = new Map<PtyKey, PtyDataCallback[]>();
   private exitCallbacks = new Map<PtyKey, PtyExitCallback[]>();
-  // PTY 输出节流（MCSManager 范式）：每行 push 进环形 buffer（>256 丢弃最老），
+  // PTY 输出节流：每行 push 进环形 buffer（>256 丢弃最老），
   // 50ms 定时器批量 flush 单条 emit——避免同步 ws.send 阻塞 PTY read。
   private outputBuffers = new Map<PtyKey, string[]>();
   private flushTimers = new Map<PtyKey, NodeJS.Timeout>();
@@ -139,7 +138,7 @@ export class PtyManager implements IPtyManager {
       lineBuffer.set(serverId, lines.pop() ?? "");
       if (lines.length === 0) return;
 
-      // 节流（MCSManager 范式）：每行 push 进环形 buffer（O(1) 同步操作，
+      // 节流：每行 push 进环形 buffer（O(1) 同步操作，
       // 不阻塞 PTY read），50ms 后批量 flush 单条 emit——断开「onData 同步 → ws.send
       // 阻塞 → master read 不消费 → PTY buffer 满 → U3DS 死锁」链。
       const buf = this.outputBuffers.get(serverId) ?? [];
@@ -197,7 +196,7 @@ export class PtyManager implements IPtyManager {
       if (chunkTimer) clearTimeout(chunkTimer);
       this.chunkFlushTimers.delete(serverId);
       this.chunkBuffers.delete(serverId);
-      // P0-2 修复：自然 exit 后清理 callback Map，避免长寿命 PtyManager 累积闭包泄漏
+      // 自然 exit 后清理 callback Map，避免长寿命实例累积闭包泄漏
       this.exitCallbacks.delete(serverId);
       this.dataCallbacks.delete(serverId);
       this.chunkCallbacks.delete(serverId);
@@ -351,7 +350,7 @@ export class PtyManager implements IPtyManager {
 
   /**
    * 等待 PTY 进程退出（在 timeoutMs 内确认退出即返回 true）。
-   * Phase 2：ServerManager.stop 在写 ctrl+c / exit 后调用，等永驻 bash 退出。
+   * ServerManager.stop 在写 ctrl+c / exit 后调用，等永驻 bash 退出。
    *
    * @param serverId - PTY key
    * @param timeoutMs - 等待毫秒数

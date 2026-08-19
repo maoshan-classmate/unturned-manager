@@ -8,7 +8,7 @@ import { useWebSocket } from "../contexts/WebSocketContext.js";
  * @property jobId - 任务 ID（区分多任务并发：'steamcmd-install-<dir>' | 'steamcmd-update-<dir>' | 'steamcmd-download-<dir>' | 'steamcmd-reinstall-<dir>' | 'steamcmd-check-<dir>'）
  * @property latestVersion - check-update 完成时携带的 U3DS 版本号（仅 check-update 的 completed 事件）
  * @property timestamp - 接收时间
- * @property queuePos - ★ 2026-08-14 队列位置（≥2 表示前面还有任务）。仅 stage==='queued' 携带。
+ * @property queuePos - 队列位置（≥2 表示前面还有任务）。仅 stage==='queued' 携带。
  * @property queueTotal - 排队总长度（含当前正在跑的）
  * @property currentFileId - 当前正在下载的 mod 的 fileId（仅 mod 下载任务携带，stdout 解析）
  */
@@ -25,7 +25,7 @@ export interface SteamCmdProgress {
   timestamp: string;
   /**
    * 队列位置。≥2 表示「前面还有 N 个任务在跑」。
-   * ★ 2026-08-14：mod 下载连点 N 次不再 409，全部进队串行跑。
+   * 下载请求全部进队串行执行，避免并发冲突。
    */
   queuePos?: number;
   queueTotal?: number;
@@ -43,8 +43,8 @@ interface UseSteamCmdProgressOptions {
 
 /**
  * 订阅 SteamCMD 安装/更新/下载进度。
- * ★ ws-wrapper-design §3.6：独立连接已删——改用全局 WS 事件总线的
- * `subscribe('steamcmd_progress')`，与其他 hook 共享单连接、共享重连。
+ * 改用全局 WS 事件总线的 `subscribe('steamcmd_progress')`，
+ * 与其他 hook 共享单连接、共享重连。
  *
  * @param options - jobId 单任务订阅；不传订阅全部
  * @returns 最新一条进度事件；未启动返回 null

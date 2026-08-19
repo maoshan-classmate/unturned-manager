@@ -30,8 +30,8 @@ interface ServerControlCardProps {
  * 启动 / 停止 / 重启 走 useServerActions,删除/重启走 ConfirmDialog 二次确认。
  * "保存命令"按钮在 commands dirty 时才显示。
  *
- * ADR-0004 Phase 4：原硬编码「默认命令」span 改为 Input + 保存按钮（inline 编辑 startCommand），
- * 下方 LaunchCommandsDialog 入口改为「Commands.dat 参数」文案，避免与新加 Input 混淆。
+ * 启动命令可 inline 编辑；LaunchCommandsDialog 展示「Commands.dat 参数」
+ *（游戏内指令列表，与 PTY 启动命令是两件事）。
  */
 export function ServerControlCard({
   serverId,
@@ -159,7 +159,7 @@ export function ServerControlCard({
               ) : null}
             </span>
           </div>
-          {/* ADR-0004 Phase 4：startCommand 可编辑输入框（替代硬编码 span） */}
+          {/* startCommand 可编辑输入框 */}
           <div className="flex items-center gap-2">
             <span className="w-16 text-slate-500 shrink-0">启动命令</span>
             <Input
@@ -240,9 +240,8 @@ export function ServerControlCard({
           </p>
         )}
 
-        {/* ADR-0004 Phase 4：LaunchCommandsDialog 入口文案调整为「Commands.dat 参数」，
-            避免与上方新加的「启动命令」Input 混淆（Commands.dat 是游戏内指令列表，
-            与 PTY 启动 bash 命令是两件事）。 */}
+        {/* LaunchCommandsDialog 展示「Commands.dat 参数」——游戏内指令列表，
+            与 PTY 启动 bash 命令是两件事。 */}
         <div className="mt-4 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 flex items-center gap-2">
           <span className="text-sm text-slate-500 shrink-0">
             Commands.dat 参数

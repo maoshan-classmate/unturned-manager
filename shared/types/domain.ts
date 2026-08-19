@@ -47,7 +47,6 @@ export interface LoadoutEntry {
 }
 
 // Config.txt 解析结果
-// Phase 0 修复：[] → Record<string, ConfigSection>，贴合前端现状（C2 根因）
 export interface ConfigTxtRecord {
   sections: Record<string, ConfigSection>;
 }
@@ -80,7 +79,7 @@ export interface WorkshopConfig {
 }
 
 // Workshop Mod 元数据
-// v2.2: 加 authorName 字段（GetPlayerSummaries 实时补全）
+// authorName 由 GetPlayerSummaries 实时补全
 export interface WorkshopModMeta {
   fileId: WorkshopFileId;
   title: string;

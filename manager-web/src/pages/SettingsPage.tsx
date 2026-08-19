@@ -11,7 +11,7 @@ import { StaggerContainer } from '../components/shared/StaggerContainer.js';
 import { apiClient } from '../api/client.js';
 
 /**
- * Settings 页面——Figma 23:19917 🎨 System Settings (P1)。
+ * Settings 页面——Figma 23:19917 🎨 System Settings。
  *
  * 4 张设置卡片：账户安全 / 安全配置 / 网页设置 / 面板日志。
  */

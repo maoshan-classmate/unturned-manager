@@ -1,9 +1,9 @@
 import { cn } from "../../lib/utils.js";
 
 /**
- * ServerState 状态徽章——P4A 收尾派生。
+ * ServerState 状态徽章。
  *
- * 设计（D1 拍板：圆点 pulse + STARTING 文字 spin）：
+ * 圆点 pulse + STARTING 文字 spin：
  * - **圆点**：RUNNING 时持续呼吸（pulse 1.5s）；其他状态静态
  * - **文字**：STARTING/STOPPING 时旋转环（spin）；其他状态静态
  * - **颜色**：沿用 stateColor（emerald-500/amber-500/slate-500）

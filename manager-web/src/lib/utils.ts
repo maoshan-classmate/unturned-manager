@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// ─── 通用工具（P0 提取自各页面的重复代码）───────────────
+// ─── 通用工具（提取自各页面的重复代码）─────────────────
 
 /** 文件大小格式化：B → KB → MB */
 export function formatSize(bytes?: number): string {
@@ -45,7 +45,7 @@ export function formatDecimal(n: number): string {
 }
 
 /**
- * SteamID64 展示——D4 拍板:全展示（17 位全部）。
+ * SteamID64 展示——全展示（17 位全部）。
  *
  * @param steamId - 17 位 SteamID64 字符串
  * @returns 原样返回（仅做 rstrip 校验）
@@ -169,10 +169,10 @@ export function generateUUID(): string {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }
 
-// ─── Mod 工具（v2.2 新增）────────────────────────────
+// ─── Mod 工具 ─────────────────────────────────────────────
 
 /**
- * 剥离 Steam Workshop BBCode（问题 3——后端 strip_description_bbcode 可能不生效时前端兜底）。
+ * 剥离 Steam Workshop BBCode（后端 strip_description_bbcode 可能不生效时前端兜底）。
  * 移除 [tag]...[/tag] 对、孤立标签、解码 HTML 实体、折叠空白。
  *
  * @param text - 原始 BBCode 文本（Steam GetDetails 的 file_description）

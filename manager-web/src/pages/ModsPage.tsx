@@ -112,9 +112,9 @@ export function ModsPage() {
     "day" | "week" | "month" | "months3" | "months6" | "year" | "all"
   >("week");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12); // 问题 2：默认每页 12 条（原 10）
+  const [pageSize, setPageSize] = useState(12); // 默认每页 12 条
 
-  // 下载进行中 { fileId: jobId }——jobId 关联 WS 进度事件，completed/failed 时清（BUG-5/6）
+  // 下载进行中 { fileId: jobId }——jobId 关联 WS 进度事件，completed/failed 时清
   const [downloading, setDownloading] = useState<Record<string, string>>({});
   // downloading 的 ref 镜像——useEffect 内读 ref 而非 state，避免 setDownloading 触发 effect 重跑重复 toast
   const downloadingRef = useRef(downloading);
@@ -125,7 +125,7 @@ export function ModsPage() {
   // 详情弹窗
   const [detailFileId, setDetailFileId] = useState<string | null>(null);
 
-  // ★ BUG-5 修复：已下载 Mod 集合（acf 扫描真源，每次刷新）
+  // 已下载 Mod 集合（acf 扫描真源，每次刷新）
   const { data: downloaded, refetch: refetchDownloaded } = useQuery({
     queryKey: ["mods", "downloaded", serverId],
     queryFn: async () => {
@@ -140,7 +140,7 @@ export function ModsPage() {
     staleTime: 0,
   });
 
-  // ★ BUG-5 修复：已下载 fileId 集合（含 applied——下载到 staging 即可标记已下载）
+  // 已下载 fileId 集合（含 applied——下载到 staging 即可标记已下载）
   const downloadedSet = useMemo(
     () => new Set((downloaded ?? []).map((d) => d.fileId)),
     [downloaded],
@@ -255,9 +255,8 @@ export function ModsPage() {
   };
 
   /**
-   * 下载 Mod（BUG-5/6 修复）。
-   * 下载改为**异步启动**：POST 立即 202 返回 jobId（不再等 SteamCMD 下载进程 → 原实现
-   * HTTP 挂起导致 axios 10s 超时）。完成/失败由 WS steamcmd_progress 事件驱动刷新已下载列表。
+   * 下载 Mod。
+   * 异步启动：POST 立即返回 jobId，完成/失败由 WS steamcmd_progress 事件驱动刷新已下载列表。
    */
   const handleDownload = async (fileId: string) => {
     if (!serverId) {
@@ -294,8 +293,8 @@ export function ModsPage() {
     }
   };
 
-  // ★ BUG-5/6 修复：监听 SteamCMD 下载任务完成/失败 → 刷新已下载列表 + 恢复按钮状态
-  // ★ 2026-08-14：每 fileId 自己的 progress state（按 jobId + currentFileId 反查 fileId）——
+  // 监听 SteamCMD 下载任务完成/失败 → 刷新已下载列表 + 恢复按钮状态
+  // 每 fileId 自己的 progress state（按 jobId + currentFileId 反查 fileId）——
   // 让 ModCard 渲染各自进度条，队列中 fileId 也能显示「排队中（前 X 个）」。
   const downloadProgress = useSteamCmdProgress();
   const [progressByFile, setProgressByFile] = useState<
@@ -316,15 +315,14 @@ export function ModsPage() {
     const { jobId, stage, percent, queuePos, queueTotal, errorMessage } = p;
     if (!jobId || !jobId.startsWith("steamcmd-download-")) return;
 
-    // ★ 去重：同一 (jobId + currentFileId + stage) 组合只处理一次——防止 setDownloading
+    // 去重：同一 (jobId + currentFileId + stage) 组合只处理一次——防止 setDownloading
     // 触发 effect 重跑时重复 toast。WS 偶发重复广播 completed 也走同一去重。
     const dedupKey = `${jobId}|${p.currentFileId ?? ""}|${stage}`;
     if (handledProgressRef.current.has(dedupKey)) return;
     handledProgressRef.current.add(dedupKey);
 
-    // ★ 2026-08-14 修复：所有 mod 共享同一个 jobId（steamcmd-download-<installDir>），
-    // 靠 jobId 反查 fileId 永远命中第一个 → 接力时删错进度条。
-    // 正确做法：优先用 currentFileId（后端 completed/downloading 都带）精确锁定；
+    // 所有 mod 共享同一个 jobId（steamcmd-download-<installDir>），
+    // 优先用 currentFileId（后端 completed/downloading 都带）精确锁定；
     // 退化到 jobId 唯一匹配（仅当 downloading 里该 jobId 恰好一个 fileId 时才可信）。
     // 用 downloadingRef.current 读最新 downloading（不参与 deps——避免 setDownloading
     // 触发 effect 重跑重复 toast）。
@@ -557,8 +555,8 @@ export function ModsPage() {
                   subscriptions={mod.subscriptions}
                   voteScore={mod.voteScore}
                   loading={!!downloading[mod.fileId]}
-                  downloaded={downloadedSet.has(mod.fileId)} // ★ BUG-5 修复
-                  // ★ 2026-08-14：每 mod 行自己的进度条（按 fileId 维度）
+                  downloaded={downloadedSet.has(mod.fileId)}
+                  // 每 mod 行自己的进度条（按 fileId 维度）
                   {...(fileProgress?.stage ? { progressStage: fileProgress.stage } : {})}
                   {...(fileProgress?.percent != null ? { progressPercent: fileProgress.percent } : {})}
                   {...(fileProgress?.queuePos != null ? { queuePos: fileProgress.queuePos } : {})}

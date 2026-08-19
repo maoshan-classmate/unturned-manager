@@ -10,7 +10,7 @@ import {
 
 // ─── mock 依赖 ─────────────────────────────────────────
 // ensureAccessToken：测试环境无真后端，直接给固定 token
-// ★ S5 修复：补 getAccessToken + getAccessTokenExpMs mock——scheduleRefresh 依赖
+// 补 getAccessToken + getAccessTokenExpMs mock——scheduleRefresh 依赖
 vi.mock("../api/client.js", () => ({
   ensureAccessToken: vi.fn(async () => "test-token"),
   getAccessToken: vi.fn(() => "test-token"),

@@ -63,8 +63,7 @@ function FileCardComp({
       onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e); }}
       className={cn(
         "group flex flex-col items-center rounded-lg transition-all duration-200",
-        // P3C 文件夹 hover 霓虹化（D9 选项 2 + D10 选项 1 + D11 选项 2）：
-        // 微旋转 + 蓝光晕；@2xl 大屏增强；motion-safe 兼容减弱动效偏好
+        // 文件夹 hover 霓虹化：微旋转 + 蓝光晕；@2xl 大屏增强；motion-safe 兼容减弱动效偏好
         entry.isDirectory && "motion-safe:hover:rotate-[-1.5deg] motion-safe:hover:shadow-[0_0_12px_rgba(59,130,246,0.45)] @2xl:motion-safe:hover:rotate-[-2deg] @2xl:motion-safe:hover:shadow-[0_0_20px_rgba(59,130,246,0.6)]",
       )}
       style={{
@@ -102,7 +101,7 @@ function FileCardComp({
  * 1:1 复刻：TopBar + Toolbar + PathBar + FileGrid + StatusBar
  */
 export function FilesPage() {
-  // sc:design §7.6：文件菜单面板级——浏览 installDir 根目录，path 用 URL 查询参数同步
+  // 文件菜单面板级——浏览 installDir 根目录，path 用 URL 查询参数同步
   const { currentServerId } = useCurrentServer();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentPath = searchParams.get('path') ?? '';
@@ -191,7 +190,7 @@ export function FilesPage() {
       const name = uploadFileName.trim() || uploadFile.name;
       const entryPath = currentPath ? `${currentPath}/${name}` : name;
 
-      // 使用 /files/raw 端点直接上传原始二进制，不再经过 base64（修复 C7 二进制破坏）
+      // 使用 /files/raw 端点直接上传原始二进制，避免 base64 破坏
       const { getAccessToken } = await import('../api/client.js');
       const token = getAccessToken() ?? '';
       await fetch(`/api/servers/${currentServerId}/files/raw?path=${encodeURIComponent(entryPath)}`, {

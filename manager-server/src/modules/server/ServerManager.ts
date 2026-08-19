@@ -66,7 +66,7 @@ interface RuntimeServerState {
   ptyPid?: number;
   /** 主动停止标记——stop/stopInternal/forceStop 置位，onExit 据此跳过崩溃重启 */
   stopRequested?: boolean;
-  /** 会话代际（review-修复 BUG-2）：每次 startPty spawn 自增，1s timer 校验归属，防过期 timer 误写新会话 */
+  /** 会话代际：每次 startPty spawn 自增，1s timer 校验归属，防过期 timer 误写新会话 */
   sessionEpoch?: number;
   /** 本次 STARTING transition 的时间戳（用于计算启动耗时） */
   startTimestamp?: number;
@@ -102,9 +102,9 @@ export class ServerManager implements IServerManager {
   ) {
     this.loadServersFromDisk();
 
-    // ★ ADR-0004 Phase 2：崩溃检测从 processSupervisor.onCrash 挪到 PTY exit——
-    // U3DS 走 PTY 后，bash 退出 = PTY 会话结束（bash 永驻，U3DS 崩溃时 bash 回提示符
-    // 不触发 exit；崩溃重启语义见 scheduleCrashRestart）。onExit 在 startPty 每次 spawn 时注册。
+    // 崩溃检测走 PTY exit——U3DS 走 PTY 后，bash 退出 = PTY 会话结束（bash 永驻，
+    // U3DS 崩溃时 bash 回提示符不触发 exit；崩溃重启语义见 scheduleCrashRestart）。
+    // onExit 在 startPty 每次 spawn 时注册。
   }
 
   // ── 目录扫描加载 ────────────────────────────────────
@@ -166,7 +166,7 @@ export class ServerManager implements IServerManager {
 
   /**
    * 创建实例（B2 §3.1）：目录真源——建 Servers/<id>/Server/Commands.dat 即实例成立。
-   * 不再写 DB；RCON 凭证落 settings K-V。
+   * 不写 DB；RCON 凭证落 settings K-V。
    *
    * @throws {AppError} code=server-exists, status=409 当 Commands.dat 已存在（重复创建）
    */
@@ -216,7 +216,7 @@ export class ServerManager implements IServerManager {
 
   /**
    * 更新实例配置。startCommand 变更 → settings K-V（明文）；身份字段变更 → 写回 Commands.dat。
-   * ★ ADR-0004 Phase 6：RCON 凭证字段已删（openModCredential / rconPassword 不再支持）。
+   * RCON 凭证字段已移除（openModCredential / rconPassword）。
    *
    * @throws {AppError} code=server-not-found, status=404 当实例不存在
    */
@@ -278,7 +278,7 @@ export class ServerManager implements IServerManager {
 
     // ADR-0004 Phase 4：同步清掉 startCommand K-V
     deleteStartCommand(this.db, serverId);
-    // ★ ADR-0005 Phase 7：删除实例 → 同步清终端会话记录
+    // 删除实例时同步清终端会话记录
     if (this.sessionManager) {
       void this.sessionManager.removeSession(serverId);
     }
@@ -310,7 +310,7 @@ export class ServerManager implements IServerManager {
       );
     }
 
-    // ★ ADR-0004 Phase 2：RUNNING/STARTING 幂等返回。
+    // RUNNING/STARTING 幂等返回。
     // STARTING = PTY 已 spawn、1s 塞命令窗口内——重复点击直接返回已有会话。
     if (
       entry.state === ServerState.RUNNING ||
@@ -333,10 +333,10 @@ export class ServerManager implements IServerManager {
       return result;
     } catch (err) {
       logger.error({ serverId, err }, "启动失败");
-      // review-修复 BUG-1：启动失败清理也视为主动停止——forceKill 触发的 onExit
+      // 启动失败清理视为主动停止——forceKill 触发的 onExit
       // 若 stopRequested 未置位会走崩溃重启分支，把「启动失败」误判成「崩溃要重启」。
       entry.stopRequested = true;
-      // BUG-3/7（第四版）：spawn 失败时清理 PTY，保证可重试
+      // spawn 失败时清理 PTY，保证可重试
       try {
         this.ptyManager.forceKill(serverId);
       } catch {
@@ -345,11 +345,11 @@ export class ServerManager implements IServerManager {
       entry.terminalSessionId = undefined;
       entry.ptyPid = undefined;
       this.transition(serverId, ServerState.STOPPED);
-      // ★ ADR-0005 Phase 7：启动失败 → 移除会话记录（GSM3 TerminalManager.ts:1056 回滚形态）
+      // 启动失败时移除会话记录
       if (this.sessionManager) {
         void this.sessionManager.removeSession(serverId);
       }
-      // BUG-3/7（第四版）：非 AppError 的启动错误（spawn ENOENT / Mono 缺失）原样上抛
+      // 非 AppError 的启动错误（spawn ENOENT / Mono 缺失）原样上抛
       // 会被全局错误处理兜底成「服务器内部错误」——用户和面板都看不到真实原因。
       // 包装成带 err.message 的 AppError，前端 toast 直接显示具体错因，便于定位。
       if (err instanceof AppError) throw err;
@@ -382,7 +382,7 @@ export class ServerManager implements IServerManager {
         409,
       );
     }
-    // review-修复 风险-6：已停止实例调 stop 幂等返回，避免 STOPPED→STOPPING→STOPPED 空转闪动
+    // 已停止实例调 stop 幂等返回，避免 STOPPED→STOPPING→STOPPED 空转闪动
     if (entry.state === ServerState.STOPPED) return;
 
     entry.activeOperation = {
@@ -440,7 +440,7 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 重启实例并应用 staging Mod（Phase 2b 设计复用 applyChangesCore 流水线本体）。
+   * 重启实例并应用 staging Mod（复用 applyChangesCore 流水线本体）。
    *
    * 与 restart 的区别：
    *   - activeOperation.type 用 'mod_apply'（与 ldm_apply 共用同一流水线标识）
@@ -458,7 +458,7 @@ export class ServerManager implements IServerManager {
       hook: "mod_apply",
       preStartHook: async () => {
         if (this.workshopApply) {
-          // ★ U3DS 必然 STOPPED（preStartHook 在 startInternal 内 transition STARTING 之前执行），
+          // U3DS 必然 STOPPED（preStartHook 在 startInternal 内 transition STARTING 前执行），
           //   移动零冲突（SOP：写入 content 必须停服）。失败则上抛，阻止 spawn。
           await this.workshopApply.applyStaged(serverId);
         }
@@ -467,7 +467,7 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 配置变更后的「保存-关-启」流水线本体——Phase 2b 抽出（与 mod_apply / ldm_apply 共用）。
+   * 配置变更后的「保存-关-启」流水线本体（与 mod_apply / ldm_apply 共用）。
    *
    * 与 restart 的区别：activeOperation.type 用调用方 hook 名（mod_apply/ldm_apply/modpack_apply），
    * 并支持 preStopHook + preStartHook + postStartHook 三个钩子（让各 hook 模块在关/启前后执行业务逻辑）。
@@ -525,7 +525,7 @@ export class ServerManager implements IServerManager {
       await this.stopInternal(serverId, "配置变更");
       // 3. 内部 start——preStartHook 在 spawn 前执行（U3DS 已 STOPPED，可写 content/304930/），
       //    再等 RUNNING（stdout ready 提前 / 3s 兜底），最后 postStartHook。
-      //    ★ Phase 2 审计 P0-1：postStartHook（如 LDM /p reload）依赖实例 RUNNING
+      //    postStartHook（如 LDM /p reload）依赖实例 RUNNING
       //    （LdmPluginCommandsService 查 getState()===RUNNING），若在 STARTING 执行会抛
       //    server-not-running 被吞 → 永远不执行。
       await this.startInternal(serverId, opts.preStartHook);
@@ -587,12 +587,11 @@ export class ServerManager implements IServerManager {
 
   /** 内部 start——不检查 activeOperation（由 restart / scheduleCrashRestart 统一管理）。
    *
-   * preStartHook：在 transition STARTING + PTY spawn **之前**执行的钩子（U3DS 必然 STOPPED）。
-   * 设计意图：让调用方（restart / applyChangesCore）在 spawn 前把 staging Mod 移入 content、
+   * preStartHook：在 transition STARTING + PTY spawn 前执行的钩子（U3DS 必然 STOPPED）。
+   * 让调用方（restart / applyChangesCore）在 spawn 前把 staging Mod 移入 content、
    * 备份关键文件等——避免在 RUNNING 实例写运行中读的位置。
    *
-   * ★ P2 #4 改动：v2.6 直接调 `workshopApply.applyStaged` 已被移除（隐式耦合）。
-   *   由 restart / applyChangesCore 通过 preStartHook 显式传入，保持调用方可观测可重入。
+   * 由 restart / applyChangesCore 通过 preStartHook 显式传入，保持调用方可观测可重入。
    *
    * @param serverId - 实例标识
    * @param preStartHook - spawn 前钩子（抛错则阻止 spawn）
@@ -629,7 +628,7 @@ export class ServerManager implements IServerManager {
     const { id, installDir } = entry.config;
 
     // 生成 / 复用 startCommand（缓存到 config，避免每次探测 + chmod）
-    // ★ BUG-1 兜底：任何来源（生成 / DB 恢复 / 用户编辑）都过 normalizeStartCommand——
+    // 任何来源（生成 / DB 恢复 / 用户编辑）都过 normalizeStartCommand——
     //   保证 +InternetServer/<id> 在末位（U3-SDK tryGetServer 取到行末，见 startScript.ts）。
     //   changed 时写回 DB，旧格式的已持久化命令一次重启即自愈。
     let startCommand = entry.config.startCommand;
@@ -652,7 +651,7 @@ export class ServerManager implements IServerManager {
     let pid: number;
     if (this.ptyManager.isRunning(id)) {
       // bash 已残留（U3DS 崩溃后 bash 回提示符仍在）——只重塞命令，不重 spawn。
-      // review-修复 风险-5：新 start 意图接管，清掉残留的 stopRequested（否则后续 exit 事件
+      // 新 start 接管，清掉残留的 stopRequested（否则后续 exit 事件
       // 会误把这次 start 当「主动停止」跳过崩溃判定，导致 start 后闪一下又回 STOPPED）。
       entry.stopRequested = false;
       pid = entry.ptyPid ?? 0;
@@ -672,7 +671,7 @@ export class ServerManager implements IServerManager {
         "PTY bash 已启动",
       );
 
-      // ★ ADR-0005 Phase 7：PTY spawn 成功 → 持久化终端会话（1:1 GSM3 TerminalManager.ts:1030）
+      // PTY spawn 成功 → 持久化终端会话
       if (this.sessionManager) {
         const now = new Date().toISOString();
         void this.sessionManager.saveSession({
@@ -685,7 +684,7 @@ export class ServerManager implements IServerManager {
         });
       }
 
-      // ★ ADR-0004 Phase 3：PTY stdout → console_line 广播（§2.4）。
+      // PTY stdout → console_line 广播。
       // U3DS 的 ANSI 彩色日志经此推给前端 xterm.js（xterm 原生渲染 ANSI）。
       this.pipePtyOutput(id);
 
@@ -698,7 +697,7 @@ export class ServerManager implements IServerManager {
         entry.ptyPid = undefined;
         logger.warn({ serverId, exitCode }, "PTY bash 退出");
         this.transition(id, ServerState.STOPPED);
-        // ★ ADR-0005 Phase 7：PTY 退出 → 标记会话 inactive（GSM3 TerminalManager.ts:2962 形态）
+        // PTY 退出 → 标记会话 inactive
         if (this.sessionManager) {
           void this.sessionManager.setSessionActive(id, false);
         }
@@ -707,7 +706,7 @@ export class ServerManager implements IServerManager {
         }
       });
 
-      // review-修复 BUG-2：会话代际保护。epoch 捕获本次 spawn，过期 timer（旧会话已 stop、
+      // 会话代际保护。epoch 捕获本次 spawn，过期 timer（旧会话已 stop、
       // 新会话已 spawn）经 epoch 比对丢弃，杜绝「把命令写进新 bash / 强制 RUNNING」。
       const epoch = (entry.sessionEpoch ?? 0) + 1;
       entry.sessionEpoch = epoch;
@@ -772,7 +771,7 @@ export class ServerManager implements IServerManager {
     const entry = this.ensureServer(serverId);
     entry.stopRequested = true; // 防 onExit 误判崩溃重启
 
-    // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径——Phase 6 替代原 RCON.execute）
+    // ① PTY 写 Save + Shutdown 优雅关闭（U3DS 已知可靠路径）
     try {
       this.ptyManager.write(serverId, "Save\n");
       this.ptyManager.write(serverId, `Shutdown 30 "${reason}"\n`);
@@ -801,7 +800,7 @@ export class ServerManager implements IServerManager {
    * 生成 U3DS 启动命令（ADR-0004 §6.1）：detectStartScript 探测 → chmod +x →
    * `./<script> -ThreadedConsole +InternetServer/<id>`。Phase 4 用户可在控制卡片编辑覆盖。
    *
-   * ★ BUG-1 修复（2026-08-13 实机根因）：`+InternetServer/<id>` 必须是命令行**最后一个参数**。
+   * `+InternetServer/<id>` 必须是命令行最后一个参数。
    * U3-SDK `CommandLine.tryGetServer` 把 serverID 从 `+internetserver/` 一直取到行末
    * （CommandLine.cs:203-216），而 ServerHelper.sh 透传 `$@`——若写成
    * `+InternetServer/<id> -ThreadedConsole`，serverID 会被污染成 `<id> -ThreadedConsole`，
@@ -816,7 +815,7 @@ export class ServerManager implements IServerManager {
   ): Promise<string> {
     const script = await detectStartScript(installDir);
     if (!script) {
-      // BUG-3/7：未安装 U3DS 时给可执行的引导，而不是裸 500「未检测到启动脚本」。
+      // 未安装 U3DS 时给可执行的引导，而不是裸 500「未检测到启动脚本」。
       // status 409（前置条件不满足）：U3DS 二进制尚未安装或安装不完整。
       throw new AppError(
         "start-script-not-found",
@@ -830,9 +829,9 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * 崩溃 5s 硬重启（T6 抄 GSM GameManager.ts:331-335）。
+   * 崩溃 5s 硬重启。
    *
-   * 崩溃语义（review 风险-1 澄清）：触发点是「bash 退出」——bash 是 U3DS 的父进程，
+   * 崩溃语义：触发点是「bash 退出」——bash 是 U3DS 的父进程，
    * bash 退出 ⇒ U3DS 必死（PTY 会话整体结束）。U3DS 单独崩溃时 bash 回提示符不退出，
    * 不走此路径，由 RCON 心跳失败 → DEGRADED 承接（用户看状态手动处理，不做自动拉起）。
    *
@@ -882,9 +881,9 @@ export class ServerManager implements IServerManager {
     entry.activeOperation = { type: "none" };
   }
 
-  // ── Update（Phase 3 待实现）─────────
+  // ── Update（待实现）──────────────────
 
-  /** 更新 U3DS 二进制——Phase 3 卡 C 待实现（SteamCmdManager 已承担） */
+  /** 更新 U3DS 二进制——SteamCmdManager 已承担 */
   async updateServerBinaries(_installDir: string): Promise<void> {
     throw new AppError(
       "not-implemented",
@@ -1002,10 +1001,9 @@ export class ServerManager implements IServerManager {
   }
 
   /**
-   * ADR-0004 Phase 4：从 settings K-V 恢复 startCommand 到 in-memory config。
+   * 从 settings K-V 恢复 startCommand 到 in-memory config。
    * loadServersFromDisk 时调用——用户编辑过的 startCommand 跨重启保留。
-   * ★ Phase 6：RCON 通道已删除，对应 restoreRcon 不再需要。
-   * ★ BUG-1：恢复时过 normalizeStartCommand（+InternetServer 必须末位），changed 则自愈持久化。
+   * 恢复时过 normalizeStartCommand（+InternetServer 必须末位），changed 则自愈持久化。
    */
   private restoreStartCommand(serverId: ServerId): void {
     const entry = this.servers.get(serverId);

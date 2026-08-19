@@ -81,7 +81,7 @@ function ItemFormDialog({
   }, [open, initial, reset]);
 
   const onSubmit = async (data: ItemFormValues) => {
-    // ★ 提交前本地查重：ID 主键全局唯一（内置 + 自定义同一张表），命中直接在 ID 字段下报错，
+    // 提交前本地查重：ID 主键全局唯一（内置 + 自定义同一张表），命中直接在 ID 字段下报错，
     // 省一次网络往返；后端 SQLITE_CONSTRAINT_UNIQUE → 409 仍保留作兜底。
     if (data.id !== originalId && existingIds.has(data.id)) {
       setError("id", { type: "custom", message: "该物品 ID 已存在" });

@@ -10,15 +10,13 @@ import type {
 import type { Logger } from "pino";
 
 /**
- * 终端会话持久化管理器（1:1 复刻 GSM3 `TerminalSessionManager`）。
+ * 终端会话持久化管理器。
  *
- * 抄录源：`.research/GameServerManager/server/src/modules/terminal/TerminalSessionManager.ts`
- * 本地化适配：
- *   - 日志库 winston → pino（构造函数接收 pino Logger 而非 winston）
- *   - 路径 `process.cwd()/data` → 调用方传入（构造时 cwd 默认 process.cwd()，与 GSM3 同形态）
- *   - id 类型 UUID → ServerId（branded string）
- *   - 新增 touchActivity 节流刷新（GSM3 没这层细化）
- *   - 去掉 updateSessionName（GSM3 多 tab 才需要）
+ * - 日志用 pino（构造函数接收 pino Logger）
+ * - 配置目录由调用方传入（构造时 cwd 默认 process.cwd()）
+ * - id 类型为 ServerId（branded string）
+ * - touchActivity 节流刷新
+ * - 无 updateSessionName（多 tab 才需要）
  *
  * 存储：`<configDir>/terminal-sessions.json`，原子写（临时文件 + rename）+ mutationQueue 串行防并发。
  */
@@ -38,7 +36,7 @@ export class SessionManager implements ISessionManager {
 
   /**
    * @param logger - pino logger
-   * @param configDir - 配置文件目录（默认 process.cwd()，与 GSM3 同形态）
+   * @param configDir - 配置文件目录（默认 process.cwd()）
    */
   constructor(logger: Logger, configDir: string = process.cwd()) {
     this.logger = logger;
@@ -51,11 +49,10 @@ export class SessionManager implements ISessionManager {
     };
   }
 
-  // ─── 公开 API（对齐 GSM3 TerminalSessionManager） ───────────
+  // ─── 公开 API ───────────────────────────────────────────
 
   /**
    * 初始化会话管理器：确保目录存在 + 加载配置。
-   * GSM3 TerminalSessionManager.ts:50-63 1:1 抄录。
    */
   async initialize(): Promise<void> {
     try {
@@ -69,8 +66,7 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * 保存/更新会话。
-   * GSM3 TerminalSessionManager.ts:130-166 1:1 抄录（同 id 已存在则覆盖，否则追加）。
+   * 保存/更新会话（同 id 已存在则覆盖，否则追加）。
    */
   async saveSession(sessionData: PersistedTerminalSession): Promise<void> {
     try {
@@ -101,7 +97,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 切换会话 isActive 标记。
-   * GSM3 TerminalSessionManager.ts:254-269 1:1 抄录。
    */
   async setSessionActive(id: ServerId, isActive: boolean): Promise<void> {
     try {
@@ -120,7 +115,7 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * 节流刷新 lastActivity（本地化新增）。
+   * 节流刷新 lastActivity。
    *
    * PtyManager.onData 回调每收到一行 stdout 调一次——但每行 fs.write 太频繁，
    * 节流 5 秒内只刷一次（用 mutationQueue 串行保护）。
@@ -146,7 +141,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 移除会话。
-   * GSM3 TerminalSessionManager.ts:193-209 1:1 抄录。
    */
   async removeSession(id: ServerId): Promise<void> {
     try {
@@ -167,7 +161,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 获取所有持久化的会话（含 isActive=false 的历史会话）。
-   * GSM3 TerminalSessionManager.ts:214-216 1:1 抄录。
    */
   getSavedSessions(): PersistedTerminalSession[] {
     return [...this.config.sessions];
@@ -175,7 +168,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 获取单条会话记录。
-   * GSM3 TerminalSessionManager.ts:221-223 1:1 抄录。
    */
   getSession(id: ServerId): PersistedTerminalSession | undefined {
     return this.config.sessions.find((s) => s.id === id);
@@ -183,7 +175,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 清理 7 天未活动会话。
-   * GSM3 TerminalSessionManager.ts:228-249 1:1 抄录（返回删除条数本地化）。
    */
   async cleanupExpiredSessions(): Promise<number> {
     try {
@@ -207,16 +198,15 @@ export class SessionManager implements ISessionManager {
     }
   }
 
-  /** 调试用——暴露配置文件绝对路径。GSM3 TerminalSessionManager.ts:274-276 1:1 抄录。 */
+  /** 调试用——暴露配置文件绝对路径。 */
   getConfigPath(): string {
     return this.configPath;
   }
 
-  // ─── 私有辅助（对齐 GSM3 实现细节） ─────────────────────────
+  // ─── 私有辅助 ─────────────────────────────────────────
 
   /**
    * 串行 mutationQueue 防并发写。
-   * GSM3 TerminalSessionManager.ts:31, 98-105 1:1 抄录。
    */
   private enqueueMutation<T>(mutation: () => Promise<T>): Promise<T> {
     const operation = this.mutationQueue.then(mutation);
@@ -229,7 +219,6 @@ export class SessionManager implements ISessionManager {
 
   /**
    * 确保配置目录存在。
-   * GSM3 TerminalSessionManager.ts:68-75 1:1 抄录。
    */
   private async ensureConfigDirectory(): Promise<void> {
     try {
@@ -241,8 +230,7 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * 加载 JSON 配置。
-   * GSM3 TerminalSessionManager.ts:81-96 1:1 抄录（ENOENT 建空，其他错误向上抛）。
+   * 加载 JSON 配置（ENOENT 建空，其他错误向上抛）。
    */
   private async loadConfig(): Promise<void> {
     try {

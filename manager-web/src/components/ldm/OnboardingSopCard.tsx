@@ -11,9 +11,9 @@ const SOP_KEY = "ldm.onboardingDismissed";
  * 安装在 LdmPage 顶层（4 Tab 之上），全局展示。
  *
  * 内容真源：`docs/architecture/ldm-integration-design.md` §4 SOP + `unturned-sop.md` §LDM
- * 默认展开（设计 §4 明确要求首次进入 LdmPage 时引导文案可见）；
+ * 首次进入 LdmPage 默认展开（引导文案可见）；
  * 用户点「收起」后写入 `localStorage[ldm.onboardingDismissed]`，
- * 下次进入不再自动展开——通过 useState 初始化时读 localStorage 实现。
+ * 后续进入读 localStorage 决定是否展开。
  *
  * 复制命令按钮沿用项目惯例（FilesPage.tsx:494）：`navigator.clipboard.writeText` 裸调，
  * 失败由 sonner toast 反馈；不引入兜底方案。

@@ -79,7 +79,7 @@ function LdmContent({ serverId }: { serverId: string }) {
     "installed" | "framework" | "permissions"
   >("installed");
 
-  // 各 Tab 报告 dirty 状态（D2 拍板：任一 Tab 脏即触发）
+  // 各 Tab 报告 dirty 状态（任一 Tab 脏即触发）
   const [frameworkDirty, setFrameworkDirty] = useState(false);
   const [permissionsDirty, setPermissionsDirty] = useState(false);
   const isDirty = frameworkDirty || permissionsDirty;
@@ -141,7 +141,7 @@ const RUNTIME_STATUS_OPTIONS = [
 ];
 
 export function InstalledTab({ serverId }: { serverId: string }) {
-  // Phase 4b：搜索/筛选 state（query 即时更新 + debounce 300ms 触发后端查询）
+  // 搜索/筛选 state（query 即时更新 + debounce 300ms 触发后端查询）
   const [queryInput, setQueryInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<PluginRuntimeStatus | null>(null);

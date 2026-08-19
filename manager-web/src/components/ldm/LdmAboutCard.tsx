@@ -23,8 +23,8 @@ interface ModulesState {
  * 安装在「框架配置」Tab 顶部。
  *
  * 数据源：
- * - `GET /api/servers/:id/ldm/version`（Phase 3-3 后端补端点）
- * - `GET /api/servers/:id/ldm/modules-state`（Phase 3-3 后端补端点）
+ * - `GET /api/servers/:id/ldm/version`
+ * - `GET /api/servers/:id/ldm/modules-state`
  *
  * 两个端点都依赖实例 RUNNING（PTY 写命令需要运行中）；非 RUNNING 时后端抛
  * `server-not-running` 409，前端用 `errorMessage` 取出用户可见文案（来自

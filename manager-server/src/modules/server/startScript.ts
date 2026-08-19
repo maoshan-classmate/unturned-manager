@@ -105,7 +105,7 @@ const SERVER_ARG_PREFIXES = [
 /**
  * 归一化 U3DS 启动命令——保证 `+InternetServer/<id>` 等 server 参数是命令行**最后一个参数**。
  *
- * 背景（BUG-1 根因，2026-08-13 实机排查）：U3-SDK `CommandLine.tryGetServer` 提取 serverID 时
+ * U3-SDK `CommandLine.tryGetServer` 提取 serverID 时
  * 用 `IndexOf("+internetserver")` 定位后，`Substring` **一直取到命令行末尾**作为 id
  * （CommandLine.cs:203-216）。而 ServerHelper.sh 会透传所有附加参数（`"$@"`），所以若命令写成
  * `./ServerHelper.sh +InternetServer/MyServer -ThreadedConsole`，U3DS 实际得到的 serverID 是
@@ -150,7 +150,7 @@ export function normalizeStartCommand(command: string): {
   const trailing = tokens.slice(serverIdx + 1);
   if (trailing.length === 0) return { command, changed: false };
 
-  // 尾随参数整体移到 server 参数之前，保证 server 参数是命令行最后一个参数
+  // 尾随参数整体移到 server 参数前，保证 server 参数是命令行最后一个参数
   const normalized = [
     ...tokens.slice(0, serverIdx),
     ...trailing,

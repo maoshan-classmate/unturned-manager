@@ -10,14 +10,14 @@ interface FrameworkConfigTabProps {
 }
 
 /**
- * 框架配置 Tab（4 Tab 之一，Phase 3-3 骨架）。
+ * 框架配置 Tab（Mod 框架页 4 Tab 之一）。
  *
  * 当前实现：
- * - 顶部 LdmAboutCard（Phase 3-3 新增——LDM 版本 + 模块状态）
- * - 中部 + 下部两张占位卡（结构化编辑器本体留 Phase 4 落地）
+ * - 顶部 LdmAboutCard——LDM 版本 + 模块状态
+ * - 中部 + 下部两张占位卡（结构化编辑器待后续实现）
  *
- * 编辑器本体需依赖 `GET /api/servers/:id/ldm/rocket-config` +
- * `GET /rocket-unturned-config` 读端点（当前未实现）；Phase 3-3 不在范围。
+ * 编辑器需依赖 `GET /api/servers/:id/ldm/rocket-config` +
+ * `GET /rocket-unturned-config` 读端点（当前未实现）。
  *
  * @param props - 组件属性
  * @returns 框架配置 Tab React 元素

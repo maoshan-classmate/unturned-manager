@@ -68,9 +68,8 @@ export type ServerEvent =
       serverId: ServerId;
       incident: import("./incidents.js").Incident;
     }
-  // Phase 0 异步化：jobId 关联单个 SteamCMD 长任务（前端按 jobId 过滤订阅）；
-  // latestVersion 是 check-update completed 事件携带的 U3DS buildid。此前缺失导致
-  // SteamCmdManager 被迫 `as never`——契约补齐后删掉全部类型强转（P1-3 review 修复）。
+  // jobId 关联单个 SteamCMD 长任务（前端按 jobId 过滤订阅）；
+  // latestVersion 是 check-update completed 事件携带的 U3DS buildid。
   | {
       type: "steamcmd_progress";
       stage: string;
@@ -78,15 +77,12 @@ export type ServerEvent =
       jobId?: string;
       latestVersion?: string;
       /**
-       * 失败时的根因描述（仅 failed 事件携带）——传给前端显示。
-       * 原实现只广播 `stage: "failed"`，前端 toast 只能硬编码通用文案，
-       * 对定位像 install-script-missing 这类后台诊断信息毫无价值。
+       * 失败时的根因描述（仅 failed 事件携带）——传给前端显示，用于定位后台诊断信息。
        */
       errorMessage?: string;
       /**
        * 排队位置（≥2 表示「前面还有任务在跑」）。仅 stage==="queued" 携带。
-       * ★ 2026-08-14 队列化：连点 N 个 mod 下载不再 409，全部进队等串行跑。
-       * 前端用此字段显示「排队中（前 X 个）」。
+       * 连点 N 个 mod 下载全部进队串行执行，前端用此字段显示「排队中（前 X 个）」。
        */
       queuePos?: number;
       /** 排队总长度（per-staging 队列的等待中 + 正在跑 任务总数）。 */
@@ -98,7 +94,7 @@ export type ServerEvent =
        */
       currentFileId?: string;
     }
-  // ★ ws-wrapper-design §2.2：请求-应答模式的应答事件。不走 broadcast() 分发——
+  // 请求-应答模式的应答事件。不走 broadcast() 分发——
   // 由 gateway 直接回给发起请求的那条连接（ack 是 per-request 的，不是广播）。
   // 业务错误经 error 字段传递（不抛异常）；payload 形状由具体请求类型决定，
   // 契约层不约束，前端按请求类型自行收窄。

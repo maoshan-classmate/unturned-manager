@@ -16,25 +16,10 @@ interface CreateServerForm {
 }
 
 /**
- * 创建新实例弹窗——5 字段表单 + 取消/创建。
- * 走 react-hook-form(项目铁律)。提交经 onCreated 回调接真实 POST /servers(ADR-0003 B2)。
+ * 创建新实例弹窗——取消/创建。
+ * 走 react-hook-form(项目铁律)。提交经 onCreated 回调接真实 POST /servers。
  *
- * ★ ADR-0004 Phase 6：RCON 字段已删除（rconPassword / openModCredential）。
- *   所有命令通过 PTY 终端 owner-trust 模型执行，不再需要 RCON 凭证。
- *
- * @param props - 组件属性
- * @param props.open - 弹窗是否打开
- * @param props.onClose - 关闭回调
- * @param props.onCreated - 提交回调,接收创建负载并异步创建;失败抛错由本组件 toast
- * @returns 创建实例弹窗 React 元素
- *
- * @example
- * ```tsx
- * <CreateServerDialog open={open} onClose={close} onCreated={addServer} />
- * ```
- *//**
- * 创建新实例弹窗——7 字段表单 + 取消/创建。
- * 走 react-hook-form(项目铁律)。提交经 onCreated 回调接真实 POST /servers(ADR-0003 B2)。
+ * RCON 凭证字段不存在——所有命令通过 PTY 终端 owner-trust 模型执行。
  *
  * @param props - 组件属性
  * @param props.open - 弹窗是否打开
@@ -187,7 +172,7 @@ export function CreateServerDialog({
               </p>
             )}
           </div>
-          {/* ★ ADR-0004 Phase 6：RCON 通道已删除——创建实例不再需要 RCON 凭证字段 */}
+          {/* 创建实例不需要 RCON 凭证字段 */}
         </div>
 
         <Dialog.Footer>

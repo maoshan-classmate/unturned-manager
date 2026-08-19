@@ -336,7 +336,7 @@ export interface LdmApplyResult {
 /**
  * LDM 应用变更服务（Phase 2b）——薄业务层，调 ServerManager.applyChangesCore。
  *
- * 行为契约（用户 2026-08-15 拍板）：
+ * 行为契约：
  *   - 「保存配置」与「应用变更」是两独立动作——前者走 LdmConfigWriter（写文件），
  *     后者由本服务触发（调 ServerManager.applyChangesCore 重启流水线）
  *   - 应用变更由用户主动触发——写配置时不自动

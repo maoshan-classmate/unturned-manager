@@ -30,7 +30,7 @@ interface ModDetailDialogProps {
 }
 
 /**
- * Mod 详情弹窗——问题 6：详情按钮改为弹窗而非跳转 Steam 外链。
+ * Mod 详情弹窗——详情按钮打开弹窗而非跳转 Steam 外链。
  * 包装 components/shared/Dialog.tsx，显示完整 Mod 信息 + 操作区。
  *
  * @param props - 组件属性
@@ -53,8 +53,8 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
         </div>
       ) : (
         <div className="p-4">
-          {/* 大封面——与列表页 ModCard 对齐（问题 2）：object-contain 完整显示 + 暗底 + 底部渐变；
-              aspect-[16/9] 随弹窗宽度等比缩放（问题 3：自适应，不钉死 px 高） */}
+          {/* 大封面——与列表页 ModCard 对齐：object-contain 完整显示 + 暗底 + 底部渐变；
+              aspect-[16/9] 随弹窗宽度等比缩放（自适应，不钉死 px 高） */}
           {mod.previewUrl ? (
             <div className="relative w-full aspect-[16/9] rounded-md overflow-hidden mb-4">
               <img src={mod.previewUrl} alt={mod.title} loading="lazy"

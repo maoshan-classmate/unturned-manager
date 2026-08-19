@@ -47,7 +47,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
     installPath: "/opt/unturned",
   };
 
-  // BUG-2 修复：订阅 SteamCMD 进度（按 installDir 隔离）
+  // 订阅 SteamCMD 进度（按 installDir 隔离）
   const installProgress = useSteamCmdProgress({
     jobId: `steamcmd-install-${data.installPath}`,
   });
@@ -55,7 +55,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
     jobId: `steamcmd-update-${data.installPath}`,
   });
 
-  // BUG-2 修复：进度条 toast 提示
+  // 进度条 toast 提示
   useEffect(() => {
     if (!installProgress) return;
     if (installProgress.stage === "completed") {
@@ -70,7 +70,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
         isInstalled: true,
       });
     } else if (installProgress.stage === "failed") {
-      // BUG-2 附带：必须带 id 替换残留的 loading toast（否则"安装中… spawned"一直挂着）
+      // 必须带 id 替换残留的 loading toast（否则"安装中… spawned"一直挂着）
       // errorMessage 来自后端 SteamCmdManager 后台 catch 块——是真实根因
       // （如 install-script-missing 提到的 Mono 兼容性问题或下载中断）
       toast.error(installProgress.errorMessage ?? "Unturned 服务端安装失败", {
@@ -96,7 +96,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
       setUpdating(false);
       onStatusChange?.({ ...data });
     } else if (updateProgress.stage === "failed") {
-      // BUG-2 附带：带 id 替换残留的 loading toast
+      // 带 id 替换残留的 loading toast
       // updateU3DS 后台 catch 也走同一个广播，errorMessage 在那也生效
       toast.error(updateProgress.errorMessage ?? "Unturned 服务端更新失败", {
         id: "u3ds-update",
@@ -123,7 +123,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
       const msg = (
         err as { response?: { data?: { error?: { message?: string } } } }
       )?.response?.data?.error?.message;
-      // BUG-2 附带：带 id 替换 loading toast（HTTP 报错时进度 toast 必须消失）
+      // 带 id 替换 loading toast（HTTP 报错时进度 toast 必须消失）
       toast.error(msg ?? "Unturned 服务端安装失败", { id: "u3ds-install" });
       setInstalling(false);
     }
@@ -133,7 +133,7 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
     setUpdating(true);
     setUpdateConfirmOpen(false);
     try {
-      // Phase 0：HTTP 立即返回 jobId，进度/完成/失败由 WS steamcmd_progress 接管
+      // HTTP 立即返回 jobId，进度/完成/失败由 WS steamcmd_progress 接管
       const res = await apiClient.post<{ data: { jobId?: string } }>(
         "/steamcmd/update",
         { installDir: data.installPath },
@@ -153,9 +153,9 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
     }
   };
 
-  // BUG-1（第四版）：check-update 查的是 U3DS（AppID 1110390）buildid，不是 SteamCMD 自身版本。
+  // check-update 查的是 U3DS（AppID 1110390）buildid，不是 SteamCMD 自身版本。
   // 按钮放 U3DS 卡片（Unturned 专用服务器）而非 SteamCMD 卡片——语义对齐。
-  // Phase 0：check-update 改异步——HTTP 立即返回 jobId，结果（latestVersion）通过 WS steamcmd_progress 广播，
+  // check-update 走异步——HTTP 立即返回 jobId，结果（latestVersion）通过 WS steamcmd_progress 广播，
   // 前端订阅后弹 toast「U3DS 最新版本: xxx」。
   const checkProgress = useSteamCmdProgress({
     jobId: `steamcmd-check-${data.installPath}`,

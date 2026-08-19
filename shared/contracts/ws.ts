@@ -16,7 +16,7 @@ export type ClientWsMessage =
   | {
       /**
        * 把任意字符串写入对应 serverId 的 PTY stdin（xterm.js onData 的原始输入）。
-       * 不做命令解析/校验——PTY 终端是 owner 自己用的（GSM3 同款 owner-trust）。
+       * 不做命令解析/校验——PTY 终端是 owner 自己用的（owner-trust 模型）。
        */
       type: "terminal_input";
       serverId: ServerId;

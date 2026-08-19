@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── ServerConfig ──────────────────────────────────────
 
-// ServerId 严格限定 [A-Za-z0-9_-]（review 风险-3 修复）：
+// ServerId 严格限定 [A-Za-z0-9_-]：
 // id 会拼进 `+InternetServer/<id>` 写入 PTY bash（防命令注入/参数错乱），
 // 也用于 resolveServerPath 拼文件路径（防 ../ 路径穿越）。
 export const serverIdPattern = /^[A-Za-z0-9_-]+$/;

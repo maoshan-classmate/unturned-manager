@@ -187,8 +187,8 @@ const EMPTY_FIELDS: CommandsFields = {
 
 // ─── Config.txt fields ─────────────────────────────────
 
-// ConfigTxtFields interface 与 EMPTY_TXT 默认值已迁移至 ./configTxtAdapter.ts
-// ——helper 必须可独立单测（owner 网），不在 ConfigPage.tsx 内联。
+// ConfigTxtFields interface 与 EMPTY_TXT 默认值在 ./configTxtAdapter.ts 定义
+// ——helper 必须可独立单测，不在 ConfigPage.tsx 内联。
 
 // ─── Workshop row ──────────────────────────────────────
 
@@ -202,7 +202,7 @@ interface WorkshopRow {
   manualPlacement: boolean;
 }
 
-/** 后端 GET /mods/downloaded 响应项（BUG-6 修复后含 applied 字段） */
+/** 后端 GET /mods/downloaded 响应项（含 applied 字段） */
 interface DownloadedMod {
   fileId: string;
   title?: string;
@@ -217,7 +217,7 @@ const PAGE_SIZE = 10;
 
 /**
  * 守卫壳组件——只做实例守卫，业务 hooks 全在 ConfigContent 内。
- * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建，不再自动跳转 + toast。
+ * 无实例时内容区渲染占位卡（NoInstanceGuide）引导去创建。
  * React hooks 规则：所有 hook 必须无条件按固定顺序调用；这里提前 return 只影响
  * 本组件（不调业务 hooks），业务 hooks 在 ConfigContent 内稳定执行（修复 React #310）。
  */
@@ -244,7 +244,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
   const [tab, setTab] = useState<ConfigTab>("commands");
   const [fields, setFields] = useState<CommandsFields>(EMPTY_FIELDS);
   const [txtFields, setTxtFields] = useState<ConfigTxtFields>(EMPTY_TXT);
-  // ★ 2026-08-14 方案 2：全部配置（13 节 295 字段）的可编辑副本——「显示全部配置」展开区直接改它
+  // 方案 2：全部配置（13 节 295 字段）的可编辑副本——「显示全部配置」展开区直接改它
   const [allTxtSections, setAllTxtSections] = useState<Record<
     string,
     ApiConfigSection
@@ -260,7 +260,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  // ★ BUG-4：保存 Commands.dat 时保留原始未知键/注释（面板不认识但 U3DS 需要的行不能清掉）。
+  // 保存 Commands.dat 时保留原始未知键/注释（面板不认识但 U3DS 需要的行不能清掉）。
   // useRef 不触发渲染——只在加载时记录、保存时原样回传。
   const originalMetaRef = useRef<{
     unknown: Record<string, string>;
@@ -269,7 +269,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
     unknown: {},
     comments: [],
   });
-  // ★ 2026-08-14 方案 1：保存 Config.txt 时保留原始完整 sections（13 节约 295 字段）——
+  // 方案 1：保存 Config.txt 时保留原始完整 sections（13 节约 295 字段）——
   // 只用 18 个 UI 字段覆盖会删掉未托管 section/键/注释（数据丢失）。加载时记录原始 sections，
   // 保存时 mergeTxtSections 合并后再整体写回。
   const originalTxtSectionsRef = useRef<Record<string, ApiConfigSection>>({});
@@ -285,7 +285,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
         );
         const data = res.data.data;
         if (data) {
-          // ★ BUG-4：记录原始未知键/注释——保存时原样回传，防止清空
+          // 记录原始未知键/注释——保存时原样回传，防止清空
           originalMetaRef.current = {
             unknown: data.unknown ?? {},
             comments: data.comments ?? [],
@@ -360,7 +360,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
         const res = await apiClient.get(`/servers/${server.id}/config/txt`);
         const raw = res.data.data;
         if (raw?.sections) {
-          // ★ 2026-08-14 方案 1：记录原始完整 sections——保存时 merge 合并，不丢未托管内容
+          // 方案 1：记录原始完整 sections——保存时 merge 合并，不丢未托管内容
           const rawSections = raw.sections as Record<string, ApiConfigSection>;
           originalTxtSectionsRef.current = rawSections;
           // 方案 2：可编辑副本（深拷贝，不引用原始 ref）
@@ -376,8 +376,8 @@ function ConfigContent({ serverId }: { serverId: string }) {
               ]),
             ),
           );
-          // BUG-2 闭环 + Bug B-1 修复：read 侧走 helper 解 entries[]——
-          // Bug B-1 改用 SDK 英文 section 名（[Browser]/[Server]/[Items]/[Gameplay]）+ SDK 英文 key（PlayConfigData.cs C# 字段名）
+          // read 侧走 helper 解 entries[]——
+          // SDK 英文 section 名（[Browser]/[Server]/[Items]/[Gameplay]）+ SDK 英文 key（PlayConfigData.cs C# 字段名）
           const b = raw.sections["Browser"],
             s = raw.sections["Server"];
           const i = raw.sections["Items"],
@@ -389,7 +389,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
             Desc_Server_List: readStringEntry(b, "Desc_Server_List"),
             Icon: readStringEntry(b, "Icon"),
             Thumbnail: readStringEntry(b, "Thumbnail"),
-            // ★ 2026-08-14：readBoolEntry 传 SDK 默认值——文件缺失时显示官方默认而非恒 false
+            // readBoolEntry 传 SDK 默认值——文件缺失时显示官方默认而非恒 false
             VAC_Secure: readBoolEntry(s, "VAC_Secure", true),
             BattlEye_Secure: readBoolEntry(s, "BattlEye_Secure", true),
             Max_Ping_Milliseconds: readStringEntry(s, "Max_Ping_Milliseconds"),
@@ -422,7 +422,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
           });
         }
       } else {
-        // v2.2 + BUG-6 修复：已下载 Mod 列表改走 /mods/downloaded（acf + File_IDs + WebAPI 元数据合并）
+        // 已下载 Mod 列表走 /mods/downloaded（acf + File_IDs + WebAPI 元数据合并）
         const res = await apiClient.get(
           `/servers/${server.id}/mods/downloaded`,
         );
@@ -431,7 +431,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
           items.map((item) => ({
             fileId: item.fileId,
             name: item.title || item.fileId,
-            // ★ BUG-6 修复：3 态——applied=true(已应用) | applied=false(待应用)
+            // 3 态——applied=true(已应用) | applied=false(待应用)
             status: item.applied ? "enabled" : "pending_apply",
             applied: item.applied ?? false,
             selected: false,
@@ -500,16 +500,16 @@ function ConfigContent({ serverId }: { serverId: string }) {
         }
         await apiClient.put(`/servers/${server.id}/config/commands`, {
           known: Object.fromEntries(known),
-          // ★ BUG-4：原样回传加载时记录的未知键/注释，防止保存把面板不认识的指令行清掉
+          // 原样回传加载时记录的未知键/注释，防止保存把面板不认识的指令行清掉
           unknown: originalMetaRef.current.unknown,
           comments: originalMetaRef.current.comments,
           // Loadout 重复行独立上传——序列化时 ConfigService 按 loadouts 数组写多行
           loadouts: fields.Loadout,
         });
-        // ★ 重启提示：Commands.dat 是服务端启动时读取的，改完要重启才生效（U3-SDK Provider.cs:6663-6700）
+        // 重启提示：Commands.dat 是服务端启动时读取的，改完要重启才生效（U3-SDK Provider.cs:6663-6700）
         toast.success("配置已保存，重启服务器后生效");
       } else if (tab === "txt") {
-        // ★ 2026-08-14 方案 1+2：合并保存。
+        // 方案 1+2 合并保存。
         // 基准 = allTxtSections（方案 2 可编辑副本，已含未托管 section/键的编辑）；
         // 再把 18 个 UI 托管字段 merge 覆盖（方案 1）——两类编辑都生效，未托管内容不丢。
         const base = allTxtSections ?? originalTxtSectionsRef.current;
@@ -518,7 +518,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
           sections: merged,
         });
       } else if (tab === "workshop") {
-        // v2.6：保存与重启解耦——只写 File_IDs（运行时安全，U3DS 只在启动时读）。
+        // 保存与重启解耦——只写 File_IDs（运行时安全，U3DS 只在启动时读）。
         // staging → content 移动在 ServerManager.startInternal 自动执行（U3DS STOPPED 时）。
         // 用户在控制台/首页手动「重启」后即生效。
         const fileIds = workshopRows
@@ -539,7 +539,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
     }
   };
 
-  /** v2.2：删除 Mod——先确认，确认后调 DELETE 端点（acf + content + File_IDs 同步删） */
+  /** 删除 Mod——先确认，确认后调 DELETE 端点（acf + content + File_IDs 同步删） */
   const handleDeleteConfirm = async () => {
     if (!server || !deleteConfirm) return;
     const fileId = deleteConfirm;
@@ -569,7 +569,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
     setDirty(true);
   };
 
-  /** ★ 2026-08-14 方案 2：编辑「全部配置」展开区里的未托管字段——直接改可编辑副本 */
+  /** 方案 2：编辑「全部配置」展开区里的未托管字段——直接改可编辑副本 */
   const updateRawEntry = useCallback(
     (sectionName: string, key: string, value: string | null) => {
       setAllTxtSections((prev) => {
@@ -632,7 +632,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
   );
 
   // ── 内容区加载 / 错误 ──
-  // ★ 页面骨架（Header + TabBar + Tips）常驻不遮罩——只有 Main 内容区在加载/错误时切换显示。
+  // 页面骨架（Header + TabBar + Tips）常驻不遮罩——只有 Main 内容区在加载/错误时切换显示。
   // Workshop 标签加载慢（/mods/downloaded 合并 acf + WebAPI 元数据），整页遮罩会把 TabBar 也盖住，
   // 用户无法切回其他标签；serverLoading 只在 useServer 列表未就绪（server 未找到）时兜底。
   const contentLoading = configLoading || (serverLoading && !server);
@@ -760,7 +760,7 @@ function ConfigContent({ serverId }: { serverId: string }) {
         </div>
       </div>
 
-      {/* v2.2：删除 Mod 确认（acf + content + File_IDs 同步删） */}
+      {/* 删除 Mod 确认（acf + content + File_IDs 同步删） */}
       <ConfirmDialog
         open={!!deleteConfirm}
         title="删除 Mod"
@@ -995,7 +995,7 @@ function CommandsTab({
 
 /**
  * 难度值 → 中文标签。
- * ★ 2026-08-14：未配置难度时显示「官方默认（普通）」——U3DS 未写 Mode 命令默认 Normal
+ * 未配置难度时显示「官方默认（普通）」——U3DS 未写 Mode 命令默认 Normal
  * （EGameMode.cs），玩家不理解「未配置」意味着什么。
  *
  * @param mode - Commands.dat 的 Mode 值（Easy/Normal/Hard）；空/未知按官方默认 Normal 兜底
@@ -1110,7 +1110,7 @@ function ConfigTxtTab({
         onChange={onChange}
       />
 
-      {/* ★ 2026-08-14 方案 2：细节调整说明卡片（与「当前生效难度」同款）——下方为未托管模块，各自独立卡片默认收起 */}
+      {/* 方案 2：细节调整说明卡片——下方为未托管模块，各自独立卡片默认收起 */}
       <div
         className="rounded-md border px-3 py-2"
         style={{ borderColor: "#334059", backgroundColor: "#1E293B" }}
@@ -1155,7 +1155,7 @@ function ConfigTxtTab({
 
 /**
  * 取字段的 placeholder（SDK 官方默认值预览）。
- * ★ 2026-08-14：未填值时显示官方默认——固定值查 TXT_FIELD_DEFAULTS，
+ * 未填值时显示官方默认——固定值查 TXT_FIELD_DEFAULTS，
  * per-mode 字段（Spawn_Chance/Respawn_Time）按 currentMode 动态取。
  * 返回 undefined 表示无默认值（Browser 段 string 字段），不渲染 placeholder。
  */
@@ -1535,7 +1535,7 @@ function StatusBadge({ status }: { status: WorkshopRow["status"] }) {
   const map: Record<WorkshopRow["status"], string> = {
     enabled: "bg-emerald-500",
     disabled: "bg-slate-500",
-    pending_apply: "bg-amber-500", // ★ BUG-6 修复：待应用状态
+    pending_apply: "bg-amber-500", // 待应用状态
   };
   const text: Record<WorkshopRow["status"], string> = {
     enabled: "已应用",
