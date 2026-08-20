@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "./Dialog.js";
 import { Plus, X } from "lucide-react";
+import { ItemIcon } from "./ItemIcon.js";
 import type { ItemRecord } from "@unturned-manager/shared";
 
 /** 标签区 + 搜索/手输的物品选择 dialog 属性 */
@@ -290,6 +291,12 @@ export function LoadoutItemDialog({
                         : "text-slate-300 hover:bg-slate-800"
                     }`}
                   >
+                    <ItemIcon
+                      id={item.id}
+                      size={16}
+                      alt={item.label ?? item.name}
+                      className="shrink-0"
+                    />
                     <span className="font-mono text-slate-400 shrink-0">
                       {item.id}
                     </span>

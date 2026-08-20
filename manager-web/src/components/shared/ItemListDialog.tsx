@@ -7,6 +7,7 @@ import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { Dialog } from "./Dialog.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { SearchInput } from "./SearchInput.js";
+import { ItemIcon } from "./ItemIcon.js";
 import { createItem, deleteItem, updateItem } from "../../api/items.js";
 import type { ItemRecord } from "@unturned-manager/shared";
 
@@ -330,6 +331,12 @@ export function ItemListDialog({
                   key={item.id}
                   className="flex items-center gap-2 px-3 py-2 bg-slate-900"
                 >
+                  <ItemIcon
+                    id={item.id}
+                    size={20}
+                    alt={item.label ?? item.name}
+                    className="shrink-0"
+                  />
                   <span
                     className={`shrink-0 text-xs px-1.5 py-0.5 rounded ${
                       item.source === "builtin"

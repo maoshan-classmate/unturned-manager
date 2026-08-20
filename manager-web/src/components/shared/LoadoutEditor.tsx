@@ -12,6 +12,7 @@ import { ConfigSection } from "./ConfigSection.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { LoadoutItemDialog } from "./LoadoutItemDialog.js";
 import { ItemListDialog } from "./ItemListDialog.js";
+import { ItemIcon } from "./ItemIcon.js";
 import { useItems } from "../../hooks/useItems.js";
 
 /**
@@ -244,6 +245,12 @@ export function LoadoutEditor({ loadouts, onChange }: LoadoutEditorProps) {
                           key={`${id}-${i}`}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-400"
                         >
+                          <ItemIcon
+                            id={id}
+                            size={14}
+                            alt={resolveName(id)}
+                            className="shrink-0"
+                          />
                           <span>{id}</span>
                           <span>{resolveName(id)}</span>
                           {count > 1 && (
