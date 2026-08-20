@@ -34,14 +34,15 @@ interface PresetCommand {
   label: string;
   command: string;
   dangerous?: boolean;
+  needsParam?: boolean;
   icon: typeof Megaphone;
 }
 
 // 存档/关服已从预设命令升级为带确认的 ACK 操作按钮（ws-wrapper-design §2.5/§6 阶段 4）
 const PRESET_COMMANDS: PresetCommand[] = [
-  { label: "广播", command: "Say ", icon: Megaphone },
+  { label: "广播", command: "Say ", needsParam: true, icon: Megaphone },
   { label: "玩家列表", command: "Players", icon: Users },
-  { label: "踢出", command: "Kick ", dangerous: true, icon: UserMinus },
+  { label: "踢出", command: "Kick ", dangerous: true, needsParam: true, icon: UserMinus },
   { label: "白天", command: "Day", icon: Sun },
   { label: "黑夜", command: "Night", icon: Moon },
   { label: "空投", command: "Airdrop", icon: Package },
@@ -112,7 +113,11 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
   const [input, setInput] = useState("");
   const [historyIdx, setHistoryIdx] = useState(-1);
-  const [showConfirm, setShowConfirm] = useState("");
+  const [showConfirm, setShowConfirm] = useState<{
+    command: string;
+    dangerous: boolean;
+    needsParam: boolean;
+  } | null>(null);
   // ACK 操作的确认弹窗 + 进行中状态
   const [confirmAction, setConfirmAction] = useState<"shutdown" | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -184,12 +189,12 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         "cheats",
       ].includes(cmdName);
 
-      if (isDangerous && showConfirm !== command) {
-        setShowConfirm(command);
+      if (isDangerous && (!showConfirm || showConfirm.command !== command)) {
+        setShowConfirm({ command, dangerous: true, needsParam: true });
         return;
       }
 
-      setShowConfirm("");
+      setShowConfirm(null);
       commandHistory.current.push(command);
       setInput("");
       setHistoryIdx(-1);
@@ -219,7 +224,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
       if (e.key === "Enter") {
         if (showConfirm) {
           // 再按一次 Enter 确认执行
-          handleSend(showConfirm);
+          handleSend(showConfirm.command);
         } else {
           handleSend();
         }
@@ -248,7 +253,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
               ] ?? ""),
         );
       } else if (e.key === "Escape") {
-        setShowConfirm("");
+        setShowConfirm(null);
       }
     },
     [handleSend, historyIdx, showConfirm],
@@ -338,16 +343,11 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-        {PRESET_COMMANDS.map(({ label, command, dangerous, icon: Icon }) => (
+        {PRESET_COMMANDS.map(({ label, command, dangerous, needsParam, icon: Icon }) => (
           <button
             key={label}
             onClick={() => {
-              if (dangerous) {
-                setShowConfirm(command);
-              } else {
-                setInput(command);
-                inputRef.current?.focus();
-              }
+              setShowConfirm({ command, dangerous: !!dangerous, needsParam: !!needsParam });
             }}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors hover:opacity-90"
             style={{
@@ -475,9 +475,14 @@ function ConsoleContent({ serverId }: { serverId: string }) {
       {/* 危险指令二次确认——含参数输入框（部分指令如 Kick/Ban/Slay 需 SteamID） */}
       <DangerCommandDialog
         open={!!showConfirm}
-        command={showConfirm}
-        onConfirm={(finalCommand) => handleSend(finalCommand)}
-        onCancel={() => setShowConfirm("")}
+        command={showConfirm?.command ?? ""}
+        dangerous={showConfirm?.dangerous ?? false}
+        needsParam={showConfirm?.needsParam ?? false}
+        onConfirm={(finalCommand) => {
+          setShowConfirm(null);
+          handleSend(finalCommand);
+        }}
+        onCancel={() => setShowConfirm(null)}
       />
 
       {/* ACK 操作的确认弹窗——有明确成功/失败反馈 */}
@@ -499,19 +504,27 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 }
 
 /**
- * 危险指令二次确认弹窗——含参数输入框。
+ * 预设命令二次确认弹窗。
  *
- * 部分危险指令需要参数（如 `Kick <SteamID64>`、`Ban <SteamID64> <时长>`、`Slay <SteamID64>`），
- * 用户可在弹窗内填参数，确认后整条命令直接发送。无参数的危险指令（如 `Cheats`）留空发送。
+ * 行为：
+ * - `needsParam=true`（如 `Kick <SteamID64>`）→ 显示参数输入框，命令预览实时更新
+ * - `dangerous=true` → 红色「危险指令」标题 + 红边框 + 警告文案
+ * - 非危险（普通预设命令如 Players / Day / Help）→ 绿色「执行预设命令」标题，无警告
+ *
+ * 确认后整条命令直接发送。
  */
 function DangerCommandDialog({
   open,
   command,
+  dangerous,
+  needsParam,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   command: string;
+  dangerous: boolean;
+  needsParam: boolean;
   onConfirm: (finalCommand: string) => void;
   onCancel: () => void;
 }) {
@@ -531,6 +544,13 @@ function DangerCommandDialog({
   const finalCommand = param.trim() ? `${command}${param.trim()}` : command.trim();
   const isEmpty = !finalCommand;
 
+  const accent = dangerous ? "#EF4444" : "#22C55E";
+  const title = dangerous ? "危险指令确认" : "执行预设命令";
+  const DialogIcon = dangerous ? AlertTriangle : Send;
+  const message = dangerous
+    ? "此操作可能影响服务器运行。"
+    : "确认发送该预设命令到控制台。";
+
   return (
     <DialogShell open={open} onClose={onCancel}>
       <div
@@ -543,11 +563,11 @@ function DangerCommandDialog({
         }}
       >
         <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle size={20} style={{ color: "#EF4444" }} />
-          <h3 className="text-sm font-medium text-slate-100 m-0">危险指令确认</h3>
+          <DialogIcon size={20} style={{ color: accent }} />
+          <h3 className="text-sm font-medium text-slate-100 m-0">{title}</h3>
         </div>
         <p className="text-xs text-slate-400 mb-3">
-          此操作可能影响服务器运行。命令预览：
+          {message} 命令预览：
           <code
             className="ml-1 px-1.5 py-0.5 rounded font-mono"
             style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
@@ -555,35 +575,37 @@ function DangerCommandDialog({
             {finalCommand || "（空）"}
           </code>
         </p>
-        <input
-          ref={inputRef}
-          type="text"
-          value={param}
-          onChange={(e) => setParam(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !isEmpty) {
-              onConfirm(finalCommand);
-            } else if (e.key === "Escape") {
-              onCancel();
-            }
-          }}
-          className="w-full rounded-md px-3 py-2 text-xs font-mono outline-none transition-colors"
-          style={{
-            backgroundColor: "#0F172A",
-            border: "1px solid #334059",
-            color: "#F1F5FB",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "#EF4444";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "#334059";
-          }}
-          placeholder="参数（如 SteamID64），无参数则留空"
-          aria-label="危险指令参数输入"
-          spellCheck={false}
-          autoComplete="off"
-        />
+        {needsParam && (
+          <input
+            ref={inputRef}
+            type="text"
+            value={param}
+            onChange={(e) => setParam(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !isEmpty) {
+                onConfirm(finalCommand);
+              } else if (e.key === "Escape") {
+                onCancel();
+              }
+            }}
+            className="w-full rounded-md px-3 py-2 text-xs font-mono outline-none transition-colors"
+            style={{
+              backgroundColor: "#0F172A",
+              border: "1px solid #334059",
+              color: "#F1F5FB",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = accent;
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "#334059";
+            }}
+            placeholder="参数（如 SteamID64），无参数则留空"
+            aria-label="预设命令参数输入"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        )}
         <div className="flex items-center gap-2 justify-end mt-4">
           <button
             onClick={onCancel}
@@ -596,17 +618,18 @@ function DangerCommandDialog({
             onClick={() => onConfirm(finalCommand)}
             disabled={isEmpty}
             className="rounded-md text-white h-8 px-4 text-xs font-medium transition-colors disabled:opacity-50"
-            style={{ backgroundColor: "#EF4444" }}
+            style={{ backgroundColor: accent }}
             onMouseEnter={(e) => {
               if (!isEmpty) {
-                (e.currentTarget as HTMLElement).style.backgroundColor = "#DC2626";
+                (e.currentTarget as HTMLElement).style.backgroundColor =
+                  dangerous ? "#DC2626" : "#16A34A";
               }
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = "#EF4444";
+              (e.currentTarget as HTMLElement).style.backgroundColor = accent;
             }}
           >
-            确认执行
+            确认{dangerous ? "执行" : "发送"}
           </button>
         </div>
       </div>
