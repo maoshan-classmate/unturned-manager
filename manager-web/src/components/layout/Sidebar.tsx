@@ -24,8 +24,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/console", icon: Terminal, label: "控制台" },
   { to: "/config/commands", icon: Settings, label: "配置" },
   { to: "/mods", icon: Package, label: "模组" },
-  { to: "/ldm", icon: Puzzle, label: "Mod 框架" },
-  { to: "/files", icon: FolderOpen, label: "文件" },
+  // { to: "/ldm", icon: Puzzle, label: "Mod 框架" },        // 未完成，临时隐藏
+  // { to: "/files", icon: FolderOpen, label: "文件" },      // 未完成，临时隐藏
   { to: "/server-setup", icon: Rocket, label: "服务器设置" },
   { to: "/settings", icon: Zap, label: "系统设置" },
 ] as const;
