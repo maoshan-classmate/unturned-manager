@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Terminal as TerminalIcon,
   Send,
@@ -6,6 +6,13 @@ import {
   AlertTriangle,
   Save,
   Power,
+  Megaphone,
+  Users,
+  UserMinus,
+  Sun,
+  Moon,
+  Package,
+  HelpCircle,
 } from "lucide-react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { useServer } from "../hooks/useServer.js";
@@ -16,6 +23,7 @@ import { useSessionManager } from "../hooks/useSessionManager.js";
 import { Button } from "../components/ui/button.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
 import { NoInstanceGuide } from "../components/shared/NoInstanceGuide.js";
+import { DialogShell } from "../components/shared/DialogShell.js";
 import { Terminal } from "../components/console/Terminal.js";
 import { HudDecoration } from "../components/shared/HudDecoration.js";
 import { toast } from "sonner";
@@ -26,17 +34,18 @@ interface PresetCommand {
   label: string;
   command: string;
   dangerous?: boolean;
+  icon: typeof Megaphone;
 }
 
 // 存档/关服已从预设命令升级为带确认的 ACK 操作按钮（ws-wrapper-design §2.5/§6 阶段 4）
 const PRESET_COMMANDS: PresetCommand[] = [
-  { label: "广播", command: "Say " },
-  { label: "玩家列表", command: "Players" },
-  { label: "踢出", command: "Kick ", dangerous: true },
-  { label: "白天", command: "Day" },
-  { label: "黑夜", command: "Night" },
-  { label: "空投", command: "Airdrop" },
-  { label: "帮助", command: "Help" },
+  { label: "广播", command: "Say ", icon: Megaphone },
+  { label: "玩家列表", command: "Players", icon: Users },
+  { label: "踢出", command: "Kick ", dangerous: true, icon: UserMinus },
+  { label: "白天", command: "Day", icon: Sun },
+  { label: "黑夜", command: "Night", icon: Moon },
+  { label: "空投", command: "Airdrop", icon: Package },
+  { label: "帮助", command: "Help", icon: HelpCircle },
 ];
 
 /** ACK 关服默认倒计时（秒）——对齐 SOP 重启流水线 Shutdown 10 */
@@ -329,22 +338,26 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-        {PRESET_COMMANDS.map(({ label, command, dangerous }) => (
+        {PRESET_COMMANDS.map(({ label, command, dangerous, icon: Icon }) => (
           <button
             key={label}
             onClick={() => {
-              setInput(command);
-              inputRef.current?.focus();
+              if (dangerous) {
+                setShowConfirm(command);
+              } else {
+                setInput(command);
+                inputRef.current?.focus();
+              }
             }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors hover:opacity-90"
             style={{
               backgroundColor: dangerous ? "#EF444420" : "#1E293B",
               color: dangerous ? "#EF4444" : "#94A3B8",
-              border: `1px solid ${dangerous ? "#EF444440" : "#334155"}`,
+              border: `1px solid ${dangerous ? "#EF444440" : "#334059"}`,
             }}
-            title={dangerous ? "危险指令，需二次确认" : undefined}
+            title={dangerous ? "危险指令——点击弹确认框" : undefined}
           >
-            {dangerous && <AlertTriangle size={11} />}
+            <Icon size={12} />
             {label}
           </button>
         ))}
@@ -407,44 +420,63 @@ function ConsoleContent({ serverId }: { serverId: string }) {
       </div>
 
       {/* ── Input ── */}
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="flex-1 flex items-center gap-2">
-          <span style={{ color: "#22C55E" }}>&gt;</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent border-none outline-none text-xs font-mono"
-            style={{ color: "#F1F5FB" }}
-            placeholder="输入命令...（写入控制台）"
-            aria-label="控制台命令输入"
-            spellCheck={false}
-            autoComplete="off"
-          />
-        </div>
-        <Button
-          onClick={() => handleSend()}
-          disabled={!input.trim()}
-          className="h-7 gap-1 text-xs"
-          style={{ backgroundColor: "#22C55E", color: "#F1F5FB" }}
-        >
-          <Send size={12} />
-          发送
-        </Button>
+      <div
+        className="flex items-center gap-2 shrink-0 rounded-md px-3 py-2 transition-colors"
+        style={{
+          backgroundColor: "#0F172A",
+          border: "1px solid #334059",
+        }}
+        onFocus={(e) => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#22C55E";
+        }}
+        onBlur={(e) => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#334059";
+        }}
+      >
+        <TerminalIcon size={14} style={{ color: "#22C55E" }} className="shrink-0" />
+        <span style={{ color: "#22C55E" }} className="text-xs font-mono">
+          &gt;
+        </span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="flex-1 bg-transparent border-none outline-none text-xs font-mono"
+          style={{ color: "#F1F5FB" }}
+          placeholder="输入命令后回车发送（写入控制台）"
+          aria-label="控制台命令输入"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        {input.trim() && (
+          <button
+            onClick={() => handleSend()}
+            aria-label="发送命令"
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: "#22C55E",
+              color: "#0F172A",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = "#16A34A";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = "#22C55E";
+            }}
+          >
+            <Send size={12} />
+            发送
+          </button>
+        )}
       </div>
 
-      <ConfirmDialog
+      {/* 危险指令二次确认——含参数输入框（部分指令如 Kick/Ban/Slay 需 SteamID） */}
+      <DangerCommandDialog
         open={!!showConfirm}
-        title="危险指令确认"
-        message={`确认执行 "${showConfirm}"？此操作可能影响服务器运行。`}
-        confirmLabel="确认执行"
-        variant="danger"
-        icon={AlertTriangle}
-        onConfirm={() => {
-          handleSend(showConfirm);
-        }}
+        command={showConfirm}
+        onConfirm={(finalCommand) => handleSend(finalCommand)}
         onCancel={() => setShowConfirm("")}
       />
 
@@ -463,5 +495,121 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         onCancel={() => setConfirmAction(null)}
       />
     </div>
+  );
+}
+
+/**
+ * 危险指令二次确认弹窗——含参数输入框。
+ *
+ * 部分危险指令需要参数（如 `Kick <SteamID64>`、`Ban <SteamID64> <时长>`、`Slay <SteamID64>`），
+ * 用户可在弹窗内填参数，确认后整条命令直接发送。无参数的危险指令（如 `Cheats`）留空发送。
+ */
+function DangerCommandDialog({
+  open,
+  command,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  command: string;
+  onConfirm: (finalCommand: string) => void;
+  onCancel: () => void;
+}) {
+  const [param, setParam] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 打开时清空参数 + 自动 focus 输入框
+  useEffect(() => {
+    if (open) {
+      setParam("");
+      // 延迟一帧让 DialogShell 完成挂载再 focus
+      const t = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  const finalCommand = param.trim() ? `${command}${param.trim()}` : command.trim();
+  const isEmpty = !finalCommand;
+
+  return (
+    <DialogShell open={open} onClose={onCancel}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg p-6"
+        style={{
+          width: 420,
+          backgroundColor: "#1E293B",
+          border: "1px solid #334059",
+        }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle size={20} style={{ color: "#EF4444" }} />
+          <h3 className="text-sm font-medium text-slate-100 m-0">危险指令确认</h3>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">
+          此操作可能影响服务器运行。命令预览：
+          <code
+            className="ml-1 px-1.5 py-0.5 rounded font-mono"
+            style={{ backgroundColor: "#0F172A", color: "#F1F5FB" }}
+          >
+            {finalCommand || "（空）"}
+          </code>
+        </p>
+        <input
+          ref={inputRef}
+          type="text"
+          value={param}
+          onChange={(e) => setParam(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !isEmpty) {
+              onConfirm(finalCommand);
+            } else if (e.key === "Escape") {
+              onCancel();
+            }
+          }}
+          className="w-full rounded-md px-3 py-2 text-xs font-mono outline-none transition-colors"
+          style={{
+            backgroundColor: "#0F172A",
+            border: "1px solid #334059",
+            color: "#F1F5FB",
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = "#EF4444";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = "#334059";
+          }}
+          placeholder="参数（如 SteamID64），无参数则留空"
+          aria-label="危险指令参数输入"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <div className="flex items-center gap-2 justify-end mt-4">
+          <button
+            onClick={onCancel}
+            className="rounded-md text-slate-400 hover:text-slate-200 h-8 px-4 text-xs transition-colors"
+            style={{ border: "1px solid #334059" }}
+          >
+            取消
+          </button>
+          <button
+            onClick={() => onConfirm(finalCommand)}
+            disabled={isEmpty}
+            className="rounded-md text-white h-8 px-4 text-xs font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: "#EF4444" }}
+            onMouseEnter={(e) => {
+              if (!isEmpty) {
+                (e.currentTarget as HTMLElement).style.backgroundColor = "#DC2626";
+              }
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = "#EF4444";
+            }}
+          >
+            确认执行
+          </button>
+        </div>
+      </div>
+    </DialogShell>
   );
 }
