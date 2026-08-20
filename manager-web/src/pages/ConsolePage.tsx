@@ -19,6 +19,7 @@ import { useServer } from "../hooks/useServer.js";
 import { useRequireServer } from "../hooks/useRequireServer.js";
 import { useCurrentServer } from "../contexts/CurrentServerContext.js";
 import { useConsole } from "../hooks/useConsole.js";
+import { formatStateBadge } from "../lib/utils.js";
 import { useSessionManager } from "../hooks/useSessionManager.js";
 import { Button } from "../components/ui/button.js";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog.js";
@@ -282,7 +283,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
             {/* 服务器未运行时明确提示——PTY 没跑时敲命令静默丢失 */}
             {currentServer && !isServerRunning && (
               <span className="text-xs" style={{ color: "#EF4444" }}>
-                · 当前服务器未运行（状态：{currentServer.state ?? "未知"}），请先启动
+                · 当前服务器未运行（状态：{formatStateBadge(currentServer.state ?? "") || "未知"}），请先启动
               </span>
             )}
           </div>
@@ -434,7 +435,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
           (e.currentTarget as HTMLElement).style.borderColor = "#334059";
         }}
       >
-        <TerminalIcon size={14} style={{ color: "#22C55E" }} className="shrink-0" />
+        {/*<TerminalIcon size={14} style={{ color: "#22C55E" }} className="shrink-0" />*/}
         <span style={{ color: "#22C55E" }} className="text-xs font-mono">
           &gt;
         </span>
