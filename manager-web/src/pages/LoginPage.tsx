@@ -11,8 +11,6 @@ import { PasswordInput } from '@/components/shared/PasswordInput.js';
 import { useAuth } from '@/contexts/AuthContext.js';
 import { loginSchema, type LoginFormValues } from './loginSchema.js';
 
-import signPng from '@/assets/sign.png';
-
 /** Card entrance animation */
 const cardVariants = {
   hidden: { opacity: 0, y: 24 },
@@ -59,7 +57,7 @@ export function LoginPage() {
 
   return (
     <div
-      className="relative flex min-h-screen items-center justify-center overflow-hidden"
+      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden py-8"
       style={{ backgroundColor: '#0F172A' }}
     >
       {/* ── Background glow orbs (exact Figma values) ── */}
@@ -100,43 +98,55 @@ export function LoginPage() {
         />
       </div>
 
-      {/* ── Card ── */}
+      {/* ── Brand Logo（卡片外顶部，280×94 官方主 Logo，纯透明背景）── */}
+      <motion.div
+        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
+        className="mb-6 flex justify-center"
+      >
+        <img
+          src="/unturned-title.png"
+          alt="Unturned"
+          width={280}
+          height={94}
+          style={{ display: 'block' }}
+        />
+      </motion.div>
+
+      {/* ── Card（竖向卡片）── */}
       <motion.div
         variants={cardVariants}
         initial="hidden"
         animate="visible"
-        transition={{ duration: 0.5, ease: 'easeOut' }}
+        transition={{ duration: 0.5, ease: 'easeOut', delay: 0.3 }}
         className="w-full max-w-md px-4"
       >
         <div
-          className="flex w-full flex-col items-center gap-6 rounded-xl backdrop-blur-md transition-shadow duration-500 hover:shadow-[0_0_48px_rgba(16,185,129,0.08)]"
+          className="flex w-full flex-col items-center gap-5 rounded-xl backdrop-blur-md transition-shadow duration-500 hover:shadow-[0_0_48px_rgba(16,185,129,0.08)]"
           style={{
             backgroundColor: 'rgba(30, 41, 59, 0.92)',
             border: '1px solid rgba(51, 84, 102, 0.80)',
-            padding: '48px 48px 48px 48px',
+            padding: '40px 32px 40px 32px',
             boxShadow: '0 4px 32px rgba(0, 0, 0, 0.30)',
           }}
         >
-          {/* ── Logo ── */}
-          <div className="flex h-20 w-20 items-center justify-center">
+          {/* ── 主标题（左侧方块图标 + 文字，竖向紧凑）── */}
+          <div className="flex items-center gap-2.5">
             <img
-              src={signPng}
-              alt="unturned-manager 标志"
-              className="h-16 w-16"
+              src="/unturned-logo-square.png"
+              alt=""
+              width={28}
+              height={28}
+              className="shrink-0"
+              style={{ borderRadius: 4 }}
             />
-          </div>
-
-          {/* ── Titles ── */}
-          <div className="flex flex-col items-center gap-2">
             <h1
-              className="m-0 text-3xl font-semibold leading-none tracking-tight"
+              className="m-0 whitespace-nowrap text-2xl font-semibold leading-none tracking-tight"
               style={{ color: '#F1F5FB' }}
             >
-              unturned-manager
+              Unturned 管理面板
             </h1>
-            <p className="m-0 text-base leading-none" style={{ color: '#94A3B8' }}>
-              Unturned 服务端管理面板
-            </p>
           </div>
 
           {/* ── Form ── */}
@@ -274,7 +284,7 @@ export function LoginPage() {
 
           {/* ── Footer ── */}
           <p className="m-0 text-xs" style={{ color: '#64748B' }}>
-            v0.1.0 · unturned-manager
+            v0.1.0 
           </p>
         </div>
       </motion.div>
