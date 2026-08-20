@@ -421,8 +421,9 @@ function ConsoleContent({ serverId }: { serverId: string }) {
 
       {/* ── Input ── */}
       <div
-        className="flex items-center gap-2 shrink-0 rounded-md px-3 py-2 transition-colors"
+        className="relative flex items-center gap-2 shrink-0 rounded-md px-3 transition-colors"
         style={{
+          height: 40,
           backgroundColor: "#0F172A",
           border: "1px solid #334059",
         }}
@@ -443,8 +444,8 @@ function ConsoleContent({ serverId }: { serverId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent border-none outline-none text-xs font-mono"
-          style={{ color: "#F1F5FB" }}
+          className="flex-1 bg-transparent border-none outline-none text-xs font-mono h-full"
+          style={{ color: "#F1F5FB", paddingRight: input.trim() ? 56 : 0 }}
           placeholder="输入命令后回车发送（写入控制台）"
           aria-label="控制台命令输入"
           spellCheck={false}
@@ -454,7 +455,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
           <button
             onClick={() => handleSend()}
             aria-label="发送命令"
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
             style={{
               backgroundColor: "#22C55E",
               color: "#0F172A",
