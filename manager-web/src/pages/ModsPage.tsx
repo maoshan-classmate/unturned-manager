@@ -457,7 +457,7 @@ export function ModsPage() {
 
       {/* 手动安装提示——网络下载失败时的兜底方案（常驻，玩家可提前了解） */}
       <div className="shrink-0 mx-4 md:mx-6 mt-3">
-        <InfoCard title="💡 下载失败？试试手动安装" variant="warning">
+        <InfoCard title="下载失败？试试手动安装" variant="warning">
           <p className="mb-2">
             面板下载依赖服务器到 Steam 下载服务器的网络；网络不稳定时下载会失败，可改用手动安装：
           </p>

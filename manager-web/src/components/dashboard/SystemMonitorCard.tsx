@@ -47,7 +47,7 @@ export function SystemMonitorCard({ serverId }: SystemMonitorCardProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity size={16} style={{ color: "#22C55E" }} />
-          <span className="text-sm text-slate-400">系统资源（多实例）</span>
+          <span className="text-sm text-slate-400">系统资源</span>
         </div>
         <div
           className="flex items-center gap-1 rounded p-0.5"
