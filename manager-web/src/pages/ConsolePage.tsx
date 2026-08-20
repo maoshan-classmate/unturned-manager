@@ -424,7 +424,7 @@ function ConsoleContent({ serverId }: { serverId: string }) {
         className="relative flex items-center gap-2 shrink-0 rounded-md px-3 transition-colors"
         style={{
           height: 40,
-          backgroundColor: "#0F172A",
+          backgroundColor: "#1E293B",
           border: "1px solid #334059",
         }}
         onFocus={(e) => {
