@@ -95,9 +95,10 @@ export function ScheduledTasksCard({ serverId }: ScheduledTasksCardProps) {
       <Card icon={Clock} title="计划任务">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-slate-500">共 {total} 个任务</span>
-          <Button size="sm" onClick={() => { setEditingTask(null); setDialogOpen(true); }} className="h-9 text-sm gap-1 bg-emerald-500 text-white hover:bg-emerald-600">
+          {/* 添加任务按钮——计划任务功能未完成，临时隐藏 */}
+          {/* <Button size="sm" onClick={() => { setEditingTask(null); setDialogOpen(true); }} className="h-9 text-sm gap-1 bg-emerald-500 text-white hover:bg-emerald-600">
             <Plus size={12} /> 添加任务
-          </Button>
+          </Button> */}
         </div>
 
         <div className="rounded-md border border-slate-700 overflow-hidden">
