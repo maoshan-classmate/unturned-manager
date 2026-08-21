@@ -86,7 +86,7 @@ export function ModCard({
           className="relative w-full h-[140px] flex items-center justify-center"
           style={{ backgroundColor: '#0F172A' }}
         >
-          <span className="text-slate-700 text-xs">No Preview</span>
+          <span className="text-slate-700 text-xs">暂无预览</span>
         </div>
       )}
 

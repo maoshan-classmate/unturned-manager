@@ -66,7 +66,7 @@ export function ModDetailDialog({ open, onClose, mod, loading, onDownload }: Mod
           ) : (
             <div className="relative w-full aspect-[16/9] rounded-md overflow-hidden mb-4 flex items-center justify-center"
               style={{ backgroundColor: '#0F172A' }}>
-              <span className="text-slate-600 text-sm">No Preview</span>
+              <span className="text-slate-600 text-sm">暂无预览</span>
             </div>
           )}
 
