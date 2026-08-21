@@ -264,8 +264,8 @@ export function SettingsPage() {
         <Card icon={Network} title="Steam mod 下载测试">
           <div className="space-y-3">
             <p className="text-xs" style={{ color: '#94A3B8' }}>
-              一键测试服务器到 Steam 的连通性：API 域名 + 内容 CDN + SteamCMD 状态。
-              仅做 TCP 探活不实际下载——需要真实端到端测试去 ModsPage。
+              点一下检查服务器能不能访问 Steam、SteamCMD 是否就绪。
+              想测真实下载，去模组页面点一次下载。
             </p>
             <Button onClick={handleTestModDownload} disabled={testRunning}
               size="sm" className="h-8 text-xs gap-1"
