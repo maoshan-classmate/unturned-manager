@@ -135,7 +135,7 @@ D:/unturned-manager/
 ├── manager-server/          ← 后端（Express 4 + ws + SQLite）
 ├── manager-web/             ← 前端（React 18 + shadcn/ui + Tailwind CSS 4 + Motion）
 ├── shared/                  ← 前后端共享（types/ + contracts/ + schemas/）
-├── .research/               ← 只读参考仓（U3-SDK + GSM + DST）——**绝对不能改**
+├── .research/               ← 只读参考仓——**绝对不能改**
 └── test-servers/            ← 测试用服务端文件
 ```
 
