@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Server,
   Users,
-  Cpu,
   Package,
   ArrowRight,
   AlertCircle,
@@ -156,8 +155,9 @@ export function DashboardPage() {
       {/* ── Status Block — 实时事件流 ── */}
       <StatusBlock serverId={server.id} />
 
-      {/* ── StatCards (Figma 5:34) 4 张横排 ── */}
-      <StaggerContainer className="grid grid-cols-4 gap-4">
+      {/* ── StatCards (Figma 5:34) 3 张横排 ——
+          CPU 实时数据由下方 SystemMonitorCard 承载，避免主题重复 */}
+      <StaggerContainer className="grid grid-cols-3 gap-4">
         <StatCard
           icon={Server}
           label="服务器状态"
@@ -169,12 +169,6 @@ export function DashboardPage() {
         <StatCard
           icon={Users}
           label="在线玩家"
-          value="—"
-          status="neutral"
-        />
-        <StatCard
-          icon={Cpu}
-          label="CPU 使用"
           value="—"
           status="neutral"
         />

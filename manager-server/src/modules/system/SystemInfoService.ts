@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import os from "node:os";
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import type {
   ISystemInfoService,
   SystemInfo,
@@ -160,6 +160,26 @@ export class SystemInfoService implements ISystemInfoService {
 // ─── 默认采集实现 ─────────────────────────────────────
 
 function defaultCpu() {
+  // Linux 容器内 `os.cpus()[0].model` 常为空字符串（cgroups 屏蔽底层硬件信息），
+  // 改读 `/proc/cpuinfo` 拿 model name；非 Linux 平台或读失败回落原逻辑。
+  if (process.platform === "linux") {
+    try {
+      const text = readFileSync("/proc/cpuinfo", "utf8");
+      const m = text.match(/model name\s*:\s*(.+)/);
+      if (m && m[1]) {
+        const cpus = os.cpus();
+        const c0 = cpus[0];
+        return {
+          brand: m[1].trim(),
+          physicalCores: cpus.length,
+          cores: cpus.length,
+          speed: (c0?.speed ?? 0) / 1000, // GHz
+        };
+      }
+    } catch {
+      /* /proc/cpuinfo 不可读——fall through 到 os.cpus() */
+    }
+  }
   const cpus = os.cpus();
   const c0 = cpus[0];
   return {

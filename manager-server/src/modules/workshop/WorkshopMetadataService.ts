@@ -57,10 +57,15 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
    * 单个 Mod 详情——实时调 Steam GetDetails/v1，0 缓存
    *
    * @param modId - Workshop File ID
+   * @param lang - Steam ELanguage 整数值（默认 schinese=6，与 browseMods 对齐——避免
+   *   详情弹窗标题/描述返回英文而列表返回中文的「中英错位」）。
    * @returns Mod 元数据；未配置 Key 时抛 503
    * @throws {AppError} code: workshop-key-missing | workshop-upstream-error | workshop-timeout
    */
-  async getModDetails(modId: WorkshopFileId): Promise<WorkshopModMeta | null> {
+  async getModDetails(
+    modId: WorkshopFileId,
+    lang: number = STEAM_LANG.schinese,
+  ): Promise<WorkshopModMeta | null> {
     const apiKey = getSteamWebApiKey(this.db);
     if (!apiKey) {
       throw new AppError('workshop-key-missing', '未配置 Steam WebAPI Key，请在系统设置中配置后重试', 503);
@@ -74,6 +79,9 @@ export class WorkshopMetadataService implements IWorkshopMetadataService {
     // 投票数据必须显式请求——GetDetails 的参数名是 includevotes（不同于 QueryFiles 的 return_vote_data），
     // 不加则响应无 vote_data → 前端评分星丢失（实测 bug：详情弹窗星星闪一下就消失）
     url.searchParams.set('includevotes', 'true');
+    // 语言：决定返回 title/description 用哪个作者上传的语言版本——
+    // 不传则 Steam 默认英文，与列表（browseMods 已传 schinese）中英错位
+    url.searchParams.set('language', String(lang));
 
     try {
       const res = await fetch(url.toString(), {

@@ -281,7 +281,10 @@ export function ModsPage() {
       }
       // 记录 jobId——WS completed/failed 事件用它反查 fileId
       setDownloading((prev) => ({ ...prev, [fileId]: jobId }));
-      toast.success(`${modTitle ?? "Mod"} 下载已启动`);
+      // toast 标题优先用浏览列表的中文 title（与卡片对齐），再回落后端 modTitle，
+      // 最后兜底「Mod」——避免显示英文标题或「Mod」字面值
+      const browseTitle = browse?.rows.find((m) => m.fileId === fileId)?.title;
+      toast.success(`${browseTitle ?? modTitle ?? "Mod"} 下载已启动`);
       // 不立即刷新已下载列表、不关详情弹窗——等 WS completed 事件
     } catch (err) {
       toast.error(getApiError(err, "下载失败"));

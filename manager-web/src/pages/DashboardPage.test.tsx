@@ -172,12 +172,11 @@ describe("DashboardPage", () => {
     // server.id 出现在多元素（状态徽章旁 + 跳转按钮 href）
     expect(screen.getAllByText(/MyServer/).length).toBeGreaterThanOrEqual(1);
 
-    // 4 StatCard
+    // 3 StatCard（CPU 实时数据由下方资源监控卡承担，避免主题重复）
     expect(screen.getByText("服务器状态")).toBeTruthy();
     // 「运行中」同时在 StatusBadge 和 StatCard value 中出现
     expect(screen.getAllByText("运行中").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("在线玩家")).toBeTruthy();
-    expect(screen.getByText("CPU 使用")).toBeTruthy();
     expect(screen.getByText("Mod 数")).toBeTruthy();
 
     // 跳转按钮
