@@ -31,18 +31,12 @@ function tcpProbe(
 }
 
 /**
- * 系统路由——主机信息 + Steam mod 下载诊断。
+ * 主机信息路由——Dashboard 主机信息卡后端支撑。
  *
- * 端点：
- * - GET  /info                  主机信息快照
- * - POST /test-mod-download     Steam mod 下载诊断（网络 + SteamCMD 状态）
- *
+ * 端点：GET /api/system/info?serverId=
  * 鉴权：JWT
  */
-export function createSystemRouter(
-  systemInfoService: ISystemInfoService,
-  steamCmdManager: ISteamCmdManager,
-): Router {
+export function createSystemRouter(systemInfoService: ISystemInfoService): Router {
   const router = Router();
   router.use(authenticateToken);
 
@@ -55,17 +49,29 @@ export function createSystemRouter(
     }),
   );
 
-  /**
-   * POST /test-mod-download —— 端到端 Steam mod 下载诊断工具。
-   *
-   * 测三件事：
-   * 1. api.steampowered.com TCP 连通性（元数据 API 是否可达）
-   * 2. steamcontent.com TCP 连通性（内容 CDN 是否可达，这是 GFW 阻断点）
-   * 3. SteamCMD 安装状态 + 版本（看 SteamCMD 是否能起来）
-   *
-   * 注：仅做 TCP 层探活，**不实际下载 mod**——避免重复造测试 mod 占用 staging。
-   * 真实端到端下载测试：去 ModsPage 走真实下载流程。
-   */
+  return router;
+}
+
+/**
+ * 系统诊断路由——Steam mod 下载连通性诊断。
+ *
+ * 端点：POST /api/system/test-mod-download
+ * 鉴权：JWT
+ *
+ * 测三件事：
+ * 1. api.steampowered.com TCP 连通性（元数据 API 是否可达）
+ * 2. steamcontent.com TCP 连通性（内容 CDN 是否可达——这是 GFW 阻断点）
+ * 3. SteamCMD 安装状态 + 版本
+ *
+ * 仅做 TCP 层探活不实际下载——避免重复造测试 mod 占用 staging。
+ * 真实端到端下载测试：去 ModsPage 走真实下载流程。
+ */
+export function createSystemDiagnosticsRouter(
+  steamCmdManager: ISteamCmdManager,
+): Router {
+  const router = Router();
+  router.use(authenticateToken);
+
   router.post(
     "/test-mod-download",
     asyncHandler(async (_req, res) => {

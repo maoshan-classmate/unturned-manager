@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import express from "express";
 import request from "supertest";
-import { createSystemRouter } from "../src/routes/system.js";
+import { createSystemRouter, createSystemDiagnosticsRouter } from "../src/routes/system.js";
 import { setAuthService } from "../src/middleware/auth.js";
 import type { ISystemInfoService, SystemInfo } from "@unturned-manager/shared";
 
@@ -102,13 +102,12 @@ describe("GET /api/system/info — 入参校验", () => {
 
 describe("POST /api/system/test-mod-download — Steam mod 下载诊断", () => {
   function makeApp(steamCmdStatus: { isInstalled: boolean; version?: string; installPath?: string }) {
-    const svc = { getSystemInfo: vi.fn() } as unknown as ISystemInfoService;
     const steamCmd = {
       getStatus: vi.fn().mockResolvedValue(steamCmdStatus),
-    } as unknown as Parameters<typeof createSystemRouter>[1];
+    } as unknown as Parameters<typeof createSystemDiagnosticsRouter>[0];
     const app = express();
     app.use(express.json());
-    app.use("/api/system", createSystemRouter(svc, steamCmd));
+    app.use("/api/system", createSystemDiagnosticsRouter(steamCmd));
     return { app, steamCmd };
   }
 
