@@ -99,3 +99,49 @@ describe("GET /api/system/info — 入参校验", () => {
     expect(svc.getSystemInfo).toHaveBeenCalledWith(undefined);
   });
 });
+
+describe("POST /api/system/test-mod-download — Steam mod 下载诊断", () => {
+  function makeApp(steamCmdStatus: { isInstalled: boolean; version?: string; installPath?: string }) {
+    const svc = { getSystemInfo: vi.fn() } as unknown as ISystemInfoService;
+    const steamCmd = {
+      getStatus: vi.fn().mockResolvedValue(steamCmdStatus),
+    } as unknown as Parameters<typeof createSystemRouter>[1];
+    const app = express();
+    app.use(express.json());
+    app.use("/api/system", createSystemRouter(svc, steamCmd));
+    return { app, steamCmd };
+  }
+
+  it("返回网络 + SteamCMD 状态完整结构", async () => {
+    const { app } = makeApp({ isInstalled: true, version: "1785799152", installPath: "/opt/steamcmd" });
+    const res = await request(app)
+      .post("/api/system/test-mod-download")
+      .set("Authorization", "Bearer test-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      network: {
+        apiSteampowered: expect.objectContaining({ ok: expect.any(Boolean), latencyMs: expect.any(Number) }),
+        steamcontent: expect.objectContaining({ ok: expect.any(Boolean), latencyMs: expect.any(Number) }),
+      },
+      steamcmd: { installed: true, version: "1785799152", installPath: "/opt/steamcmd" },
+    });
+  });
+
+  it("未提供 Authorization 头返回 401", async () => {
+    const { app } = makeApp({ isInstalled: false });
+    const res = await request(app).post("/api/system/test-mod-download");
+    expect(res.status).toBe(401);
+  });
+
+  it("SteamCMD 未安装时 installed=false", async () => {
+    const { app, steamCmd } = makeApp({ isInstalled: false });
+    const res = await request(app)
+      .post("/api/system/test-mod-download")
+      .set("Authorization", "Bearer test-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.steamcmd.installed).toBe(false);
+    expect(steamCmd.getStatus).toHaveBeenCalled();
+  });
+});

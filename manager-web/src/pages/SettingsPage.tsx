@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
-  Shield, Key, Globe, FileText, Wrench,
-  AlertCircle, Save, Check, Trash2,
+  Shield, Key, Globe, FileText, Wrench, Network, Loader2,
+  CheckCircle2, XCircle, AlertCircle, Save, Check, Trash2,
 } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
@@ -27,6 +27,11 @@ export function SettingsPage() {
   const [keyLoading, setKeyLoading] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
+
+  // Steam mod 下载诊断
+  const [testRunning, setTestRunning] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [testResult, setTestResult] = useState<any>(null);
 
   /** 加载 WebAPI Key 配置状态 */
   const fetchKeyStatus = async () => {
@@ -71,6 +76,21 @@ export function SettingsPage() {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       setError(msg ?? '删除 WebAPI Key 失败');
     } finally { setKeySaving(false); }
+  };
+
+  /** 触发 Steam mod 下载诊断 */
+  const handleTestModDownload = async () => {
+    setTestRunning(true);
+    setTestResult(null);
+    try {
+      const res = await apiClient.post('/system/test-mod-download');
+      setTestResult(res.data.data);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      setError(msg ?? '诊断请求失败');
+    } finally {
+      setTestRunning(false);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -239,7 +259,72 @@ export function SettingsPage() {
             </p>
           </div>
         </Card>
+
+        {/* Steam mod 下载诊断——TCP 层探活（api + content CDN）+ SteamCMD 状态 */}
+        <Card icon={Network} title="Steam mod 下载测试">
+          <div className="space-y-3">
+            <p className="text-xs" style={{ color: '#94A3B8' }}>
+              一键测试服务器到 Steam 的连通性：API 域名 + 内容 CDN + SteamCMD 状态。
+              仅做 TCP 探活不实际下载——需要真实端到端测试去 ModsPage。
+            </p>
+            <Button onClick={handleTestModDownload} disabled={testRunning}
+              size="sm" className="h-8 text-xs gap-1"
+              style={{ backgroundColor: '#22C55E', color: '#fff' }}>
+              {testRunning
+                ? <><Loader2 size={12} className="animate-spin mr-1" /> 测试中...</>
+                : '运行诊断'}
+            </Button>
+
+            {testResult && (
+              <div className="space-y-2 pt-2 border-t" style={{ borderColor: '#334059' }}>
+                <TestRow
+                  label="API 域名 (api.steampowered.com)"
+                  ok={testResult.network?.apiSteampowered?.ok}
+                  detail={testResult.network?.apiSteampowered}
+                />
+                <TestRow
+                  label="内容 CDN (steamcontent.com)"
+                  ok={testResult.network?.steamcontent?.ok}
+                  detail={testResult.network?.steamcontent}
+                />
+                <div className="flex items-center gap-2 text-xs" style={{ color: '#94A3B8' }}>
+                  {testResult.steamcmd?.installed
+                    ? <CheckCircle2 size={12} style={{ color: '#22C55E' }} />
+                    : <XCircle size={12} style={{ color: '#EF4444' }} />}
+                  <span>SteamCMD:&nbsp;</span>
+                  <span style={{ color: '#F1F5FB' }}>
+                    {testResult.steamcmd?.installed
+                      ? `已安装 (${testResult.steamcmd.version || '未知版本'})`
+                      : '未安装'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
       </StaggerContainer>
+    </div>
+  );
+}
+
+/** 诊断单行结果——网络探活项目用 */
+function TestRow({ label, ok, detail }: {
+  label: string;
+  ok?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  detail?: any;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs" style={{ color: '#94A3B8' }}>
+      {ok
+        ? <CheckCircle2 size={12} style={{ color: '#22C55E' }} />
+        : <XCircle size={12} style={{ color: '#EF4444' }} />}
+      <span>{label}</span>
+      {detail && (
+        <span style={{ color: ok ? '#22C55E' : '#EF4444' }}>
+          {ok ? `通 (${detail.latencyMs}ms)` : `失败: ${detail.error}`}
+        </span>
+      )}
     </div>
   );
 }

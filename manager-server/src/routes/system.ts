@@ -1,20 +1,48 @@
 import { Router } from "express";
-import type { ISystemInfoService } from "@unturned-manager/shared";
+import net from "node:net";
+import type { ISystemInfoService, ISteamCmdManager } from "@unturned-manager/shared";
 import { SystemInfoQuerySchema } from "@unturned-manager/shared";
 import { authenticateToken } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
+/** TCP 探活——5s 超时；返回 { ok, latencyMs, error? } */
+function tcpProbe(
+  host: string,
+  port = 443,
+): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const done = (r: { ok: boolean; latencyMs: number; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(r);
+    };
+    socket.setTimeout(5000);
+    socket.once("connect", () => done({ ok: true, latencyMs: Date.now() - start }));
+    socket.once("timeout", () => done({ ok: false, latencyMs: Date.now() - start, error: "超时" }));
+    socket.once("error", (err) =>
+      done({ ok: false, latencyMs: Date.now() - start, error: err.message }),
+    );
+    socket.connect(port, host);
+  });
+}
+
 /**
- * 主机信息路由——Dashboard 主机信息卡后端支撑。
+ * 系统路由——主机信息 + Steam mod 下载诊断。
  *
- * 端点：GET /api/system/info?serverId=
+ * 端点：
+ * - GET  /info                  主机信息快照
+ * - POST /test-mod-download     Steam mod 下载诊断（网络 + SteamCMD 状态）
  *
- * 与 /api/system/metrics 同级——全进程一份资源，不挂在 /api/servers/:id 下。
  * 鉴权：JWT
- * 入参：query 参数 serverId（可选，仅用于读取该实例端口）
- * 响应：{ data: SystemInfo }
  */
-export function createSystemRouter(systemInfoService: ISystemInfoService): Router {
+export function createSystemRouter(
+  systemInfoService: ISystemInfoService,
+  steamCmdManager: ISteamCmdManager,
+): Router {
   const router = Router();
   router.use(authenticateToken);
 
@@ -23,8 +51,39 @@ export function createSystemRouter(systemInfoService: ISystemInfoService): Route
     asyncHandler(async (req, res) => {
       const parsed = SystemInfoQuerySchema.safeParse(req.query);
       const serverId = parsed.success ? parsed.data.serverId : undefined;
-      const info = await systemInfoService.getSystemInfo(serverId);
-      res.json({ data: info });
+      res.json({ data: await systemInfoService.getSystemInfo(serverId) });
+    }),
+  );
+
+  /**
+   * POST /test-mod-download —— 端到端 Steam mod 下载诊断工具。
+   *
+   * 测三件事：
+   * 1. api.steampowered.com TCP 连通性（元数据 API 是否可达）
+   * 2. steamcontent.com TCP 连通性（内容 CDN 是否可达，这是 GFW 阻断点）
+   * 3. SteamCMD 安装状态 + 版本（看 SteamCMD 是否能起来）
+   *
+   * 注：仅做 TCP 层探活，**不实际下载 mod**——避免重复造测试 mod 占用 staging。
+   * 真实端到端下载测试：去 ModsPage 走真实下载流程。
+   */
+  router.post(
+    "/test-mod-download",
+    asyncHandler(async (_req, res) => {
+      const [apiSteampowered, steamcontent] = await Promise.all([
+        tcpProbe("api.steampowered.com"),
+        tcpProbe("steamcontent.com"),
+      ]);
+      const status = await steamCmdManager.getStatus();
+      res.json({
+        data: {
+          network: { apiSteampowered, steamcontent },
+          steamcmd: {
+            installed: status.isInstalled,
+            version: status.version,
+            installPath: status.installPath,
+          },
+        },
+      });
     }),
   );
 
