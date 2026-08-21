@@ -28,6 +28,27 @@ export function formatBytes(bytes?: number): string {
   return `${value.toFixed(value >= 100 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+/**
+ * 网络速率格式化：bytes/s → "X.X B/s" / "KB/s" / "MB/s"。
+ * Dashboard 系统资源卡网络行使用——首采样空时为 null。
+ *
+ * @param bytesPerSec - 字节每秒；null/undefined/0 → "—"
+ * @returns 紧凑速率字符串
+ *
+ * @example
+ * ```ts
+ * formatRate(1024)        // '1.0 KB/s'
+ * formatRate(12 * 1024 * 1024) // '12.0 MB/s'
+ * formatRate(null)        // '—'
+ * ```
+ */
+export function formatRate(bytesPerSec: number | null | undefined): string {
+  if (bytesPerSec === null || bytesPerSec === undefined || bytesPerSec <= 0) {
+    return "—";
+  }
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
 /** 千分位格式化——仅展示型，StatCard / 表格 / 卡片用；输入框不格式化 */
 export function formatNumber(n: number): string {
   return n.toLocaleString("en-US");

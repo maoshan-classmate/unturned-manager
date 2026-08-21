@@ -95,6 +95,11 @@ export type {
   MetricsResponse,
 } from "./contracts/metrics.js";
 export type {
+  ISystemInfoService,
+  SystemInfo,
+  CpuInfo,
+} from "./contracts/system.js";
+export type {
   IIncidentsService,
   Incident,
   IncidentType,

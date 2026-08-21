@@ -24,6 +24,7 @@ import {
   type IItemService,
   type IMetricsService,
   type IIncidentsService,
+  type ISystemInfoService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -56,6 +57,7 @@ import { LdmPluginCommandsService } from "./modules/ldm/LdmPluginCommandsService
 import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
 import { MetricsService } from "./modules/metrics/MetricsService.js";
 import { IncidentsService } from "./modules/incidents/IncidentsService.js";
+import { SystemInfoService } from "./modules/system/SystemInfoService.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -87,6 +89,7 @@ export interface AppContainer {
   itemService: IItemService;
   metricsService: IMetricsService;
   incidentsService: IIncidentsService;
+  systemInfoService: ISystemInfoService;
 }
 
 export function buildContainer(db: Database.Database): AppContainer {
@@ -158,6 +161,9 @@ export function buildContainer(db: Database.Database): AppContainer {
   // 系统指标采集器——Dashboard 资源图支撑；
   // systeminformation 路线（D2 选项 B）——多实例共装下不分 ServerID
   const metricsService = new MetricsService(logger);
+
+  // 主机信息服务——Dashboard 主机信息卡支撑；构造在 serverManager 之后注入端口来源
+  const systemInfoService = new SystemInfoService(logger, serverManager);
 
   // ── LDM Mod 框架  模块 ─────────────────────────────────
   const ldmVersionReader = new LdmAssemblyVersionReader();
@@ -330,5 +336,6 @@ export function buildContainer(db: Database.Database): AppContainer {
     itemService,
     metricsService,
     incidentsService,
+    systemInfoService,
   };
 }

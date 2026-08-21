@@ -9,10 +9,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { useServer } from "../hooks/useServer.js";
+import { useSystemInfo } from "../hooks/useSystemInfo.js";
 import { apiClient } from "../api/client.js";
 import { StatCard } from "../components/stats/StatCard.js";
 import { StaggerContainer } from "../components/shared/StaggerContainer.js";
 import { SystemMonitorCard } from "../components/dashboard/SystemMonitorCard.js";
+import { SystemInfoCard } from "../components/dashboard/SystemInfoCard.js";
 import { StatusBlock } from "../components/dashboard/StatusBlock.js";
 import { StatusBadge } from "../components/shared/StatusBadge.js";
 import { Button, buttonVariants } from "../components/ui/button.js";
@@ -21,8 +23,9 @@ import { cn, formatStateBadge } from "../lib/utils.js";
 /**
  * Dashboard 页面——Figma 2:2 🎨 Dashboard。
  *
- * 只读概览：4 张 StatCard + 当前实例状态徽章 + 「前往控制台」跳转。
- * 服务器控制类操作（启动/停止/重启/保存命令）只出现在「服务器设置」页的
+ * 只读概览：4 张 StatCard + 当前实例状态徽章 + 「前往服务器设置」跳转 + 实时事件流 + 2×2 资源指标网格 + 主机信息卡。
+ *
+ * 服务端控制类操作（启动/停止/重启/保存命令）只出现在「服务器设置」页的
  * 服务器控制卡片——Dashboard 不重复入口，避免多页面状态不一致。
  */
 export function DashboardPage() {
@@ -47,8 +50,13 @@ export function DashboardPage() {
   }, [server?.id]);
 
   useEffect(() => {
-    fetchModCount();
+    void fetchModCount();
   }, [fetchModCount]);
+
+  // 主机信息——挂当前实例 serverId
+  const { data: systemInfo, loading: systemInfoLoading } = useSystemInfo(
+    server?.id,
+  );
 
   // ── Loading ──
   if (loading) {
@@ -114,7 +122,7 @@ export function DashboardPage() {
   const isTransitioning = state === "STARTING" || state === "STOPPING";
 
   return (
-    <div className="flex flex-col gap-6 h-full">
+    <div className="flex flex-col gap-6">
       {/* ── 页面标题 + 状态徽章 + 跳转入口 ── */}
       <div className="flex items-center justify-between">
         <div>
@@ -127,18 +135,14 @@ export function DashboardPage() {
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge state={state} size="sm" />
             <span className="text-xs" style={{ color: "#64748B" }}>
-              {server.id} · 端口 <span className="font-mono tabular-nums">{server.gamePort}</span>
+              {server.id} · 端口{" "}
+              <span className="font-mono tabular-nums">{server.gamePort}</span>
             </span>
           </div>
         </div>
 
         {/* ── 跳转入口 ── */}
         <div className="flex items-center gap-2">
-          {/*
-           * 复用 buttonVariants 样式——保留 a 链接语义（路由跳转、Cmd+Click 新标签页开），
-           * 不强行用 Button 渲染（base-ui 官方不推荐把 Button render 成 a：链接有独立语义）。
-           * 同一按钮视觉 = 全站视觉一致性闭环。
-           */}
           <a
             href={`/${server.id}/server-setup`}
             className={cn(buttonVariants({ variant: "secondary", size: "default" }))}
@@ -152,7 +156,7 @@ export function DashboardPage() {
       {/* ── Status Block — 实时事件流 ── */}
       <StatusBlock serverId={server.id} />
 
-      {/* ── StatCards (Figma 5:34) ── */}
+      {/* ── StatCards (Figma 5:34) 4 张横排 ── */}
       <StaggerContainer className="grid grid-cols-4 gap-4">
         <StatCard
           icon={Server}
@@ -183,10 +187,14 @@ export function DashboardPage() {
         />
       </StaggerContainer>
 
-      {/* ── 资源使用图 ── */}
-      <div className="flex-1 min-h-[200px]">
-        <SystemMonitorCard serverId={server.id} />
-      </div>
+      {/* ── 资源指标 2×2 网格 — 自适应高度，不撑父级 ── */}
+      <SystemMonitorCard serverId={server.id} />
+
+      {/* ── 主机信息卡 ── */}
+      <SystemInfoCard
+        data={systemInfo}
+        loading={systemInfoLoading}
+      />
     </div>
   );
 }

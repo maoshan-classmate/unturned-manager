@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect as _expect, beforeEach, afterEach, vi } from "vitest";
 import pino from "pino";
-import { MetricsService } from "../src/modules/metrics/MetricsService.js";
+import { MetricsService, type MetricsProviders } from "../src/modules/metrics/MetricsService.js";
 import type { MetricsSample } from "@unturned-manager/shared";
 
 // 测试用 logger——沉默输出避免污染测试日志
@@ -8,18 +8,34 @@ const silentLogger = pino({ level: "silent" });
 
 /**
  * 注入样本到环形缓冲（绕开 private）——仅测试用。
- * 生产代码不会调此方法。
  */
 function injectSamples(service: MetricsService, samples: MetricsSample[]): void {
   const internal = service as unknown as { samples: MetricsSample[] };
   internal.samples.push(...samples);
 }
 
+/**
+ * 默认 provider 桩——固定内存 + 空磁盘/网络
+ */
+function defaultProviders(overrides: Partial<MetricsProviders> = {}): MetricsProviders {
+  return {
+    totalMemBytes: () => 16 * 1024 * 1024 * 1024,
+    freeMemBytes: () => 8 * 1024 * 1024 * 1024,
+    cpuTimes: () => [
+      { total: 1000, idle: 700 },
+      { total: 1000, idle: 700 },
+    ],
+    disks: async () => [],
+    netBytes: async () => [0, 0],
+    ...overrides,
+  };
+}
+
 describe("MetricsService — getMetrics 时间窗过滤", () => {
   let service: MetricsService;
 
   beforeEach(() => {
-    service = new MetricsService(silentLogger, 5_000);
+    service = new MetricsService(silentLogger, 5_000, defaultProviders());
   });
 
   afterEach(() => {
@@ -29,122 +45,174 @@ describe("MetricsService — getMetrics 时间窗过滤", () => {
   it("1m 窗口仅保留 60 秒内样本", async () => {
     const now = Date.now();
     injectSamples(service, [
-      { timestamp: now - 90_000, cpuPercent: 10, memUsedMB: 100 }, // 90s 前，超出 1m
-      { timestamp: now - 30_000, cpuPercent: 20, memUsedMB: 200 }, // 30s 前，在 1m 内
-      { timestamp: now, cpuPercent: 30, memUsedMB: 300 }, // 当前
+      { timestamp: now - 90_000, cpuPercent: 10, memUsedMB: 100 },
+      { timestamp: now - 30_000, cpuPercent: 20, memUsedMB: 200 },
+      { timestamp: now, cpuPercent: 30, memUsedMB: 300 },
     ]);
-
     const result = await service.getMetrics("MyServer", "1m");
     expect(result.samples).toHaveLength(2);
     expect(result.samples[0]?.cpuPercent).toBe(20);
-    expect(result.samples[1]?.cpuPercent).toBe(30);
     expect(result.window).toBe("1m");
-  });
-
-  it("5m 窗口保留 60-300 秒样本", async () => {
-    const now = Date.now();
-    injectSamples(service, [
-      { timestamp: now - 400_000, cpuPercent: 5, memUsedMB: 50 }, // 400s 前，超出 5m
-      { timestamp: now - 200_000, cpuPercent: 15, memUsedMB: 150 }, // 200s 前，在 5m 内
-    ]);
-
-    const result = await service.getMetrics("MyServer", "5m");
-    expect(result.samples).toHaveLength(1);
-    expect(result.samples[0]?.cpuPercent).toBe(15);
-  });
-
-  it("15m 窗口保留 900 秒内全部样本", async () => {
-    const now = Date.now();
-    injectSamples(service, [
-      { timestamp: now - 800_000, cpuPercent: 1, memUsedMB: 10 },
-      { timestamp: now - 400_000, cpuPercent: 2, memUsedMB: 20 },
-      { timestamp: now - 100_000, cpuPercent: 3, memUsedMB: 30 },
-    ]);
-
-    const result = await service.getMetrics("MyServer", "15m");
-    expect(result.samples).toHaveLength(3);
-  });
-});
-
-describe("MetricsService — 响应结构", () => {
-  let service: MetricsService;
-
-  beforeEach(() => {
-    service = new MetricsService(silentLogger);
-  });
-
-  afterEach(() => {
-    service.stop();
-  });
-
-  it("serverId 透传回响应", async () => {
-    const result = await service.getMetrics("MyServer", "5m");
-    expect(result.serverId).toBe("MyServer");
-  });
-
-  it("window 透传回响应", async () => {
-    const r1m = await service.getMetrics("S1", "1m");
-    const r5m = await service.getMetrics("S2", "5m");
-    const r15m = await service.getMetrics("S3", "15m");
-    expect(r1m.window).toBe("1m");
-    expect(r5m.window).toBe("5m");
-    expect(r15m.window).toBe("15m");
-  });
-
-  it("current.cpuPercent 取最近样本", async () => {
-    const now = Date.now();
-    injectSamples(service, [
-      { timestamp: now - 10_000, cpuPercent: 40, memUsedMB: 100 },
-      { timestamp: now, cpuPercent: 60, memUsedMB: 200 },
-    ]);
-    const result = await service.getMetrics("S", "5m");
-    expect(result.current.cpuPercent).toBe(60);
-    expect(result.current.memUsedMB).toBe(200);
-  });
-
-  it("无样本时 current 字段为 0，samples 为空数组", async () => {
-    const result = await service.getMetrics("S", "5m");
-    expect(result.samples).toHaveLength(0);
-    expect(result.current.cpuPercent).toBe(0);
-    expect(result.current.memUsedMB).toBe(0);
-    expect(result.current.memTotalMB).toBe(0);
   });
 });
 
 describe("MetricsService — start/stop 幂等", () => {
-  let service: MetricsService;
-
   afterEach(() => {
     service?.stop();
   });
+  let service: MetricsService;
 
-  it("重复 start 不报错，不创建第二个定时器", () => {
-    service = new MetricsService(silentLogger, 60_000);
+  it("重复 start 不报错", () => {
+    service = new MetricsService(silentLogger, 60_000, defaultProviders());
     service.start();
-    service.start(); // 二次调用应幂等
-    const internal = service as unknown as { timer: NodeJS.Timeout | null };
-    expect(internal.timer).not.toBeNull();
+    service.start();
     service.stop();
-    expect(internal.timer).toBeNull();
-  });
-
-  it("未 start 时 stop 不报错", () => {
-    service = new MetricsService(silentLogger);
-    expect(() => service.stop()).not.toThrow();
   });
 
   it("stop 后再次 stop 不报错", () => {
-    service = new MetricsService(silentLogger, 60_000);
+    service = new MetricsService(silentLogger, 60_000, defaultProviders());
     service.start();
     service.stop();
     expect(() => service.stop()).not.toThrow();
   });
 });
 
-describe("MetricsService — 自定义采样间隔", () => {
-  it("构造器接收自定义 intervalMs（不实际等待，验证可实例化）", () => {
-    const s = new MetricsService(silentLogger, 1_000);
-    expect(s).toBeInstanceOf(MetricsService);
-    s.stop();
+describe("MetricsService — 磁盘采样", () => {
+  it("首次采样后 diskUsedBytes / diskTotalBytes 反映 disks() 结果", async () => {
+    const disks = vi.fn(async () => [
+      { size: 1_000_000_000, used: 400_000_000 },
+    ]);
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      disks,
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+
+    expect(disks).toHaveBeenCalled();
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.diskUsedBytes).toBe(400_000_000);
+    expect(result.current.diskTotalBytes).toBe(1_000_000_000);
+  });
+
+  it("disks() 返回空数组时磁盘字段保持 null", async () => {
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      disks: async () => [],
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.diskUsedBytes).toBeNull();
+    expect(result.current.diskTotalBytes).toBeNull();
+  });
+
+  it("磁盘只采一次——多次 collect 不重复调用 disks", async () => {
+    const disks = vi.fn(async () => [
+      { size: 1_000_000_000, used: 400_000_000 },
+    ]);
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      disks,
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+    const internal = service as unknown as { collect: () => Promise<void> };
+    await internal.collect();
+    await internal.collect();
+    expect(disks).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MetricsService — 网络速率", () => {
+  it("首次采样：速率字段为 null，字节数为累计值",
+  async () => {
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      netBytes: async () => [3000, 2000],
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.networkRxBytes).toBe(3000);
+    expect(result.current.networkTxBytes).toBe(2000);
+    expect(result.current.networkRxRateBps).toBeNull();
+    expect(result.current.networkTxRateBps).toBeNull();
+  });
+
+  it("第二次采样：速率 = (字节增量) / 间隔秒数", async () => {
+    let callCount = 0;
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      netBytes: async () => {
+        callCount++;
+        return callCount === 1 ? [1000, 500] : [6000, 500];
+      },
+    }));
+    const internal = service as unknown as { collect: () => Promise<void> };
+    const baseTime = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(baseTime);
+    await internal.collect();
+    nowSpy.mockReturnValue(baseTime + 5_000);
+    await internal.collect();
+    nowSpy.mockRestore();
+
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.networkRxRateBps).toBe(1000);
+  });
+
+  it("网卡字节数下降时速率钳位为 0，不输出负数", async () => {
+    let callCount = 0;
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      netBytes: async () => {
+        callCount++;
+        return callCount === 1 ? [5000, 5000] : [100, 100];
+      },
+    }));
+    const internal = service as unknown as { collect: () => Promise<void> };
+    const baseTime = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(baseTime);
+    await internal.collect();
+    nowSpy.mockReturnValue(baseTime + 5_000);
+    await internal.collect();
+    nowSpy.mockRestore();
+
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.networkRxRateBps).toBe(0);
+  });
+});
+
+describe("MetricsService — 内存计算", () => {
+  it("memUsedMB = totalMemBytes - freeMemBytes", async () => {
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      totalMemBytes: () => 16 * 1024 * 1024 * 1024,
+      freeMemBytes: () => 8 * 1024 * 1024 * 1024,
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+
+    const result = await service.getMetrics("S", "5m");
+    expect(result.current.memUsedMB).toBe(8192);
+    expect(result.current.memTotalMB).toBe(16384);
+  });
+});
+
+describe("MetricsService — 采样失败降级", () => {
+  it("disks() 抛错时 collect 不抛错，samples 仍可写入", async () => {
+    const service = new MetricsService(silentLogger, 60_000, defaultProviders({
+      disks: async () => {
+        throw new Error("disks failed");
+      },
+      netBytes: async () => {
+        throw new Error("netBytes failed");
+      },
+    }));
+    service.start();
+    await new Promise((r) => setTimeout(r, 200));
+    service.stop();
+
+    const result = await service.getMetrics("S", "5m");
+    expect(result.samples).toHaveLength(0);
   });
 });

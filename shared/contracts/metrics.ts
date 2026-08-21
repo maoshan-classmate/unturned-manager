@@ -25,6 +25,14 @@ export interface MetricsSample {
   cpuPercent: number;
   /** 内存已用量（MB） */
   memUsedMB: number;
+  /** 全网卡累计接收字节数（首次采样存基线） */
+  networkRxBytes: number | null;
+  /** 全网卡累计发送字节数 */
+  networkTxBytes: number | null;
+  /** 接收速率（字节/秒）；首次采样为空 */
+  networkRxRateBps: number | null;
+  /** 发送速率（字节/秒）；首次采样为空 */
+  networkTxRateBps: number | null;
 }
 
 /** 当前实时值（最近一次采样 + 内存总量） */
@@ -35,6 +43,16 @@ export interface MetricsCurrent {
   memUsedMB: number;
   /** 系统总内存（MB）—— 容器/宿主视角 */
   memTotalMB: number;
+  /** 磁盘已用字节数（启动时一次性读取） */
+  diskUsedBytes: number | null;
+  /** 磁盘总字节数 */
+  diskTotalBytes: number | null;
+  /** 网络累计字节数（基线） */
+  networkRxBytes: number | null;
+  networkTxBytes: number | null;
+  /** 网络瞬时速率（字节/秒）；首次采样为空 */
+  networkRxRateBps: number | null;
+  networkTxRateBps: number | null;
 }
 
 /** 指标响应 */
