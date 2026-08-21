@@ -1,1 +1,0 @@
-Figma 文件 `unturned-manager` 含 18 张 Page（v1 用 8 个：Dashboard `2:2` / Console `2:3` / Mods `2:4` / Players `2:5` / Config `2:6` / Server Setup `3:117` / Files `12:16326` / System Settings `23:19917`）+ Components 页 + 7 张 shadcn-ui 参考 + Icon Refs。**Why:** 设计源头必须用真 Figma 节点（figwright MCP），不能用 PNG 截图估。**How to apply:** 实现任何 UI 时先查 `docs/architecture/design-system-mapping.md`，那是结构化权威。

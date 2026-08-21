@@ -1,61 +1,82 @@
-# Dependencies
+# ─── 依赖 ───
 node_modules/
+.pnpm-store/
 
-# Environment
+# ─── 包管理器 ───
+# 本项目统一使用 npm，只保留 package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# ─── 环境变量与密钥 ───
+# 只有 .env.example 模板入库，真实配置永不提交
 .env
 .env.local
 .env.production
+.env.*.local
 
-# Database
+# ─── 构建产物 ───
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# ─── 数据库 ───
 data/
 *.db
 *.db-shm
 *.db-wal
 
-# Docker compose bind-mount 宿主目录（运行时数据，不入库）
+# ─── 运行时数据目录 ───
+# Docker 宿主挂载点、服务端实例数据、自动备份
 /opt/
 /steamcmd/
+/Servers/
+test-servers/
+backups/
+manager-server/backups/
 
-# Build
-dist/
-.vite/
+# ─── 配置备份 ───
+# 面板写配置前自动生成的时间戳副本
+*.bak.*
 
-# IDE
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Playwright (test artifacts)
+# ─── 测试产物 ───
+coverage/
 .playwright-mcp/
+.test-install/
+manager-server/.test-install/
 manager-server/test-results/
 manager-web/test-results/
 manager-server/playwright-report/
 manager-web/playwright-report/
+
+# ─── 日志 ───
 *.log
 
-# Test fixtures (B2 目录真源测试）
-.test-install/
+# ─── 编辑器 ───
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# 用户本地输入（BUG 汇总等，不入库）
-*BUG汇总*.txt
-
-
-# Backups (server-side auto-backups, never tracked)
-manager-server/backups/
-backups/
-# Test fixtures (ADR-0003: INSTALL_DIR 指向本项目临时目录，绝不入库)
-manager-server/.test-install/
-
-# Debug
+# ─── 操作系统 ───
+.DS_Store
+Thumbs.db
 *.stackdump
 
-# Research (read-only third-party)
+# ─── 只读第三方参考仓 ───
 .research/
 
-# Serena (only ignore tool configs, keep project memories)
-.serena/*
-!.serena/memories/
+# ─── 开发工具本地数据 ───
+# 会话记忆与本地权限配置属于个人开发环境，不随仓库分发
+.serena/
+memory/
+.claude/settings.local.json
+
+# ─── 一次性调研产出 ───
+# reference_*.md 是活参考文档，保留入库
+claudedocs/research_*.md
+claudedocs/workflow_*.md
+claudedocs/archive/
+
+# ─── 用户本地输入 ───
+*BUG汇总*.txt

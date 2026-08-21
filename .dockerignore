@@ -12,16 +12,35 @@
 .research
 test-servers
 .test-install
+**/coverage
+
+# ── 文档 / 开发工具数据（不参与构建）──
+docs
+claudedocs
+.claude
+.serena
+memory
+*.md
+
+# ── 编辑器 ──
+.idea
+.vscode
 
 # ── Docker compose bind-mount 宿主目录（运行时数据，不进构建上下文）──
 # ⚠️ 必须用 / 锚定根目录：裸 `steamcmd` 会误排除 manager-server/src/modules/steamcmd 源码
 /data
 /opt
 /steamcmd
+/backups
 
 # ── VCS ──
 .git
 .gitignore
+.gitattributes
+
+# ── 其他包管理器锁文件（本项目用 npm）──
+pnpm-lock.yaml
+yarn.lock
 
 # ── 日志 / 测试报告 ──
 *.log

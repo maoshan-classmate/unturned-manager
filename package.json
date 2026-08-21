@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "Unturned 3.x Linux 专用服务器 Web 管理面板",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "shared",
     "manager-server",
