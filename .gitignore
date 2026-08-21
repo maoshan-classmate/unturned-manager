@@ -71,12 +71,13 @@ Thumbs.db
 .serena/
 memory/
 .claude/settings.local.json
+# 代码注释历史检测关键词表——本地规则调整，不随仓库分发
+.claude/hooks/md/comment-history-keywords.json
 
-# ─── 一次性调研产出 ───
-# reference_*.md 是活参考文档，保留入库
-claudedocs/research_*.md
-claudedocs/workflow_*.md
-claudedocs/archive/
+# ─── 内部文档 ───
+# 架构文档与调研/工作流文档属内部资料，不随仓库分发
+docs/
+claudedocs/
 
 # ─── 用户本地输入 ───
 *BUG汇总*.txt
