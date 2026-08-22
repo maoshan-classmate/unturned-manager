@@ -155,7 +155,7 @@ app.use("/api/items", createItemsRouter(container.itemService));
 // 系统指标（Dashboard 资源图后端支撑）——全进程一份资源，与 u3ds/steamcmd/items 等全局端点同级
 app.use("/api/system/metrics", createMetricsRouter(container.metricsService));
 // 主机信息（Dashboard 主机信息卡后端支撑）——与 metrics 同级
-app.use("/api/system/info", createSystemRouter(container.systemInfoService));
+app.use("/api/system", createSystemRouter(container.systemInfoService));
 app.use("/api/system", createSystemDiagnosticsRouter(container.steamCmdManager));
 // ServerID 事件流（Status Block 后端支撑）——按 ServerID 嵌套路由，与 ldm 同模式
 app.use(

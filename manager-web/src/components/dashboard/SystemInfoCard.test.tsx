@@ -22,16 +22,14 @@ function makeInfo(overrides: Partial<SystemInfo> = {}): SystemInfo {
 }
 
 describe("SystemInfoCard", () => {
-  it("正常渲染：8 项字段齐全", () => {
+  it("正常渲染：6 项字段齐全", () => {
     render(<SystemInfoCard data={makeInfo()} />);
 
     expect(screen.getByText("主机信息")).toBeTruthy();
     expect(screen.getByText("Debian GNU/Linux 12")).toBeTruthy();
     expect(screen.getByText("x64")).toBeTruthy();
-    expect(screen.getByText("6.1.0-13-amd64")).toBeTruthy();
     expect(screen.getByText("host-01")).toBeTruthy();
     expect(screen.getByText("Intel Xeon")).toBeTruthy();
-    expect(screen.getByText("16384 MB")).toBeTruthy();
     expect(screen.getByText("游戏 27015 / 查询 27016")).toBeTruthy();
     expect(screen.getByText("linux")).toBeTruthy();
   });
@@ -72,7 +70,7 @@ describe("SystemInfoCard", () => {
       />,
     );
     const unknowns = screen.getAllByText("未知");
-    expect(unknowns.length).toBeGreaterThanOrEqual(4);
+    expect(unknowns.length).toBeGreaterThanOrEqual(3);
   });
 
   it("loading=true 但已有 data：仍渲染完整字段（不显示加载中）", () => {

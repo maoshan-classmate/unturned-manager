@@ -68,12 +68,17 @@ export function SystemInfoCard({ data, loading }: SystemInfoCardProps) {
   return (
     <Card icon={Server} title="主机信息">
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
-        <InfoRow label="操作系统" value={data?.distro ? `${data.distro} ${data.release}` : ""} />
+        <InfoRow
+          label="操作系统"
+          value={
+            data?.distro
+              ? `${data.distro} ${data.release}`.trim()
+              : (data?.kernel ?? data?.platform ?? "")
+          }
+        />
         <InfoRow label="架构" value={data?.arch} />
-        <InfoRow label="内核" value={data?.kernel} />
         <InfoRow label="主机名" value={data?.hostname} />
         <InfoRow label="CPU" value={data?.cpu?.brand} />
-        <InfoRow label="内存" value={data?.memTotalMB !== undefined ? `${data.memTotalMB} MB` : ""} />
         <InfoRow label="监听" value={portsDisplay} />
         <InfoRow label="平台" value={data?.platform} />
       </dl>

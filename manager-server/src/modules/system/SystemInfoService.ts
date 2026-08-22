@@ -1,9 +1,11 @@
 import type { Logger } from "pino";
 import os from "node:os";
+import net from "node:net";
 import { promises as fs, readFileSync } from "node:fs";
 import type {
   ISystemInfoService,
   SystemInfo,
+  ServerId,
 } from "@unturned-manager/shared";
 import type { IServerManager } from "@unturned-manager/shared";
 
@@ -81,21 +83,37 @@ export class SystemInfoService implements ISystemInfoService {
     const kernel = this.providers.kernel();
 
     // Linux 容器 os.release() 通常空 / os.platform() 只能给"linux"——
-    // distro 信息靠读 /etc/os-release
+    // distro 信息靠读 /etc/os-release；非 Linux 平台走友好名兜底。
     const osRelease = await this.safeLinuxOsRelease(platform);
-    const distro = osRelease?.distro ?? "";
-    const release = osRelease?.release ?? "";
 
     const cpu = this.providers.cpu();
     const memTotalMB = Math.round((this.providers.memTotal() / (1024 * 1024)) * 10) / 10;
+
+    // 非 Linux 平台兜底：把 kernel 推断成友好的产品名，避免操作系统字段与内核字段重复。
+    // Windows 内核版本号即 Windows build 号（"10.0.26200"）——映射到「Windows 11 / 10」。
+    let distro = osRelease?.distro ?? "";
+    let release = osRelease?.release ?? "";
+    if (!distro) {
+      const friendly = this.friendlyDistro(platform, kernel);
+      distro = friendly.distro;
+      release = friendly.release;
+    }
 
     let gamePort: number | null = null;
     let queryPort: number | null = null;
     if (serverId) {
       const cfg = await this.findServerConfig(serverId);
       if (cfg) {
-        gamePort = cfg.gamePort;
-        queryPort = cfg.gamePort + 1;
+        // 实时探测：仅实例 RUNNING 时返回当前监听端口；
+        // STOPPED / 端口未监听 / 探测失败均返回 null——避免显示陈旧配置。
+        const state = await this.serverManager.getState(serverId as ServerId);
+        if (state === "RUNNING") {
+          const live = await this.probeListeningPort(cfg.gamePort);
+          if (live !== null) {
+            gamePort = live;
+            queryPort = live + 1;
+          }
+        }
       }
     }
 
@@ -154,6 +172,51 @@ export class SystemInfoService implements ISystemInfoService {
       this.logger.warn({ err, serverId }, "读取实例列表失败");
       return null;
     }
+  }
+
+  /**
+   * TCP 探活——确认目标端口是否被实际监听。
+   * 2 秒超时；成功返回端口号，失败（含超时 / 连接拒绝 / 主机不可达）返回 null。
+   * 仅 127.0.0.1——容器内的 U3DS 监听 loopback。
+   */
+  private async probeListeningPort(port: number): Promise<number | null> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let settled = false;
+      const done = (p: number | null) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(p);
+      };
+      socket.setTimeout(2000);
+      socket.once("connect", () => done(port));
+      socket.once("timeout", () => done(null));
+      socket.once("error", () => done(null));
+      socket.connect(port, "127.0.0.1");
+    });
+  }
+
+  /**
+   * 非 Linux 平台的产品名兜底——避免前端把 kernel 字段同时塞进「操作系统」和「内核」两行造成重复。
+   * Windows 上 `os.release()` 返回 "10.0.{build}"，build 号决定 Win10 / Win11：
+   *   - ≥ 22000 → Windows 11
+   *   - ≥ 10240 → Windows 10
+   * 未知平台回退到原始 platform 字符串。
+   */
+  private friendlyDistro(
+    platform: string,
+    kernel: string,
+  ): { distro: string; release: string } {
+    if (platform === "win32") {
+      const buildMatch = kernel.match(/\.(\d+)$/);
+      const build = buildMatch ? parseInt(buildMatch[1] ?? "0", 10) : 0;
+      const winVersion = build >= 22000 ? "Windows 11" : build >= 10240 ? "Windows 10" : "Windows";
+      return { distro: winVersion, release: kernel };
+    }
+    if (platform === "darwin") return { distro: "macOS", release: kernel };
+    if (platform === "freebsd") return { distro: "FreeBSD", release: kernel };
+    return { distro: platform, release: kernel };
   }
 }
 
