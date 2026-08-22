@@ -87,7 +87,7 @@ export function ServersProvider({ children }: { children: ReactNode }) {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { subscribe } = useWebSocket();
+  const { subscribe, connected } = useWebSocket();
 
   const refresh = useCallback(async () => {
     try {
@@ -118,6 +118,16 @@ export function ServersProvider({ children }: { children: ReactNode }) {
     });
     return unsubscribe;
   }, [subscribe]);
+
+  // WS 重连后强制重拉——断开期间的状态变更丢失（gateway 没有 state_change 缓冲），
+  // 重连瞬间拉一次 GET /servers 与内存态对齐。
+  // connected 初值=false（WebSocketContext 等待 useAuth=true 才 connect），首次连上 false→true 也走一次，
+  // 与挂载时的 refresh() 重复但幂等。
+  useEffect(() => {
+    if (connected) {
+      void refresh();
+    }
+  }, [connected, refresh]);
 
   const addServer = useCallback(
     async (server: CreateServerPayload) => {

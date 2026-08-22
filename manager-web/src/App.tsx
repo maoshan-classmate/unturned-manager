@@ -56,7 +56,10 @@ function AppLayout() {
 }
 
 /**
- * AppLayout 内层——ServersProvider 数据稳定后再挂 WebSocketProvider + 路由。
+ * AppLayout 内层——ServersProvider 数据稳定后再挂路由。
+ * WebSocketProvider 已上移到 App 顶层（必须在 AuthProvider 内、ServersProvider 外——
+ * 否则 ServersContext 的 useWebSocket 命中默认值 no-op subscribe，
+ * state_change 监听器永远不触达真实 listenersRef）。
  * 实例列表由 Provider 在 AppLayout 顶层挂载一次，路由切换不会重 mount。
  */
 function AppLayoutContent() {
@@ -67,8 +70,7 @@ function AppLayoutContent() {
   }
 
   return (
-    <WebSocketProvider>
-      <div className="flex h-screen bg-slate-900">
+    <div className="flex h-screen bg-slate-900">
         <Sidebar />
         <main className="flex-1 overflow-auto">
           <div className="h-full px-6 py-6">
@@ -112,17 +114,18 @@ function AppLayoutContent() {
           </div>
         </main>
       </div>
-    </WebSocketProvider>
   );
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/*" element={<AppLayout />} />
-      </Routes>
-      <Toaster />
+      <WebSocketProvider>
+        <Routes>
+          <Route path="/*" element={<AppLayout />} />
+        </Routes>
+        <Toaster />
+      </WebSocketProvider>
     </AuthProvider>
   );
 }
