@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { apiClient, setAccessToken } from '../api/client.js';
+import { apiClient, setAccessToken, refreshAccessToken, getTokenJti } from '../api/client.js';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -32,16 +32,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     refreshingRef.current = true;
 
-    apiClient.post('/auth/refresh', { refreshToken })
-      .then(({ data }) => {
-        setAccessToken(data.data.accessToken);
-        localStorage.setItem('refreshToken', data.data.refreshToken);
-        setState({ isAuthenticated: true, username: null, restoring: false });
-      })
-      .catch(() => {
-        localStorage.removeItem('refreshToken');
-        setState({ isAuthenticated: false, username: null, restoring: false });
-      });
+    refreshAccessToken().then((token) => {
+      setState({ isAuthenticated: !!token, username: null, restoring: false });
+    });
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
@@ -53,8 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const refreshToken = localStorage.getItem('refreshToken');
+    const jti = refreshToken ? getTokenJti(refreshToken) : null;
     try {
-      await apiClient.post('/auth/logout', { refreshJti: refreshToken });
+      if (jti) {
+        await apiClient.post('/auth/logout', { refreshJti: jti });
+      }
     } catch {
       // 即使服务端注销失败，也清除本地状态
     }
