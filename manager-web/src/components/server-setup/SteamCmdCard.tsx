@@ -6,6 +6,7 @@ import { Button } from "../ui/button.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
 import { apiClient } from "@/api/client";
 import { useSteamCmdProgress } from "@/hooks/useSteamCmdProgress";
+import { TaskLogPanel } from "./TaskLogPanel.js";
 import { SteamCmdPathDialog } from "./SteamCmdPathDialog.js";
 
 interface SteamCmdStatus {
@@ -140,6 +141,17 @@ export function SteamCmdCard({ status, onStatusChange }: SteamCmdCardProps) {
             {data.isInstalled ? "重装 SteamCMD" : "安装 SteamCMD"}
           </Button>
         </div>
+
+        {/* 实时输出——重装过程逐行显示，不用猜面板是不是卡住了 */}
+        <TaskLogPanel
+          jobIds={
+            status?.installPath
+              ? [`steamcmd-reinstall-${status.installPath}`]
+              : []
+          }
+          title={data.isInstalled ? "重装过程" : "安装过程"}
+          emptyHint="点击上方按钮后，这里会实时显示执行过程"
+        />
       </Card>
 
       <SteamCmdPathDialog
