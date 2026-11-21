@@ -134,6 +134,20 @@ export function createSteamCmdRouter(
     }),
   );
 
+  // 任务输出回看——面板刷新页面后用它取回历史输出。
+  // 任务标识里含安装路径（如 steamcmd-install-/opt/unturned），带斜杠，
+  // 放路径段会被路由拆开，所以走查询参数。
+  router.get(
+    "/jobs/log",
+    asyncHandler(async (req, res) => {
+      const jobId = String(req.query.jobId ?? "");
+      if (!jobId) {
+        throw new AppError("job-id-required", "缺少任务标识", 400);
+      }
+      res.json({ data: steamCmdManager.getJobLog(jobId) });
+    }),
+  );
+
   // 前端 SteamCmdPathDialog 路径编辑端点。
   // 设置后 SteamCmdManager 用它解析可执行（resolveExecutable），重启回落 STEAMCMD_DIR env。
   router.patch(

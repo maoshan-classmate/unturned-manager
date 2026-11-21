@@ -13,6 +13,7 @@ import { Button } from "../ui/button.js";
 import { ConfirmDialog } from "../shared/ConfirmDialog.js";
 import { apiClient } from "@/api/client";
 import { useSteamCmdProgress } from "@/hooks/useSteamCmdProgress";
+import { TaskLogPanel } from "./TaskLogPanel.js";
 
 // 注：U3dsStatus 类型从 @unturned-manager/shared 导入（shared/types/domain.ts）——
 // 与后端 U3dsStatusProvider 返回的契约是同一份，避免前后端漂移
@@ -313,6 +314,16 @@ export function U3dsCard({ status, onStatusChange }: U3dsCardProps) {
             </Button>
           )}
         </div>
+
+        {/* 实时输出——安装与更新过程逐行显示 */}
+        <TaskLogPanel
+          jobIds={[
+            `steamcmd-install-${data.installPath}`,
+            `steamcmd-update-${data.installPath}`,
+          ]}
+          title="安装过程"
+          emptyHint="点击「安装 Unturned 服务端」后，这里会实时显示执行过程"
+        />
       </Card>
 
       <ConfirmDialog

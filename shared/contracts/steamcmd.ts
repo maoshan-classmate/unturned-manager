@@ -1,7 +1,44 @@
 import type { SteamCmdStatus } from "../types/domain.js";
 
+/** 任务输出中的一行 */
+export interface SteamCmdJobLogLine {
+  /** 行序号——同一任务内从 0 递增，用于把实时推送与历史回看两份数据对齐 */
+  seq: number;
+  /** 输出文本（SteamCMD 原文或面板生成的中文步骤说明） */
+  text: string;
+}
+
+/**
+ * 一个长任务（安装 / 更新 / 重装 / 检查）的输出快照。
+ * 前端「任务输出」面板用它回看历史——刷新页面后仍能看到上次跑到哪一步。
+ */
+export interface SteamCmdJobLog {
+  /** 任务标识 */
+  jobId: string;
+  /** 输出行（按发生顺序） */
+  lines: SteamCmdJobLogLine[];
+  /** 最新阶段 */
+  stage?: string;
+  /** 最新进度百分比（0-100） */
+  percent?: number;
+  /** 任务是否已结束（完成或失败） */
+  finished: boolean;
+  /** 失败原因（仅失败时有值） */
+  errorMessage?: string;
+  /** 任务开始时间 */
+  startedAt: string;
+}
+
 export interface ISteamCmdManager {
   getStatus(): Promise<SteamCmdStatus>;
+  /**
+   * 读取某个任务的输出快照。
+   * 面板刷新页面后用它回看历史输出——任务缓冲在面板进程内存中，重启即丢。
+   *
+   * @param jobId - 任务标识（如 `steamcmd-install-/opt/unturned`）
+   * @returns 输出快照；任务从未出现过时返回空快照，不抛错
+   */
+  getJobLog(jobId: string): SteamCmdJobLog;
   /** 运行时设置 SteamCMD 安装目录（前端路径编辑 dialog；内存态，重启回落 STEAMCMD_DIR env） */
   setInstallPath(installPath: string): void;
   install(installDir: string): Promise<void>;

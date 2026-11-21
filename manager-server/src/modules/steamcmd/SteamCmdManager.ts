@@ -12,6 +12,8 @@ import type {
   IProcessSupervisor,
   IBroadcaster,
   SteamCmdStatus,
+  SteamCmdJobLog,
+  SteamCmdJobLogLine,
   ServerId,
 } from "@unturned-manager/shared";
 import { logger } from "../../utils/logger.js";
@@ -83,11 +85,38 @@ function translateSteamCmdError(rawError: string): string {
 const UPDATE_TIMEOUT_MS = 30 * 60 * 1000;
 const DOWNLOAD_TIMEOUT_MS = 60 * 60 * 1000;
 
+/** 单个任务保留的最大输出行数（超出丢弃最早的行） */
+const MAX_JOB_LOG_LINES = 500;
+/** 同时保留的任务输出快照数量（超出丢弃最早创建的任务） */
+const MAX_JOB_LOGS = 20;
+/** 下载空闲超时（毫秒）——连上后长时间收不到数据就放弃，换下一个源 */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 90_000;
+
+/**
+ * 单个任务的输出缓冲（内存态——面板重启即丢）。
+ * lines 里的行带递增序号，前端据此把「实时推送」与「历史回看」对齐。
+ */
+interface JobLogEntry {
+  lines: SteamCmdJobLogLine[];
+  /** 下一行的序号 */
+  nextSeq: number;
+  stage?: string;
+  percent?: number;
+  finished: boolean;
+  errorMessage?: string;
+  startedAt: string;
+}
+
 // ─── 实现 ────────────────────────────────────────────────
 
 export class SteamCmdManager implements ISteamCmdManager {
   /** 当前正在跑的 steamcmd 子进程写目录集合（防同一目录并发写入竞态） */
   private activeJobs = new Set<string>();
+  /**
+   * 任务输出缓冲——按任务标识存最近若干行输出与最新状态。
+   * 供前端「任务输出」面板实时渲染 + 刷新页面后回看历史。
+   */
+  private jobLogs = new Map<string, JobLogEntry>();
   /**
    * mod 下载按 staging 串行排队（per-staging FIFO）。
    * 同 staging 连点 N 个 mod 全部进队，等前一个跑完再接力。
@@ -252,6 +281,11 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     callbacks?.onStatusChange?.("spawned");
     this.broadcastProgressWithJobId(jobId, 0, "spawned");
+    this.broadcastJobOutput(
+      jobId,
+      "正在下载 Unturned 服务端（约 10GB），请耐心等待…",
+      "spawned",
+    );
 
     // 3. spawn（失败同步抛 → route 转 500；锁在此释放）
     try {
@@ -287,12 +321,8 @@ export class SteamCmdManager implements ISteamCmdManager {
       const { stage, percent } = this.parseProgressLine(line);
       callbacks?.onProgress?.(percent ?? 0);
       callbacks?.onStatusChange?.(stage);
-      this.broadcaster.broadcast({
-        type: "steamcmd_progress",
-        jobId,
-        stage,
-        percent,
-      });
+      // 原始输出行一并广播——面板能显示 SteamCMD 真实说了什么
+      this.broadcastJobOutput(jobId, line, stage, percent);
     });
 
     // 5. 后台收尾：等待退出 → 清临时脚本 → 验证启动脚本 → 广播 completed/failed → 释放锁
@@ -328,6 +358,7 @@ export class SteamCmdManager implements ISteamCmdManager {
 
         callbacks?.onStatusChange?.("completed");
         this.broadcastProgressWithJobId(jobId, 100, "completed");
+        this.broadcastJobOutput(jobId, "Unturned 服务端安装完成", "completed", 100);
         this.loggerUpdate().info(
           { installDir, script },
           "SteamCMD install 完成",
@@ -343,6 +374,11 @@ export class SteamCmdManager implements ISteamCmdManager {
           0,
           "failed",
           errorMessage,
+        );
+        this.broadcastJobOutput(
+          jobId,
+          `Unturned 服务端安装失败：${errorMessage ?? "未知原因"}`,
+          "failed",
         );
         this.loggerUpdate().error({ err, installDir }, "SteamCMD install 失败");
       } finally {
@@ -396,8 +432,104 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
   }
 
+  /**
+   * 取出（必要时创建）某个任务的输出缓冲。
+   * 任务数超上限时丢弃最早创建的那个——避免长时间运行后内存无限增长。
+   */
+  private ensureJobLog(jobId: string): JobLogEntry {
+    const existing = this.jobLogs.get(jobId);
+    if (existing) return existing;
+
+    const entry: JobLogEntry = {
+      lines: [],
+      nextSeq: 0,
+      finished: false,
+      startedAt: new Date().toISOString(),
+    };
+    this.jobLogs.set(jobId, entry);
+    while (this.jobLogs.size > MAX_JOB_LOGS) {
+      const oldest = this.jobLogs.keys().next().value;
+      if (oldest === undefined || oldest === jobId) break;
+      this.jobLogs.delete(oldest);
+    }
+    return entry;
+  }
+
+  /**
+   * 记录一行任务输出并广播。
+   * 输出既进内存缓冲（供面板回看历史），也通过实时通道推给前端面板。
+   *
+   * @param jobId - 任务标识
+   * @param text - 输出文本（SteamCMD 原文或中文步骤说明）
+   * @param stage - 伴随的阶段标识；不传则沿用任务当前阶段
+   * @param percent - 伴随的进度百分比
+   */
+  private broadcastJobOutput(
+    jobId: string,
+    text: string,
+    stage?: string,
+    percent?: number,
+  ): void {
+    const line = text.replace(/\s+$/, "");
+    if (!line) return;
+
+    const entry = this.ensureJobLog(jobId);
+    const seq = entry.nextSeq++;
+    entry.lines.push({ seq, text: line });
+    if (entry.lines.length > MAX_JOB_LOG_LINES) {
+      entry.lines.splice(0, entry.lines.length - MAX_JOB_LOG_LINES);
+    }
+    if (stage != null) entry.stage = stage;
+    if (percent != null) entry.percent = percent;
+    // 结束状态也在这里标记一次——检查更新的完成通知走的是输出行，
+    // 不经过进度广播，少了这一步历史快照会一直显示「进行中」。
+    if (stage === "completed" || stage === "failed") entry.finished = true;
+
+    try {
+      this.broadcaster.broadcast({
+        type: "steamcmd_progress",
+        jobId,
+        stage: stage ?? entry.stage ?? "spawned",
+        ...(percent != null ? { percent } : {}),
+        line,
+        lineSeq: seq,
+      });
+    } catch {
+      /* noop */
+    }
+  }
+
+  /**
+   * 读取某个任务的输出快照。
+   * 任务从未出现过时返回空快照——不抛错，前端拿不到历史就显示空态。
+   *
+   * @param jobId - 任务标识
+   * @returns 输出快照（含输出行与最新状态）
+   */
+  getJobLog(jobId: string): SteamCmdJobLog {
+    const entry = this.jobLogs.get(jobId);
+    if (!entry) {
+      return {
+        jobId,
+        lines: [],
+        finished: false,
+        startedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      jobId,
+      lines: entry.lines.map((line) => ({ ...line })),
+      ...(entry.stage ? { stage: entry.stage } : {}),
+      ...(entry.percent != null ? { percent: entry.percent } : {}),
+      finished: entry.finished,
+      ...(entry.errorMessage ? { errorMessage: entry.errorMessage } : {}),
+      startedAt: entry.startedAt,
+    };
+  }
+
   /** 广播带 jobId 的进度事件（多任务并发隔离）。
-   *  签名 (jobId, percent, label)；errorMessage 仅 failed 时携带——前端 toast 显示真实根因。 */
+   *  签名 (jobId, percent, label)；errorMessage 仅 failed 时携带——前端 toast 显示真实根因。
+   *  同时把最新状态记进任务输出缓冲——面板刷新后仍能显示「进行中 / 已完成」。 */
   private broadcastProgressWithJobId(
     jobId: string,
     percent: number | undefined,
@@ -405,6 +537,12 @@ export class SteamCmdManager implements ISteamCmdManager {
     errorMessage?: string,
     currentFileId?: string,
   ): void {
+    const entry = this.ensureJobLog(jobId);
+    entry.stage = label;
+    if (percent != null && label !== "failed") entry.percent = percent;
+    if (label === "completed" || label === "failed") entry.finished = true;
+    if (errorMessage) entry.errorMessage = errorMessage;
+
     try {
       this.broadcaster.broadcast({
         type: "steamcmd_progress",
@@ -473,6 +611,11 @@ export class SteamCmdManager implements ISteamCmdManager {
       await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o600 });
 
       this.broadcastProgressWithJobId(jobId, 0, "spawned");
+      this.broadcastJobOutput(
+        jobId,
+        "正在检查并更新 Unturned 服务端…",
+        "spawned",
+      );
 
       const pid = await this.processSupervisor.spawn(
         jobId,
@@ -489,12 +632,8 @@ export class SteamCmdManager implements ISteamCmdManager {
       // 解析 stdout 推进度
       this.processSupervisor.onStdout(jobId, (line: string) => {
         const { stage, percent } = this.parseProgressLine(line);
-        this.broadcaster.broadcast({
-          type: "steamcmd_progress",
-          jobId,
-          stage,
-          percent,
-        });
+        // 原始输出行一并广播——面板能显示 SteamCMD 真实说了什么
+        this.broadcastJobOutput(jobId, line, stage, percent);
       });
 
       // 后台收尾：等退出 → 清临时脚本 → 广播 completed/failed → 释放锁
@@ -510,18 +649,28 @@ export class SteamCmdManager implements ISteamCmdManager {
             );
           }
           this.broadcastProgressWithJobId(jobId, 100, "completed");
+          this.broadcastJobOutput(jobId, "Unturned 服务端更新完成", "completed", 100);
           this.loggerUpdate().info({ installDir }, "SteamCMD update 完成");
         } catch (err) {
-          this.broadcastProgressWithJobId(
-        jobId,
-        0,
-        "failed",
-        err instanceof AppError || err instanceof Error ? err.message : undefined,
-      );
-          this.loggerUpdate().error(
-            { err, installDir },
-            "SteamCMD update 失败",
-          );
+        this.broadcastProgressWithJobId(
+          jobId,
+          0,
+          "failed",
+          err instanceof AppError || err instanceof Error ? err.message : undefined,
+        );
+        this.broadcastJobOutput(
+          jobId,
+          `Unturned 服务端更新失败：${
+            err instanceof AppError || err instanceof Error
+              ? err.message
+              : "未知原因"
+          }`,
+          "failed",
+        );
+        this.loggerUpdate().error(
+          { err, installDir },
+          "SteamCMD update 失败",
+        );
         } finally {
           try {
             await fs.promises.unlink(scriptPath);
@@ -915,6 +1064,11 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
 
     this.broadcastProgressWithJobId(jobId, 0, "spawned");
+    this.broadcastJobOutput(
+      jobId,
+      "正在查询 Unturned 服务端的最新版本…",
+      "spawned",
+    );
 
     const attempts: string[][] = [
       [
@@ -1002,6 +1156,7 @@ export class SteamCmdManager implements ISteamCmdManager {
               percent: 100,
               latestVersion,
             });
+            this.broadcastJobOutput(jobId, "版本检查完成", "completed", 100);
             return;
           } catch (err) {
             lastError = err;
@@ -1077,6 +1232,7 @@ export class SteamCmdManager implements ISteamCmdManager {
 
     // 立即广播「已提交」，HTTP 立即返回 jobId
     this.broadcastProgressWithJobId(jobId, 0, "spawned");
+    this.broadcastJobOutput(jobId, "正在清理旧的 SteamCMD 文件…", "spawned");
 
     // 后台串行：清理 → 下载 → 解压 → +quit 初始化 → 广播 completed/failed
     void (async () => {
@@ -1106,6 +1262,7 @@ export class SteamCmdManager implements ISteamCmdManager {
             /* noop */
           }
         }
+        this.broadcastJobOutput(jobId, "旧文件清理完成", "spawned");
 
         // 2. 拉新——Node https 下载。
         //    不用系统 curl + ca-certificates：Node 自带 CA bundle，runtime 缺 CA 也能下。
@@ -1118,10 +1275,22 @@ export class SteamCmdManager implements ISteamCmdManager {
           "https://media.steampowered.com/installer/steamcmd_linux.tar.gz",
         ];
         let lastDownloadError: unknown;
+        // 下载进度每变化 10% 记一行——进度条在面板头部单独显示，这里只留里程碑
+        let lastLoggedPercent = -10;
+        this.broadcastJobOutput(jobId, "正在下载 SteamCMD 安装包…", "downloading");
         for (const url of downloadUrls) {
           try {
             await this.downloadFile(url, tarPath, (percent) => {
               this.broadcastProgressWithJobId(jobId, percent, "downloading");
+              if (percent - lastLoggedPercent >= 10) {
+                lastLoggedPercent = percent;
+                this.broadcastJobOutput(
+                  jobId,
+                  `正在下载 SteamCMD 安装包… ${percent}%`,
+                  "downloading",
+                  percent,
+                );
+              }
             });
             lastDownloadError = undefined;
             break;
@@ -1130,6 +1299,13 @@ export class SteamCmdManager implements ISteamCmdManager {
             this.loggerUpdate().warn(
               { err, url },
               "SteamCMD 下载源失败，尝试下一个",
+            );
+            this.broadcastJobOutput(
+              jobId,
+              `这个下载地址用不了（${
+                err instanceof Error ? err.message : "网络异常"
+              }），正在换一个源重试…`,
+              "downloading",
             );
           }
         }
@@ -1144,8 +1320,10 @@ export class SteamCmdManager implements ISteamCmdManager {
             500,
           );
         }
+        this.broadcastJobOutput(jobId, "下载完成", "downloading", 100);
 
         // 3. 解压——tar npm 库，不依赖系统 tar。
+        this.broadcastJobOutput(jobId, "正在解压安装包…", "extracting");
         await tar.extract({ file: tarPath, cwd: targetDir });
         await fs.promises.unlink(tarPath).catch(() => undefined);
 
@@ -1155,27 +1333,50 @@ export class SteamCmdManager implements ISteamCmdManager {
           .catch(() => undefined);
 
         // 5. +quit 初始化（SteamCMD 首次跑会下载 steamclient.so）—— 长任务
+        //    走进程编排而非一次性执行：初始化阶段会下载数十 MB 运行库，
+        //    只有实时输出才能让用户知道「还在动、没卡死」。
         const exePath = path.join(targetDir, "steamcmd.sh");
         this.broadcastProgressWithJobId(jobId, 50, "spawned");
+        this.broadcastJobOutput(
+          jobId,
+          "正在初始化（首次运行需要下载运行库，可能需要几分钟）…",
+          "initializing",
+        );
         try {
-          // 这里仍走 execFileAdapter 因为 +quit 是一次性执行并等返回（不是长驻进程）
-          await this.execFileAdapter(exePath, ["+quit"], { timeout: 120_000 });
+          await this.processSupervisor.spawn(jobId, exePath, ["+quit"], targetDir);
+          this.processSupervisor.onStdout(jobId, (line: string) => {
+            this.broadcastJobOutput(jobId, line, "initializing");
+          });
+          this.processSupervisor.onStderr(jobId, (line: string) => {
+            this.broadcastJobOutput(jobId, line, "initializing");
+          });
+          await this.processSupervisor.waitForExit(jobId, UPDATE_TIMEOUT_MS);
         } catch (err) {
           this.loggerUpdate().warn(
             { err },
             "SteamCMD 初始化 +quit 失败（可能允许后续手动重试）",
           );
+          this.broadcastJobOutput(
+            jobId,
+            "初始化未正常结束，可以稍后再试一次重装",
+            "initializing",
+          );
         }
 
         this.broadcastProgressWithJobId(jobId, 100, "completed");
+        this.broadcastJobOutput(jobId, "SteamCMD 重装完成", "completed", 100);
         this.loggerUpdate().info({ targetDir }, "SteamCMD reinstall 完成");
       } catch (err) {
-        this.broadcastProgressWithJobId(
-        jobId,
-        0,
-        "failed",
-        err instanceof AppError || err instanceof Error ? err.message : undefined,
-      );
+        const errorMessage =
+          err instanceof AppError || err instanceof Error
+            ? err.message
+            : undefined;
+        this.broadcastProgressWithJobId(jobId, 0, "failed", errorMessage);
+        this.broadcastJobOutput(
+          jobId,
+          `SteamCMD 重装失败：${errorMessage ?? "未知原因"}`,
+          "failed",
+        );
         this.loggerUpdate().error(
           { err, targetDir },
           "SteamCMD reinstall 失败",
@@ -1274,11 +1475,15 @@ export class SteamCmdManager implements ISteamCmdManager {
    * 用 Node 内置 https 下载文件。
    * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载。
    *
+   * 空闲超时：某些 CDN 连上后不传数据也不报错，连接会一直挂着——
+   * 没有超时保护的话任务永远不结束，锁一直占着，面板也只会一直转圈。
+   * 超时后按失败处理，换下一个下载源。
+   *
    * @param url - 下载 URL
    * @param filePath - 落盘路径
    * @param onProgress - 进度回调（0-100，content-length 未知时不回调）
    * @returns Promise<void>，下载完成 resolve
-   * @throws {Error} HTTP 非 200 或网络错误；失败时删除半成品文件
+   * @throws {Error} HTTP 非 200、网络错误或空闲超时；失败时删除半成品文件
    *
    * @example
    * ```typescript
@@ -1292,32 +1497,39 @@ export class SteamCmdManager implements ISteamCmdManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const file = createWriteStream(filePath);
-      https
-        .get(url, (response) => {
-          if (response.statusCode !== 200) {
-            reject(new Error(`下载失败: HTTP ${response.statusCode}`));
-            file.destroy();
-            return;
+      const request = https.get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`下载失败: HTTP ${response.statusCode}`));
+          file.destroy();
+          return;
+        }
+        const total = parseInt(response.headers["content-length"] || "0", 10);
+        let downloaded = 0;
+        response.on("data", (chunk) => {
+          downloaded += chunk.length;
+          if (total > 0 && onProgress) {
+            onProgress(Math.round((downloaded / total) * 100));
           }
-          const total = parseInt(response.headers["content-length"] || "0", 10);
-          let downloaded = 0;
-          response.on("data", (chunk) => {
-            downloaded += chunk.length;
-            if (total > 0 && onProgress) {
-              onProgress(Math.round((downloaded / total) * 100));
-            }
-          });
-          response.pipe(file);
-          file.on("finish", () => {
-            file.close();
-            resolve();
-          });
-          file.on("error", (err) => {
-            fs.promises.unlink(filePath).catch(() => undefined);
-            reject(err);
-          });
-        })
-        .on("error", reject);
+        });
+        response.pipe(file);
+        file.on("finish", () => {
+          file.close();
+          resolve();
+        });
+        file.on("error", (err) => {
+          fs.promises.unlink(filePath).catch(() => undefined);
+          reject(err);
+        });
+      });
+
+      // 空闲超时——连上但收不到数据时主动放弃，不让任务无限挂着
+      request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+        request.destroy(new Error("下载长时间没有进展，已中止"));
+      });
+      request.on("error", (err) => {
+        fs.promises.unlink(filePath).catch(() => undefined);
+        reject(err);
+      });
     });
   }
 

@@ -9,12 +9,74 @@ export const apiClient = axios.create({
 
 let accessToken: string | null = null;
 
+/**
+ * 在飞的刷新请求——同一时刻所有调用方共用同一个 Promise。
+ *
+ * 背景：刷新令牌每次使用后会轮换（旧的立即撤销）。页面加载时「会话恢复」和
+ * 「WebSocket 建连」会同时发起刷新，若各发一次请求，后到的那次必然拿到
+ * 「已被撤销」而失败，并把刚存好的新令牌清掉——表现为每次刷新页面都要重新登录。
+ * 单飞机制保证同一时刻只发一个刷新请求，其余调用方等待同一个结果。
+ */
+let refreshInFlight: Promise<string | null> | null = null;
+
 export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+/**
+ * 用刷新令牌换取新的访问令牌——单飞（同一时刻只发一个请求）。
+ *
+ * 会话恢复、接口 401 重试、WebSocket 建连/重连都走这里，避免并发刷新
+ * 互相撤销对方刚换发的新令牌。成功后新访问令牌写入内存、新刷新令牌写回本地存储。
+ *
+ * @returns 新的访问令牌；本地无刷新令牌或刷新失败返回 null（并清理本地凭据）
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+
+  const refreshToken = localStorage.getItem("refreshToken");
+  if (!refreshToken) return Promise.resolve(null);
+
+  refreshInFlight = (async () => {
+    try {
+      // 用裸 axios——不能走 apiClient，否则 401 会再次触发本拦截器形成递归
+      const { data } = await axios.post("/api/auth/refresh", { refreshToken });
+      setAccessToken(data.data.accessToken);
+      localStorage.setItem("refreshToken", data.data.refreshToken);
+      return data.data.accessToken as string;
+    } catch {
+      setAccessToken(null);
+      localStorage.removeItem("refreshToken");
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+/**
+ * 从 JWT 里读取唯一标识（jti）——服务端按它撤销刷新令牌。
+ * 解码失败返回 null，由调用方决定兜底方式。
+ *
+ * @param token - JWT 字符串
+ * @returns jti 字符串；无法解析返回 null
+ */
+export function getTokenJti(token: string): string | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64));
+    return typeof payload.jti === "string" ? payload.jti : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -78,18 +140,8 @@ export function getAccessTokenExpMs(token: string): number | null {
  */
 export async function ensureAccessToken(): Promise<string | null> {
   if (accessToken && !isAccessTokenExpired(accessToken)) return accessToken;
-  const refreshToken = localStorage.getItem("refreshToken");
-  if (!refreshToken) return null;
-  try {
-    const { data } = await axios.post("/api/auth/refresh", { refreshToken });
-    setAccessToken(data.data.accessToken);
-    localStorage.setItem("refreshToken", data.data.refreshToken);
-    return data.data.accessToken;
-  } catch {
-    setAccessToken(null);
-    localStorage.removeItem("refreshToken");
-    return null;
-  }
+  // 与会话恢复、401 重试共用单飞刷新——避免并发刷新互相撤销
+  return refreshAccessToken();
 }
 
 // 请求拦截器：注入 JWT
@@ -107,21 +159,16 @@ apiClient.interceptors.response.use(
   (res) => res,
   async (error) => {
     if (error.response?.status === 401 && accessToken) {
-      try {
-        const { data } = await axios.post("/api/auth/refresh", {
-          refreshToken: localStorage.getItem("refreshToken"),
-        });
-        setAccessToken(data.data.accessToken);
-        localStorage.setItem("refreshToken", data.data.refreshToken);
-
-        // 重试原请求
-        error.config.headers.Authorization = `Bearer ${data.data.accessToken}`;
-        return axios(error.config);
-      } catch {
-        setAccessToken(null);
-        localStorage.removeItem("refreshToken");
+      // 与会话恢复、WebSocket 建连共用单飞刷新——避免并发刷新互相撤销
+      const token = await refreshAccessToken();
+      if (!token) {
         window.location.href = "/login";
+        return Promise.reject(error);
       }
+
+      // 重试原请求（error.config 是原始配置，必须用新令牌覆盖 Authorization）
+      error.config.headers.Authorization = `Bearer ${token}`;
+      return axios(error.config);
     }
     return Promise.reject(error);
   },

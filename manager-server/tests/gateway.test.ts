@@ -20,6 +20,7 @@ interface GatewayHandle {
   broadcaster: {
     destroy(): Promise<void>;
     registerRequestHandler(type: string, handler: WsRequestHandler): void;
+    broadcast(event: unknown): void;
   };
 }
 
@@ -323,6 +324,39 @@ describe("WS gateway — ACK 请求-应答（ws-wrapper-design §2.4/§5.1）", 
     const msg = await error;
     expect(msg.code).toBe("invalid_message");
     expect(saveHandler).not.toHaveBeenCalled();
+    ws.close();
+  });
+
+  it("空 serverIds 订阅时回灌所有实例的历史 console_line", async () => {
+    handle = await startGateway(makeMockPty());
+    // 先广播一条历史输出——存入网关 buffer
+    handle.broadcaster.broadcast({
+      type: "console_line",
+      serverId: "S1",
+      line: "历史输出第一行",
+      source: "stdout",
+    });
+
+    // 用空 serverIds 订阅（前端控制台的实际订阅方式）
+    const lines: string[] = [];
+    const ws = await new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(`${handle!.url}?token=valid`);
+      socket.on("message", (raw) => {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === "subscribed") resolve(socket);
+        if (msg.type === "console_line") lines.push(msg.line);
+      });
+      socket.on("error", reject);
+      socket.on("open", () => {
+        socket.send(
+          JSON.stringify({ type: "subscribe", serverIds: [], eventTypes: null }),
+        );
+      });
+    });
+
+    // 等一小会儿让回灌消息到达
+    await new Promise((r) => setTimeout(r, 100));
+    expect(lines).toContain("历史输出第一行");
     ws.close();
   });
 });

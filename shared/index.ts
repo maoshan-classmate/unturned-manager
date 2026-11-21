@@ -37,8 +37,20 @@ export type {
   PanelDirectoryResult,
 } from "./contracts/files.js";
 export type { IAuthService, JwtPayload } from "./contracts/auth.js";
+export type {
+  IPlayerService,
+  PlayerInfo,
+  PlayersResponse,
+  PlayerAction,
+  PlayerActionRequest,
+  PlayerActionResult,
+} from "./contracts/players.js";
 export type { IFileLockProvider } from "./contracts/filelock.js";
-export type { ISteamCmdManager } from "./contracts/steamcmd.js";
+export type {
+  ISteamCmdManager,
+  SteamCmdJobLog,
+  SteamCmdJobLogLine,
+} from "./contracts/steamcmd.js";
 export type {
   IWorkshopMetadataService,
   IWorkshopAcfService,

@@ -93,6 +93,17 @@ export type ServerEvent =
        * fileId 各自显示进度条。
        */
       currentFileId?: string;
+      /**
+       * 一行任务输出原文（仅任务进行中的事件携带）。
+       * 前端「任务输出」面板按此逐行渲染——用户能直接看到 SteamCMD 说了什么，
+       * 而不是只有阶段名和百分比。
+       */
+      line?: string;
+      /**
+       * 该输出行在任务内的序号（从 0 递增）。
+       * 前端按序号合并「实时推送」与「历史回看」两份数据，避免刷新页面后行序错乱。
+       */
+      lineSeq?: number;
     }
   // 请求-应答模式的应答事件。不走 broadcast() 分发——
   // 由 gateway 直接回给发起请求的那条连接（ack 是 per-request 的，不是广播）。
