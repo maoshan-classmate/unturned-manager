@@ -161,9 +161,15 @@ class WsBroadcaster implements IBroadcaster {
                 "WS 客户端已订阅",
               );
 
-              // 订阅时回灌 buffer 中最近的 console_line：客户端 subscribe 回调按正常流程处理
+              // 订阅时回灌 buffer 中最近的 console_line：客户端 subscribe 回调按正常流程处理。
+              // serverIds 为空 = 订阅全部实例——此时要遍历所有有缓冲的实例，
+              // 否则「打开控制台页面」这种全量订阅永远拿不到历史输出（终端一开始是空的）。
               if (ws.readyState === WebSocket.OPEN) {
-                for (const id of subs.serverIds) {
+                const ids =
+                  subs.serverIds.size > 0
+                    ? Array.from(subs.serverIds)
+                    : Array.from(consoleLineBuffer.keys());
+                for (const id of ids) {
                   const buffered = consoleLineBuffer.get(id as ServerId);
                   if (!buffered || buffered.length === 0) continue;
                   for (const evt of buffered) {

@@ -54,6 +54,17 @@ const U3DS_READY_PATTERNS: RegExp[] = [
   /Startup complete/i,
 ];
 
+/**
+ * U3DS 关服完成标志——游戏进程在 PTY 的常驻 bash 里以前台子进程方式运行，
+ * 玩家在游戏内执行 quit 后只有游戏退出、bash 仍活着，onExit 不会触发，
+ * 状态会一直卡在 RUNNING。命中这些日志行时主动转 STOPPED。
+ * 只取「完成退出」的确定性标志，不取 "Application quitting"（仅表示开始退出）。
+ */
+const U3DS_QUIT_PATTERNS: RegExp[] = [
+  /Finished quitting/i,
+  /Server shutdown complete/i,
+];
+
 // ─── 运行时状态 (in-memory, 目录扫描真源 + settings K-V) ──
 
 interface RuntimeServerState {
@@ -753,6 +764,19 @@ export class ServerManager implements IServerManager {
       // 不等 START_COMMAND_DELAY 兜底。transition 自身幂等，正则 + 定时器谁先到用哪个。
       if (U3DS_READY_PATTERNS.some((re) => re.test(line))) {
         this.transition(serverId, ServerState.RUNNING);
+      }
+
+      // 游戏退出检测：玩家在游戏内 quit，游戏进程退出但 PTY 的常驻 bash 还活着，
+      // onExit 不触发 → 状态卡在 RUNNING。命中关服完成日志时主动转 STOPPED。
+      // 置 stopRequested 防bash 随后退出时被误判为崩溃自动重启。
+      const entry = this.servers.get(serverId);
+      if (
+        U3DS_QUIT_PATTERNS.some((re) => re.test(line)) &&
+        entry?.state === ServerState.RUNNING
+      ) {
+        logger.info({ serverId }, "检测到游戏关服完成，状态转 STOPPED");
+        entry.stopRequested = true;
+        this.transition(serverId, ServerState.STOPPED);
       }
     });
   }
