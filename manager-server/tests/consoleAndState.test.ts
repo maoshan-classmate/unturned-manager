@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
-import { ServerManager } from "../src/modules/server/ServerManager.js";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+
+// config 模块加载时读取 INSTALL_DIR——在 import ServerManager 前设置
+const TEST_DIR = path.join(os.tmpdir(), "quit-watch-" + process.pid);
+process.env.INSTALL_DIR = TEST_DIR;
+
+const { ServerManager } = await import("../src/modules/server/ServerManager.js");
 import type {
   IPtyManager,
   IConfigService,
@@ -87,6 +95,8 @@ function makeBroadcaster() {
   } as unknown as IBroadcaster & { events: ServerEvent[] };
 }
 
+let tmpDir: string;
+
 function setup() {
   const db = makeDb();
   const pty = makeMockPty();
@@ -96,23 +106,36 @@ function setup() {
   return { mgr, pty, bcast };
 }
 
-describe("游戏退出后状态同步", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+describe("游戏退出后状态同步（日志检测）", () => {
+  beforeEach(async () => {
+    tmpDir = TEST_DIR;
+    await fs.mkdir(path.join(tmpDir, "Logs"), { recursive: true });
+  });
 
-  it("PTY 输出关服完成标志后状态转 STOPPED", async () => {
-    const { mgr, pty, bcast } = setup();
-    await mgr.createServer({ id: "S1" as never, name: "S1", gamePort: 27015, ownerSteamId: "x", installDir: "/opt/unturned" });
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
+  it("日志出现关服完成标志后状态转 STOPPED", async () => {
+    const { mgr, bcast } = setup();
+    await mgr.createServer({
+      id: "S1" as never,
+      name: "S1",
+      gamePort: 27015,
+      ownerSteamId: "x",
+      installDir: tmpDir,
+    });
     await mgr.start("S1" as never);
-    // 推进定时器让 STARTING → RUNNING
-    await vi.advanceTimersByTimeAsync(3000);
+    await new Promise((r) => setTimeout(r, 200));
     expect(mgr.getState("S1" as never)).toBe("RUNNING");
 
-    // 模拟游戏输出 "Finished quitting"
-    const cb = pty.dataCallbacks.get("S1");
-    expect(cb).toBeDefined();
-    cb?.("[2026-11-21 08:29:03] Finished quitting");
+    // 模拟游戏写关服日志
+    await fs.writeFile(
+      path.join(tmpDir, "Logs", "Server_S1.log"),
+      "[2026-11-21 08:29:03] Finished quitting\n",
+    );
+    // 推进定时器触发检测
+    await new Promise((r) => setTimeout(r, 3500));
 
     expect(mgr.getState("S1" as never)).toBe("STOPPED");
     expect(bcast.events).toContainEqual(
@@ -125,14 +148,23 @@ describe("游戏退出后状态同步", () => {
     );
   });
 
-  it("普通日志输出不会误转 STOPPED", async () => {
-    const { mgr, pty } = setup();
-    await mgr.createServer({ id: "S1" as never, name: "S1", gamePort: 27015, ownerSteamId: "x", installDir: "/opt/unturned" });
+  it("日志没有退出标志时保持 RUNNING", async () => {
+    const { mgr } = setup();
+    await mgr.createServer({
+      id: "S1" as never,
+      name: "S1",
+      gamePort: 27015,
+      ownerSteamId: "x",
+      installDir: tmpDir,
+    });
     await mgr.start("S1" as never);
-    await vi.advanceTimersByTimeAsync(3000);
+    await new Promise((r) => setTimeout(r, 200));
 
-    const cb = pty.dataCallbacks.get("S1");
-    cb?.("[2026-11-21 08:29:03] Application quitting");
+    await fs.writeFile(
+      path.join(tmpDir, "Logs", "Server_S1.log"),
+      "[2026-11-21 08:29:03] Application quitting\n",
+    );
+    await new Promise((r) => setTimeout(r, 3500));
 
     expect(mgr.getState("S1" as never)).toBe("RUNNING");
   });

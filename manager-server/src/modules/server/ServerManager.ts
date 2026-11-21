@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import path from "path";
 import type Database from "better-sqlite3";
 import type {
   ServerId,
@@ -81,6 +82,8 @@ interface RuntimeServerState {
   sessionEpoch?: number;
   /** 本次 STARTING transition 的时间戳（用于计算启动耗时） */
   startTimestamp?: number;
+  /** 关服检测起点——只认这个时间之后写入的日志，避免旧日志残留退出标志误触发 */
+  quitCheckAfter?: number;
 }
 
 /**
@@ -116,6 +119,59 @@ export class ServerManager implements IServerManager {
     // 崩溃检测走 PTY exit——U3DS 走 PTY 后，bash 退出 = PTY 会话结束（bash 永驻，
     // U3DS 崩溃时 bash 回提示符不触发 exit；崩溃重启语义见 scheduleCrashRestart）。
     // onExit 在 startPty 每次 spawn 时注册。
+
+    // 游戏内关服检测：玩家在终端输入关服命令后，游戏进程退出但 bash 还活着，
+    // onExit 不触发 → 状态卡 RUNNING。定期读游戏日志末尾的退出标志来同步状态。
+    // unref 避免阻塞进程退出。
+    const quitWatch = setInterval(() => {
+      void this.detectGameQuitFromLogs().catch(() => {
+        // 日志检测失败不影响主流程——下次定时器会重试
+      });
+    }, 3_000);
+    quitWatch.unref();
+  }
+
+  /**
+   * 从游戏日志检测关服完成——读每个 RUNNING 实例日志文件的末尾若干字节，
+   * 命中退出标志时转 STOPPED。只做确定性判断（"Finished quitting"），
+   * 不把 "Application quitting"（仅表示开始退出）算作完成。
+   */
+  private async detectGameQuitFromLogs(): Promise<void> {
+    for (const [serverId, entry] of this.servers) {
+      if (entry.state !== ServerState.RUNNING) continue;
+      const logFile = path.join(
+        resolveInstallDir(),
+        "Logs",
+        `Server_${serverId}.log`,
+      );
+      try {
+        // 只读末尾 4KB，避免大日志全量读取
+        const handle = await fs.open(logFile, "r");
+        try {
+          const stat = await handle.stat();
+          // 只认本次启动之后写入的日志——避免上次的退出标志让新实例秒变 STOPPED
+          if (
+            entry.quitCheckAfter != null &&
+            stat.mtimeMs < entry.quitCheckAfter
+          ) {
+            continue;
+          }
+          const length = Math.min(stat.size, 4096);
+          const buffer = Buffer.alloc(length);
+          await handle.read(buffer, 0, length, stat.size - length);
+          const tail = buffer.toString("utf8");
+          if (U3DS_QUIT_PATTERNS.some((re) => re.test(tail))) {
+            entry.stopRequested = true;
+            this.transition(serverId, ServerState.STOPPED);
+            logger.info({ serverId }, "日志检测到游戏关服完成，状态转 STOPPED");
+          }
+        } finally {
+          await handle.close();
+        }
+      } catch {
+        // 日志文件不存在/读取失败——游戏可能刚启动还没写日志，忽略
+      }
+    }
   }
 
   // ── 目录扫描加载 ────────────────────────────────────
@@ -665,6 +721,8 @@ export class ServerManager implements IServerManager {
       // 新 start 接管，清掉残留的 stopRequested（否则后续 exit 事件
       // 会误把这次 start 当「主动停止」跳过崩溃判定，导致 start 后闪一下又回 STOPPED）。
       entry.stopRequested = false;
+      // 重置关服检测起点——本次启动之前的日志退出标志不算数
+      entry.quitCheckAfter = Date.now();
       pid = entry.ptyPid ?? 0;
       logger.info({ serverId, pid }, "PTY bash 已存在，直接塞启动命令");
       this.pipePtyOutput(id); // 保险：onData 幂等（PtyManager exit 后清了 callbacks）
@@ -677,6 +735,8 @@ export class ServerManager implements IServerManager {
       });
       entry.terminalSessionId = id;
       entry.ptyPid = pid;
+      // 重置关服检测起点——本次启动之前的日志退出标志不算数
+      entry.quitCheckAfter = Date.now();
       logger.info(
         { serverId, pid, installDir, startCommand },
         "PTY bash 已启动",
@@ -764,19 +824,6 @@ export class ServerManager implements IServerManager {
       // 不等 START_COMMAND_DELAY 兜底。transition 自身幂等，正则 + 定时器谁先到用哪个。
       if (U3DS_READY_PATTERNS.some((re) => re.test(line))) {
         this.transition(serverId, ServerState.RUNNING);
-      }
-
-      // 游戏退出检测：玩家在游戏内 quit，游戏进程退出但 PTY 的常驻 bash 还活着，
-      // onExit 不触发 → 状态卡在 RUNNING。命中关服完成日志时主动转 STOPPED。
-      // 置 stopRequested 防bash 随后退出时被误判为崩溃自动重启。
-      const entry = this.servers.get(serverId);
-      if (
-        U3DS_QUIT_PATTERNS.some((re) => re.test(line)) &&
-        entry?.state === ServerState.RUNNING
-      ) {
-        logger.info({ serverId }, "检测到游戏关服完成，状态转 STOPPED");
-        entry.stopRequested = true;
-        this.transition(serverId, ServerState.STOPPED);
       }
     });
   }
