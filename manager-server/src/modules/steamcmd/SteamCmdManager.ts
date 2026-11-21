@@ -481,6 +481,9 @@ export class SteamCmdManager implements ISteamCmdManager {
     }
     if (stage != null) entry.stage = stage;
     if (percent != null) entry.percent = percent;
+    // 结束状态也在这里标记一次——检查更新的完成通知走的是输出行，
+    // 不经过进度广播，少了这一步历史快照会一直显示「进行中」。
+    if (stage === "completed" || stage === "failed") entry.finished = true;
 
     try {
       this.broadcaster.broadcast({
