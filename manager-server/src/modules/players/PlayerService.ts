@@ -63,8 +63,10 @@ export class PlayerService implements IPlayerService {
       `Server_${serverId}.log`,
     );
     const logTail = await readTail(logFile, LOG_TAIL_BYTES);
+    const live = this.serverManager.getState(serverId) === "RUNNING";
 
-    const players = parseOnlinePlayers(logTail);
+    // 服务端未运行时日志里的连接记录是上次的残留——不该显示成"在线"
+    const players = live ? parseOnlinePlayers(logTail) : [];
     const adminIds = new Set<string>();
     const bannedIds = new Set<string>();
 
@@ -106,7 +108,7 @@ export class PlayerService implements IPlayerService {
       players: result.slice(0, MAX_PLAYERS),
       adminIds: [...adminIds],
       bannedIds: [...bannedIds],
-      live: this.serverManager.getState(serverId) === "RUNNING",
+      live,
     };
   }
 
