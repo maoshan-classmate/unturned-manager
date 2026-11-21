@@ -89,6 +89,8 @@ const DOWNLOAD_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_JOB_LOG_LINES = 500;
 /** 同时保留的任务输出快照数量（超出丢弃最早创建的任务） */
 const MAX_JOB_LOGS = 20;
+/** 下载空闲超时（毫秒）——连上后长时间收不到数据就放弃，换下一个源 */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 90_000;
 
 /**
  * 单个任务的输出缓冲（内存态——面板重启即丢）。
@@ -1272,6 +1274,7 @@ export class SteamCmdManager implements ISteamCmdManager {
         let lastDownloadError: unknown;
         // 下载进度每变化 10% 记一行——进度条在面板头部单独显示，这里只留里程碑
         let lastLoggedPercent = -10;
+        this.broadcastJobOutput(jobId, "正在下载 SteamCMD 安装包…", "downloading");
         for (const url of downloadUrls) {
           try {
             await this.downloadFile(url, tarPath, (percent) => {
@@ -1296,7 +1299,9 @@ export class SteamCmdManager implements ISteamCmdManager {
             );
             this.broadcastJobOutput(
               jobId,
-              `下载地址不可用，正在换一个源重试…`,
+              `这个下载地址用不了（${
+                err instanceof Error ? err.message : "网络异常"
+              }），正在换一个源重试…`,
               "downloading",
             );
           }
@@ -1467,11 +1472,15 @@ export class SteamCmdManager implements ISteamCmdManager {
    * 用 Node 内置 https 下载文件。
    * 不依赖系统 curl/ca-certificates——Node 自带 CA bundle，runtime 缺 CA 也能下载。
    *
+   * 空闲超时：某些 CDN 连上后不传数据也不报错，连接会一直挂着——
+   * 没有超时保护的话任务永远不结束，锁一直占着，面板也只会一直转圈。
+   * 超时后按失败处理，换下一个下载源。
+   *
    * @param url - 下载 URL
    * @param filePath - 落盘路径
    * @param onProgress - 进度回调（0-100，content-length 未知时不回调）
    * @returns Promise<void>，下载完成 resolve
-   * @throws {Error} HTTP 非 200 或网络错误；失败时删除半成品文件
+   * @throws {Error} HTTP 非 200、网络错误或空闲超时；失败时删除半成品文件
    *
    * @example
    * ```typescript
@@ -1485,32 +1494,39 @@ export class SteamCmdManager implements ISteamCmdManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const file = createWriteStream(filePath);
-      https
-        .get(url, (response) => {
-          if (response.statusCode !== 200) {
-            reject(new Error(`下载失败: HTTP ${response.statusCode}`));
-            file.destroy();
-            return;
+      const request = https.get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`下载失败: HTTP ${response.statusCode}`));
+          file.destroy();
+          return;
+        }
+        const total = parseInt(response.headers["content-length"] || "0", 10);
+        let downloaded = 0;
+        response.on("data", (chunk) => {
+          downloaded += chunk.length;
+          if (total > 0 && onProgress) {
+            onProgress(Math.round((downloaded / total) * 100));
           }
-          const total = parseInt(response.headers["content-length"] || "0", 10);
-          let downloaded = 0;
-          response.on("data", (chunk) => {
-            downloaded += chunk.length;
-            if (total > 0 && onProgress) {
-              onProgress(Math.round((downloaded / total) * 100));
-            }
-          });
-          response.pipe(file);
-          file.on("finish", () => {
-            file.close();
-            resolve();
-          });
-          file.on("error", (err) => {
-            fs.promises.unlink(filePath).catch(() => undefined);
-            reject(err);
-          });
-        })
-        .on("error", reject);
+        });
+        response.pipe(file);
+        file.on("finish", () => {
+          file.close();
+          resolve();
+        });
+        file.on("error", (err) => {
+          fs.promises.unlink(filePath).catch(() => undefined);
+          reject(err);
+        });
+      });
+
+      // 空闲超时——连上但收不到数据时主动放弃，不让任务无限挂着
+      request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+        request.destroy(new Error("下载长时间没有进展，已中止"));
+      });
+      request.on("error", (err) => {
+        fs.promises.unlink(filePath).catch(() => undefined);
+        reject(err);
+      });
     });
   }
 
