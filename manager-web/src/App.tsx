@@ -13,6 +13,7 @@ import { FilesPage } from "./pages/FilesPage.js";
 import { ServerSetupPage } from "./pages/ServerSetupPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { LdmPage } from "./pages/LdmPage.js";
+import { PlayersPage } from "./pages/PlayersPage.js";
 import { Toaster } from "./components/ui/sonner.js";
 
 /**
@@ -84,6 +85,7 @@ function AppLayoutContent() {
 
               {/* 实例类路由——纯路径；实例标识由 CurrentServerProvider 承载 */}
               <Route path="/console" element={<ConsolePage />} />
+              <Route path="/players" element={<PlayersPage />} />
               <Route path="/mods" element={<ModsPage />} />
               <Route path="/config/commands" element={<ConfigPage />} />
               <Route path="/ldm" element={<LdmPage />} />

@@ -22,6 +22,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/", icon: LayoutDashboard, label: "仪表盘" },
   { to: "/console", icon: Terminal, label: "控制台" },
+  { to: "/players", icon: User, label: "玩家" },
   { to: "/config/commands", icon: Settings, label: "配置" },
   { to: "/mods", icon: Package, label: "模组" },
   // { to: "/ldm", icon: Puzzle, label: "Mod 框架" },        // 未完成，临时隐藏

@@ -25,6 +25,7 @@ import {
   type IMetricsService,
   type IIncidentsService,
   type ISystemInfoService,
+  type IPlayerService,
 } from "@unturned-manager/shared";
 
 import { config } from "./config.js";
@@ -58,6 +59,7 @@ import { RocketConfigXmlParser } from "./modules/ldm/RocketConfigXmlParser.js";
 import { MetricsService } from "./modules/metrics/MetricsService.js";
 import { IncidentsService } from "./modules/incidents/IncidentsService.js";
 import { SystemInfoService } from "./modules/system/SystemInfoService.js";
+import { PlayerService } from "./modules/players/PlayerService.js";
 import { wsBroadcaster } from "./ws/gateway.js";
 
 // ─── Container ────────────────────────────────────────
@@ -78,6 +80,7 @@ export interface AppContainer {
   ptyManager: IPtyManager;
   sessionManager: ISessionManager;
   u3dsStatus: IU3dsStatusProvider;
+  playerService: IPlayerService;
   // LDM（Mod 框架）——3 模块 + 1 个 reader（独立于 PtyManager/RocketRuntimeReader）
   ldmVersionReader: LdmAssemblyVersionReader;
   ldmDiscovery: ILdmDiscoveryService;
@@ -150,6 +153,9 @@ export function buildContainer(db: Database.Database): AppContainer {
     sessionManager,
     incidentsService,
   );
+
+  // 玩家服务——依赖 serverManager（已在上方赋值）+ ptyManager（下发管理命令）
+  const playerService = new PlayerService(ptyManager, serverManager);
 
   // AuthService
   const authService = new AuthService(db);
@@ -327,6 +333,7 @@ export function buildContainer(db: Database.Database): AppContainer {
     ptyManager,
     sessionManager,
     u3dsStatus,
+    playerService,
     ldmVersionReader,
     ldmDiscovery,
     ldmCommands,

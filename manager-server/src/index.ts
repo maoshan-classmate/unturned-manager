@@ -37,6 +37,7 @@ import { createU3dsRouter } from "./routes/u3ds.js";
 import { createItemsRouter } from "./routes/items.js";
 import { createMetricsRouter } from "./routes/metrics.js";
 import { createIncidentsRouter } from "./routes/incidents.js";
+import { createPlayersRouter } from "./routes/players.js";
 import { createSystemRouter, createSystemDiagnosticsRouter } from "./routes/system.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { noCache } from "./middleware/noCache.js";
@@ -162,6 +163,8 @@ app.use(
   "/api/servers/:id/incidents",
   createIncidentsRouter(container.incidentsService),
 );
+// 玩家列表与管理——按 ServerID 嵌套路由
+app.use("/api/servers/:id/players", createPlayersRouter(container.playerService));
 
 // WebSocket
 wsBroadcaster.init(
